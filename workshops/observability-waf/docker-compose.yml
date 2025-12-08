@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # HyperDX OpenTelemetry Collector
   otel-collector:
@@ -13,7 +11,7 @@ services:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE}
-      - OTEL_EXPORTER_OTLP_HEADERS=authorization=${HYPERDX_API_KEY}
+      - OTEL_EXPORTER_OTLP_HEADERS=authorization=${CLICKSTACK_API_KEY}
     restart: unless-stopped
     networks:
       - waf-network

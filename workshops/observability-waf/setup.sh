@@ -44,10 +44,10 @@ CLICKHOUSE_PASSWORD=$(prompt_input "CLICKHOUSE_PASSWORD" "ClickHouse Password" "
 CLICKHOUSE_DATABASE=$(prompt_input "CLICKHOUSE_DATABASE" "ClickHouse Database" "otel_waf")
 
 echo ""
-echo "Step 2: HyperDX Configuration"
-echo "------------------------------"
-HYPERDX_API_KEY=$(prompt_input "HYPERDX_API_KEY" "HyperDX API Key (from Team Settings → API Keys)" "")
-HYPERDX_COLLECTOR_ENDPOINT=$(prompt_input "HYPERDX_COLLECTOR_ENDPOINT" "HyperDX Collector Endpoint" "http://localhost:4318")
+echo "Step 2: ClickStack Configuration"
+echo "---------------------------------"
+echo "ℹ️  To get API Key: Open ClickHouse Cloud → ClickStack → Click (?) icon"
+CLICKSTACK_API_KEY=$(prompt_input "CLICKSTACK_API_KEY" "ClickStack API Key" "")
 
 echo ""
 echo "Step 3: WAF Data Generation Configuration"
@@ -88,9 +88,8 @@ CLICKHOUSE_USER=${CLICKHOUSE_USER}
 CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
 CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE}
 
-# HyperDX Configuration
-HYPERDX_API_KEY=${HYPERDX_API_KEY}
-HYPERDX_COLLECTOR_ENDPOINT=${HYPERDX_COLLECTOR_ENDPOINT}
+# ClickStack Configuration
+CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
 
 # WAF Data Generation Configuration
 EVENTS_PER_SECOND=${EVENTS_PER_SECOND}
