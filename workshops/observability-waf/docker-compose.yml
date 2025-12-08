@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # HyperDX OpenTelemetry Collector
+  otel-collector:
+    image: docker.hyperdx.io/hyperdx/hyperdx-otel-collector:latest
+    container_name: waf-otel-collector
+    ports:
+      - "${OTEL_COLLECTOR_PORT_GRPC:-14317}:4317"   # OTLP gRPC
+      - "${OTEL_COLLECTOR_PORT_HTTP:-14318}:4318"   # OTLP HTTP
+    environment:
+      - CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE}
+      - OTEL_EXPORTER_OTLP_HEADERS=authorization=${HYPERDX_API_KEY}
+    restart: unless-stopped
+    networks:
+      - waf-network
+
+  # WAF Telemetry Generator
+  waf-generator:
+    build:
+      context: ./generator
+      dockerfile: Dockerfile
+    container_name: waf-generator
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-waf-telemetry-generator}
+      - EVENTS_PER_SECOND=${EVENTS_PER_SECOND:-100}
+      - NORMAL_TRAFFIC_RATIO=${NORMAL_TRAFFIC_RATIO:-0.80}
+      - AWS_RATIO=${AWS_RATIO:-6}
+      - AZURE_RATIO=${AZURE_RATIO:-1}
+      - GCP_RATIO=${GCP_RATIO:-3}
+      - GENERATOR_PORT=7651
+    ports:
+      - "7651:7651"
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+    networks:
+      - waf-network
+
+  # Web UI
+  web-ui:
+    build:
+      context: ./web-ui
+      dockerfile: Dockerfile
+    container_name: waf-web-ui
+    environment:
+      - GENERATOR_API_URL=http://waf-generator:7651
+      - WEB_UI_PORT=${WEB_UI_PORT:-9873}
+    ports:
+      - "${WEB_UI_PORT:-9873}:9873"
+    depends_on:
+      - waf-generator
+    restart: unless-stopped
+    networks:
+      - waf-network
+
+networks:
+  waf-network:
+    driver: bridge
