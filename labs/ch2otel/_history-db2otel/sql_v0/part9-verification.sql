@@ -1,35 +1,62 @@
 -- ============================================================================
--- CHMetric-DX-Converter v2.1.0 - PART 4: VERIFICATION QUERIES
+-- CHMetric-DX-Converter v2.1.0 - PART 9: VERIFICATION & CLEANUP
+-- ============================================================================
+
+-- ============================================================================
+-- VERIFICATION QUERIES
 -- ============================================================================
 
 -- Check table creation
-SELECT database, name, engine FROM system.tables WHERE database = 'ingest_otel' ORDER BY name;
+SELECT database, name, engine
+FROM system.tables
+WHERE database = 'ingest_otel'
+ORDER BY name;
 
 -- Check RMV status
-SELECT database, view, status, last_refresh_time, next_refresh_time, exception 
-FROM system.view_refreshes WHERE database = 'ingest_otel' ORDER BY view;
+SELECT database, view, status, last_refresh_time, next_refresh_time, exception
+FROM system.view_refreshes
+WHERE database = 'ingest_otel'
+ORDER BY view;
 
 -- Sample logs
-SELECT Timestamp, ServiceName, SeverityText, Body FROM ingest_otel.otel_logs ORDER BY Timestamp DESC LIMIT 10;
+SELECT Timestamp, ServiceName, SeverityText, Body
+FROM ingest_otel.otel_logs
+ORDER BY Timestamp DESC
+LIMIT 10;
 
 -- Sample traces
-SELECT Timestamp, ServiceName, SpanName, SpanKind, Duration/1000000 AS duration_ms FROM ingest_otel.otel_traces ORDER BY Timestamp DESC LIMIT 10;
+SELECT Timestamp, ServiceName, SpanName, SpanKind, Duration/1000000 AS duration_ms
+FROM ingest_otel.otel_traces
+ORDER BY Timestamp DESC
+LIMIT 10;
 
 -- Sample gauge metrics
-SELECT TimeUnix, ServiceName, MetricName, Value, Attributes FROM ingest_otel.otel_metrics_gauge ORDER BY TimeUnix DESC LIMIT 10;
+SELECT TimeUnix, ServiceName, MetricName, Value, Attributes
+FROM ingest_otel.otel_metrics_gauge
+ORDER BY TimeUnix DESC
+LIMIT 10;
 
 -- Sample sum metrics
-SELECT TimeUnix, ServiceName, MetricName, Value, Attributes FROM ingest_otel.otel_metrics_sum ORDER BY TimeUnix DESC LIMIT 10;
+SELECT TimeUnix, ServiceName, MetricName, Value, Attributes
+FROM ingest_otel.otel_metrics_sum
+ORDER BY TimeUnix DESC
+LIMIT 10;
 
 -- Sample histogram metrics
-SELECT TimeUnix, ServiceName, MetricName, Count, Sum, Min, Max, Attributes FROM ingest_otel.otel_metrics_histogram ORDER BY TimeUnix DESC LIMIT 10;
+SELECT TimeUnix, ServiceName, MetricName, Count, Sum, Min, Max, Attributes
+FROM ingest_otel.otel_metrics_histogram
+ORDER BY TimeUnix DESC
+LIMIT 10;
 
 -- Sample sessions
-SELECT Timestamp, ServiceName, Body, LogAttributes FROM ingest_otel.hyperdx_sessions ORDER BY Timestamp DESC LIMIT 10;
+SELECT Timestamp, ServiceName, Body, LogAttributes
+FROM ingest_otel.hyperdx_sessions
+ORDER BY Timestamp DESC
+LIMIT 10;
 
 
 -- ============================================================================
--- PART 5: CLEANUP (Optional - Use with caution!)
+-- CLEANUP (Optional - Use with caution!)
 -- ============================================================================
 
 -- To remove all RMVs:

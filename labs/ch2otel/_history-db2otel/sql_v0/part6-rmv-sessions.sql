@@ -1,9 +1,12 @@
 -- ============================================================================
--- CHMetric-DX-Converter v2.1.0 - PART 3.8: rmv_pipeline_sessions
+-- CHMetric-DX-Converter v2.1.0 - PART 6: RMV SESSIONS (3.8)
 -- ============================================================================
 
+-- 3.8 rmv_pipeline_sessions - Pipeline Session Aggregation
 CREATE MATERIALIZED VIEW IF NOT EXISTS ingest_otel.rmv_pipeline_sessions
-REFRESH EVERY 10 MINUTE APPEND TO ingest_otel.hyperdx_sessions AS
+REFRESH EVERY 10 MINUTE APPEND
+TO ingest_otel.hyperdx_sessions
+AS
 SELECT
     toDateTime64(max_time, 9) AS Timestamp,
     toDateTime(max_time) AS TimestampTime,
@@ -13,14 +16,29 @@ SELECT
     if(has_error, 'ERROR', 'INFO') AS SeverityText,
     if(has_error, toUInt8(17), toUInt8(9)) AS SeverityNumber,
     'pipeline-session' AS ServiceName,
-    concat('Pipeline Session Summary: ', pipeline_db, ' | views=', toString(view_count), ' | rows=', toString(total_rows), ' | duration=', toString(total_duration_ms), 'ms', if(has_error, ' | HAS ERRORS', '')) AS Body,
+    concat('Pipeline Session Summary: ', pipeline_db,
+           ' | views=', toString(view_count),
+           ' | rows=', toString(total_rows),
+           ' | duration=', toString(total_duration_ms), 'ms',
+           if(has_error, ' | HAS ERRORS', '')) AS Body,
     '' AS ResourceSchemaUrl,
-    map('service.name', 'pipeline-session', 'service.version', '1.0.0', 'deployment.environment', 'production', 'clickhouse.service_id', extract(hostname(), 'c-([a-z]+-[a-z]+-[0-9]+)'), 'clickhouse.replica', getMacro('replica'), 'clickhouse.hostname', hostname(), 'rum.sessionId', session_id) AS ResourceAttributes,
+    map('service.name', 'pipeline-session',
+        'service.version', '1.0.0',
+        'deployment.environment', 'production',
+        'clickhouse.service_id', extract(hostname(), 'c-([a-z]+-[a-z]+-[0-9]+)'),
+        'clickhouse.replica', getMacro('replica'),
+        'clickhouse.hostname', hostname(),
+        'rum.sessionId', session_id) AS ResourceAttributes,
     '' AS ScopeSchemaUrl,
     'session-monitor' AS ScopeName,
     '1.0.0' AS ScopeVersion,
     map() AS ScopeAttributes,
-    map('pipeline_db', pipeline_db, 'view_count', toString(view_count), 'total_rows', toString(total_rows), 'total_duration_ms', toString(total_duration_ms), 'has_error', toString(has_error), 'session_date', toString(session_date)) AS LogAttributes
+    map('pipeline_db', pipeline_db,
+        'view_count', toString(view_count),
+        'total_rows', toString(total_rows),
+        'total_duration_ms', toString(total_duration_ms),
+        'has_error', toString(has_error),
+        'session_date', toString(session_date)) AS LogAttributes
 FROM (
     SELECT
         concat('pipeline_', splitByChar('.', view_name)[1], '_', toString(toDate(event_time_microseconds))) AS session_id,
