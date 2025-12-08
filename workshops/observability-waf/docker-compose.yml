@@ -1,8 +1,11 @@
 services:
-  # HyperDX OpenTelemetry Collector
+  # OpenTelemetry Collector with ClickHouse Exporter
   otel-collector:
-    image: docker.hyperdx.io/hyperdx/hyperdx-otel-collector:latest
+    image: otel/opentelemetry-collector-contrib:latest
     container_name: waf-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
       - "${OTEL_COLLECTOR_PORT_GRPC:-14317}:4317"   # OTLP gRPC
       - "${OTEL_COLLECTOR_PORT_HTTP:-14318}:4318"   # OTLP HTTP
@@ -10,8 +13,7 @@ services:
       - CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE}
-      - OTEL_EXPORTER_OTLP_HEADERS=authorization=${CLICKSTACK_API_KEY}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE}
     restart: unless-stopped
     networks:
       - waf-network
