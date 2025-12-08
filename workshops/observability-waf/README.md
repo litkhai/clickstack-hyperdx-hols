@@ -33,6 +33,7 @@ This workshop simulates a **global multi-cloud retail platform** protected by We
 - **Full OpenTelemetry Integration**: Traces, Logs, and Metrics
 - **Complex Service Dependencies**: Up to 6-depth service call chains
 - **Real-time DDoS Simulation**: Periodic attack spike patterns
+- **Realistic False Negative Scenarios**: Configurable rates for attacks passing through WAF (2% default)
 
 ---
 
@@ -184,6 +185,97 @@ WAFs inspect each request independently without maintaining session state:
 - **Azure WAF**: Stateless by design
 - **GCP Cloud Armor**: Request-level inspection only
 - **Cloudflare WAF**: Rule-based without session context
+
+---
+
+## WAF False Negatives (Security Misses)
+
+In real-world scenarios, WAFs are not 100% effective and may allow some attacks to pass through. This workshop simulates realistic **False Negative** scenarios to demonstrate:
+
+### What Are False Negatives?
+
+A **False Negative** occurs when a WAF fails to detect and block a malicious request, allowing it to reach backend services. This happens due to:
+
+1. **Signature Bypass**: Attackers obfuscate payloads to evade pattern matching
+2. **Zero-Day Exploits**: New attack patterns not yet in WAF rules
+3. **Rate Limiting**: High traffic volume causing inspection gaps
+4. **Configuration Issues**: Overly permissive rules or disabled protections
+
+### False Negative Rates in This Workshop
+
+The system uses severity-based False Negative rates that mirror real-world WAF performance:
+
+| Attack Severity | False Negative Rate | Description |
+|----------------|---------------------|-------------|
+| **Critical** | 1% (0.5× base) | SQL Injection, RCE - highest detection priority |
+| **High** | 2% (1.0× base) | XSS, CSRF - standard detection |
+| **Medium** | 4% (2.0× base) | Path Traversal - moderate detection |
+| **Low** | 6% (3.0× base) | Suspicious patterns - lower priority |
+| **DDoS** | 10% | Volume-based attacks are harder to block completely |
+
+### Configuration
+
+Adjust False Negative rates in [.env](.env):
+
+```bash
+# Base rate for attack bypass (affects high severity)
+WAF_FALSE_NEGATIVE_RATE=0.02  # 2% default
+
+# Specific rate for DDoS attacks
+DDOS_FALSE_NEGATIVE_RATE=0.10  # 10% default
+```
+
+### Detecting False Negatives in HyperDX
+
+**Query 1: Find attacks that passed through WAF**
+```sql
+SELECT
+    SeverityText,
+    Body,
+    Attributes['attack.name'] AS attack_name,
+    Attributes['attack.severity'] AS severity,
+    Attributes['client.ip'] AS client_ip,
+    Attributes['http.url'] AS url,
+    Timestamp
+FROM otel_logs
+WHERE Attributes['waf.false_negative'] = 'true'
+ORDER BY Timestamp DESC
+LIMIT 100;
+```
+
+**Query 2: False Negative rate by attack type**
+```sql
+SELECT
+    Attributes['attack.type'] AS attack_type,
+    countIf(Attributes['waf.false_negative'] = 'true') AS false_negatives,
+    count(*) AS total_attacks,
+    round(false_negatives / total_attacks * 100, 2) AS miss_rate_percent
+FROM otel_logs
+WHERE Attributes['attack.type'] != ''
+GROUP BY attack_type
+ORDER BY miss_rate_percent DESC;
+```
+
+**Query 3: Backend services processing malicious requests**
+```sql
+SELECT
+    ResourceAttributes['service.name'] AS backend_service,
+    count(*) AS malicious_requests,
+    uniq(Attributes['client.ip']) AS unique_attackers,
+    groupArray(DISTINCT Attributes['security.attack_type']) AS attack_types
+FROM otel_traces
+WHERE Attributes['security.false_negative'] = 'true'
+GROUP BY backend_service
+ORDER BY malicious_requests DESC;
+```
+
+### Why This Matters
+
+Understanding False Negatives helps:
+- **Security Teams**: Identify WAF rule gaps and tune detection
+- **SRE Teams**: Detect anomalous behavior in backend services
+- **Incident Response**: Investigate attacks that bypassed perimeter defenses
+- **Compliance**: Document security control effectiveness
 
 ---
 
@@ -600,6 +692,8 @@ Restart services:
 |----------|-------------|---------|
 | `EVENTS_PER_SECOND` | Events generated per second | `100` |
 | `NORMAL_TRAFFIC_RATIO` | Percentage of normal traffic | `0.80` |
+| `WAF_FALSE_NEGATIVE_RATE` | Base rate for attacks passing through WAF | `0.02` (2%) |
+| `DDOS_FALSE_NEGATIVE_RATE` | Rate for DDoS attacks passing through | `0.10` (10%) |
 | `AWS_RATIO` | AWS traffic weight | `6` |
 | `AZURE_RATIO` | Azure traffic weight | `1` |
 | `GCP_RATIO` | GCP traffic weight | `3` |
@@ -674,6 +768,7 @@ ClickHouse Cloud와 HyperDX를 활용한 웹 애플리케이션 방화벽(WAF) �
 - **완전한 OpenTelemetry 통합**: Traces, Logs, Metrics
 - **복잡한 서비스 의존성**: 최대 6단계 서비스 호출 체인
 - **실시간 DDoS 시뮬레이션**: 주기적 공격 급증 패턴
+- **현실적인 False Negative 시나리오**: WAF를 통과하는 공격 비율 설정 가능 (기본 2%)
 
 ---
 
@@ -825,6 +920,97 @@ WAF는 세션 상태를 유지하지 않고 각 요청을 독립적으로 검사
 - **Azure WAF**: 설계상 무상태
 - **GCP Cloud Armor**: 요청 수준 검사만
 - **Cloudflare WAF**: 세션 컨텍스트 없이 규칙 기반
+
+---
+
+## WAF False Negative (보안 미탐)
+
+실제 환경에서 WAF는 100% 효과적이지 않으며, 일부 공격이 통과할 수 있습니다. 본 워크샵은 현실적인 **False Negative** 시나리오를 시뮬레이션하여 다음을 보여줍니다:
+
+### False Negative란?
+
+**False Negative**는 WAF가 악의적인 요청을 탐지하고 차단하는 데 실패하여 백엔드 서비스에 도달하도록 허용하는 경우입니다. 다음과 같은 이유로 발생합니다:
+
+1. **시그니처 우회**: 공격자가 패턴 매칭을 회피하기 위해 페이로드를 난독화
+2. **제로데이 익스플로잇**: WAF 규칙에 아직 없는 새로운 공격 패턴
+3. **속도 제한**: 높은 트래픽 볼륨으로 인한 검사 공백
+4. **설정 문제**: 지나치게 관대한 규칙 또는 비활성화된 보호
+
+### 본 워크샵의 False Negative 비율
+
+시스템은 실제 WAF 성능을 반영하는 심각도 기반 False Negative 비율을 사용합니다:
+
+| 공격 심각도 | False Negative 비율 | 설명 |
+|-----------|-------------------|------|
+| **Critical** | 1% (0.5× 기본) | SQL Injection, RCE - 최고 탐지 우선순위 |
+| **High** | 2% (1.0× 기본) | XSS, CSRF - 표준 탐지 |
+| **Medium** | 4% (2.0× 기본) | Path Traversal - 중간 탐지 |
+| **Low** | 6% (3.0× 기본) | 의심스러운 패턴 - 낮은 우선순위 |
+| **DDoS** | 10% | 볼륨 기반 공격은 완전히 차단하기 어려움 |
+
+### 설정
+
+[.env](.env) 파일에서 False Negative 비율을 조정합니다:
+
+```bash
+# 공격 우회를 위한 기본 비율 (high severity에 영향)
+WAF_FALSE_NEGATIVE_RATE=0.02  # 기본값 2%
+
+# DDoS 공격에 대한 특정 비율
+DDOS_FALSE_NEGATIVE_RATE=0.10  # 기본값 10%
+```
+
+### HyperDX에서 False Negative 탐지
+
+**쿼리 1: WAF를 통과한 공격 찾기**
+```sql
+SELECT
+    SeverityText,
+    Body,
+    Attributes['attack.name'] AS attack_name,
+    Attributes['attack.severity'] AS severity,
+    Attributes['client.ip'] AS client_ip,
+    Attributes['http.url'] AS url,
+    Timestamp
+FROM otel_logs
+WHERE Attributes['waf.false_negative'] = 'true'
+ORDER BY Timestamp DESC
+LIMIT 100;
+```
+
+**쿼리 2: 공격 유형별 False Negative 비율**
+```sql
+SELECT
+    Attributes['attack.type'] AS attack_type,
+    countIf(Attributes['waf.false_negative'] = 'true') AS false_negatives,
+    count(*) AS total_attacks,
+    round(false_negatives / total_attacks * 100, 2) AS miss_rate_percent
+FROM otel_logs
+WHERE Attributes['attack.type'] != ''
+GROUP BY attack_type
+ORDER BY miss_rate_percent DESC;
+```
+
+**쿼리 3: 악의적 요청을 처리하는 백엔드 서비스**
+```sql
+SELECT
+    ResourceAttributes['service.name'] AS backend_service,
+    count(*) AS malicious_requests,
+    uniq(Attributes['client.ip']) AS unique_attackers,
+    groupArray(DISTINCT Attributes['security.attack_type']) AS attack_types
+FROM otel_traces
+WHERE Attributes['security.false_negative'] = 'true'
+GROUP BY backend_service
+ORDER BY malicious_requests DESC;
+```
+
+### 왜 중요한가
+
+False Negative 이해는 다음에 도움이 됩니다:
+- **보안팀**: WAF 규칙 공백 식별 및 탐지 튜닝
+- **SRE팀**: 백엔드 서비스의 비정상적인 동작 탐지
+- **인시던트 대응**: 경계 방어를 우회한 공격 조사
+- **규정 준수**: 보안 제어 효과성 문서화
 
 ---
 
@@ -1241,6 +1427,8 @@ EVENTS_PER_SECOND=50  # 기본값은 100
 |------|------|--------|
 | `EVENTS_PER_SECOND` | 초당 생성되는 이벤트 수 | `100` |
 | `NORMAL_TRAFFIC_RATIO` | 정상 트래픽 비율 | `0.80` |
+| `WAF_FALSE_NEGATIVE_RATE` | WAF를 통과하는 공격의 기본 비율 | `0.02` (2%) |
+| `DDOS_FALSE_NEGATIVE_RATE` | WAF를 통과하는 DDoS 공격 비율 | `0.10` (10%) |
 | `AWS_RATIO` | AWS 트래픽 가중치 | `6` |
 | `AZURE_RATIO` | Azure 트래픽 가중치 | `1` |
 | `GCP_RATIO` | GCP 트래픽 가중치 | `3` |

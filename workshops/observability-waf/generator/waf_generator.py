@@ -298,6 +298,20 @@ class WAFTelemetryGenerator:
         self.events_per_second = int(os.getenv('EVENTS_PER_SECOND', 100))
         self.normal_ratio = float(os.getenv('NORMAL_TRAFFIC_RATIO', 0.80))
 
+        # WAF Detection Configuration - False Negative Rates (attacks that pass through)
+        self.waf_false_negative_rate = float(os.getenv('WAF_FALSE_NEGATIVE_RATE', 0.02))  # 2% default
+
+        # Detection rates by severity (how often WAF misses attacks)
+        self.false_negative_by_severity = {
+            "critical": self.waf_false_negative_rate * 0.5,  # 1% miss rate for critical
+            "high": self.waf_false_negative_rate,            # 2% miss rate for high
+            "medium": self.waf_false_negative_rate * 2.0,    # 4% miss rate for medium
+            "low": self.waf_false_negative_rate * 3.0        # 6% miss rate for low
+        }
+
+        # Special case: DDoS is harder to block completely
+        self.ddos_false_negative_rate = float(os.getenv('DDOS_FALSE_NEGATIVE_RATE', 0.10))  # 10% default
+
         # Cloud provider ratios (normalize to 1.0)
         aws_ratio = int(os.getenv('AWS_RATIO', 6))
         azure_ratio = int(os.getenv('AZURE_RATIO', 1))
@@ -320,6 +334,13 @@ class WAFTelemetryGenerator:
         print(f"✅ WAF Generator initialized:")
         print(f"   - Events/sec: {self.events_per_second}")
         print(f"   - Normal traffic: {self.normal_ratio * 100}%")
+        print(f"   - WAF False Negative Rate: {self.waf_false_negative_rate * 100}%")
+        print(f"   - DDoS False Negative Rate: {self.ddos_false_negative_rate * 100}%")
+        print(f"   - Detection by severity:")
+        print(f"     • Critical: {(1 - self.false_negative_by_severity['critical']) * 100:.1f}% blocked")
+        print(f"     • High: {(1 - self.false_negative_by_severity['high']) * 100:.1f}% blocked")
+        print(f"     • Medium: {(1 - self.false_negative_by_severity['medium']) * 100:.1f}% blocked")
+        print(f"     • Low: {(1 - self.false_negative_by_severity['low']) * 100:.1f}% blocked")
         print(f"   - Cloud weights: AWS={self.cloud_weights['aws']:.2f}, "
               f"Azure={self.cloud_weights['azure']:.2f}, GCP={self.cloud_weights['gcp']:.2f}")
 
@@ -634,6 +655,13 @@ class WAFTelemetryGenerator:
         """
         Determine WAF action and calculate threat score and response time
 
+        Implements realistic WAF behavior with configurable False Negative rates:
+        - Critical attacks: ~99% blocked (1% pass through)
+        - High severity: ~98% blocked (2% pass through)
+        - Medium severity: ~96% blocked (4% pass through)
+        - Low severity: ~94% blocked (6% pass through)
+        - DDoS: ~90% blocked (10% pass through)
+
         Returns:
             (action, threat_score, response_time_ms)
         """
@@ -642,25 +670,32 @@ class WAFTelemetryGenerator:
             attack_type = request.get("attack_type", "unknown")
 
             if attack_type == "ddos":
-                # DDoS: sometimes gets through initially
-                action = "block" if random.random() > 0.1 else "allow"
+                # DDoS: harder to block completely due to volume
+                false_negative_rate = self.ddos_false_negative_rate
+                action = "allow" if random.random() < false_negative_rate else "block"
                 threat_score = random.uniform(80, 95)
                 response_time = random.uniform(5, 15)  # Fast decision
             else:
-                # Other attacks: high block rate
-                action = "block" if random.random() > 0.05 else "allow"
+                # Other attacks: severity-based detection
                 severity = request["attack_info"]["severity"]
+                false_negative_rate = self.false_negative_by_severity.get(severity, self.waf_false_negative_rate)
 
+                # WAF misses some attacks (False Negative)
+                action = "allow" if random.random() < false_negative_rate else "block"
+
+                # Threat score correlates with severity
                 if severity == "critical":
                     threat_score = random.uniform(90, 100)
                 elif severity == "high":
                     threat_score = random.uniform(75, 90)
-                else:
+                elif severity == "medium":
                     threat_score = random.uniform(60, 75)
+                else:  # low
+                    threat_score = random.uniform(45, 60)
 
                 response_time = random.uniform(10, 50)  # Slower for complex checks
         else:
-            # Normal traffic
+            # Normal traffic - should always be allowed
             action = "allow"
             threat_score = random.uniform(0, 20)
             response_time = random.uniform(1, 5)  # Fast for normal traffic
@@ -790,13 +825,20 @@ class WAFTelemetryGenerator:
 
                     # Log allowed request (only for attacks that were allowed to see false negatives)
                     if request["is_attack"]:
-                        logger.info(
-                            f"Request allowed despite threat",
+                        logger.warning(
+                            f"FALSE NEGATIVE: {request['attack_info']['name']} attack passed through WAF",
                             extra={
                                 "waf.action": "allow",
+                                "waf.false_negative": True,
                                 "threat.score": threat_score,
                                 "attack.type": request.get("attack_type", "unknown"),
-                                "client.ip": request["source_ip"]
+                                "attack.name": request["attack_info"]["name"],
+                                "attack.severity": request["attack_info"]["severity"],
+                                "attack.owasp_id": request["attack_info"]["owasp_id"],
+                                "attack.payload": request.get("payload", "")[:100],
+                                "client.ip": request["source_ip"],
+                                "http.method": request["method"],
+                                "http.url": request["path"]
                             }
                         )
 
@@ -824,6 +866,15 @@ class WAFTelemetryGenerator:
                     backend_client_span.set_attribute("http.method", service_info["method"])
                     backend_client_span.set_attribute("http.url", service_info["path"])
 
+                    # Add security context if this is a False Negative
+                    if request["is_attack"]:
+                        backend_client_span.set_attribute("security.false_negative", True)
+                        backend_client_span.set_attribute("security.attack_type", request["attack_type"])
+                        backend_client_span.set_attribute("security.attack_name", request["attack_info"]["name"])
+                        backend_client_span.set_attribute("security.threat_score", threat_score)
+                        backend_client_span.set_attribute("security.severity", request["attack_info"]["severity"])
+                        backend_client_span.set_attribute("security.owasp_id", request["attack_info"]["owasp_id"])
+
                     # Simulate the backend service call
                     backend_processing_time = self._simulate_backend_call(
                         service_name,
@@ -832,15 +883,28 @@ class WAFTelemetryGenerator:
                         trace.set_span_in_context(backend_client_span)
                     )
 
-                    logger.info(
-                        f"Routed to {service_name}",
-                        extra={
-                            "backend.service": service_name,
-                            "backend.path": service_info["path"],
-                            "backend.method": service_info["method"],
-                            "backend.processing_time_ms": backend_processing_time
-                        }
-                    )
+                    log_extra = {
+                        "backend.service": service_name,
+                        "backend.path": service_info["path"],
+                        "backend.method": service_info["method"],
+                        "backend.processing_time_ms": backend_processing_time
+                    }
+
+                    if request["is_attack"]:
+                        log_extra.update({
+                            "security.false_negative": True,
+                            "security.attack_type": request["attack_type"],
+                            "security.threat_score": threat_score
+                        })
+                        logger.warning(
+                            f"Routed FALSE NEGATIVE to {service_name}",
+                            extra=log_extra
+                        )
+                    else:
+                        logger.info(
+                            f"Routed to {service_name}",
+                            extra=log_extra
+                        )
 
         # Record metrics using cloud-specific meters
         cloud_meters = self.cloud_providers[cloud_provider]
