@@ -4,82 +4,82 @@
 
 Version: 1.0.0
 
-## 개요
+## Overview
 
-CH2OTEL은 ClickHouse Cloud의 시스템 메트릭과 로그를 OpenTelemetry 표준 형식으로 자동 변환하는 도구입니다. Refreshable Materialized Views (RMV)를 활용하여 ClickHouse 내부의 시스템 테이블 데이터를 OTEL 형식으로 변환하고 저장합니다.
+CH2OTEL automatically converts ClickHouse Cloud system metrics and logs into OpenTelemetry standard format. It leverages Refreshable Materialized Views (RMVs) to transform data from ClickHouse system tables into OTEL format and store them.
 
-### 주요 특징
+### Key Features
 
-- 🔄 **자동 변환**: 시스템 메트릭을 OTEL 형식으로 자동 변환
-- 📊 **표준 준수**: OpenTelemetry Logs, Traces, Metrics 표준 완전 지원
-- ⚡ **실시간 처리**: RMV 기반의 자동 갱신 (기본 10분 주기)
-- 🎯 **자기 서비스**: 현재 서비스 전용 모니터링 (collector 불필요)
-- 🔒 **안전한 설정**: 민감 정보 분리 관리
+- 🔄 **Automatic Conversion**: Automatically converts system metrics to OTEL format
+- 📊 **Standards Compliant**: Full support for OpenTelemetry Logs, Traces, and Metrics standards
+- ⚡ **Real-time Processing**: RMV-based automatic refresh (default: every 10 minutes)
+- 🎯 **Self-Service**: Self-service monitoring (no collector required)
+- 🔒 **Secure Configuration**: Separated management of sensitive information
 
-### 제한사항
+### Limitations
 
-- ⚠️ **자기 서비스 전용**: 현재 서비스만 모니터링 가능 (org 내 다른 서비스 미지원)
-- 📌 **CHC 전용**: ClickHouse Cloud 환경에서만 동작
+- ⚠️ **Self-Service Only**: Monitors current service only (other services in org not supported)
+- 📌 **CHC Only**: Works only in ClickHouse Cloud environment
 
-## 시스템 요구사항
+## Requirements
 
-- ClickHouse Cloud 서비스
-- clickhouse-client (로컬 설치 필요)
+- ClickHouse Cloud service
+- clickhouse-client (local installation required)
 - Bash 4.0+
 - curl
 
-## 설치 방법
+## Installation
 
-### 1. Quick Start
+### Quick Start
 
 ```bash
 cd /path/to/ch2otel
 ./setup-ch2otel.sh
 ```
 
-### 2. 설치 단계
+### Installation Steps
 
-setup 스크립트는 다음 단계를 안내합니다:
+The setup script guides you through the following steps:
 
-1. **ClickHouse Cloud 연결 정보 입력**
-   - 호스트 (예: abc123.us-east-1.aws.clickhouse.cloud)
-   - 비밀번호
+1. **ClickHouse Cloud Connection**
+   - Host (e.g., abc123.us-east-1.aws.clickhouse.cloud)
+   - Password
 
-2. **Database 설정**
-   - Database 이름 (기본값: `ch2otel`)
+2. **Database Configuration**
+   - Database name (default: `ch2otel`)
 
-3. **수집 설정**
-   - Refresh 주기 (기본값: 10분)
-   - Lookback Interval (자동 계산: Refresh 주기 + 5분)
+3. **Collection Configuration**
+   - Refresh interval (default: 10 minutes)
+   - Lookback interval (auto-calculated: refresh interval + 5 minutes)
 
-4. **데이터 보관 설정**
-   - 보관 기간 (기본값: 30일)
+4. **Data Retention Configuration**
+   - Retention period (default: 30 days)
 
-### 3. 설치 후 생성되는 파일
+### Generated Files
 
 ```
 ch2otel/
-├── .credentials          # 인증 정보 (Git 제외)
-├── ch2otel.conf         # 설정 파일 (Git 제외)
-├── ch2otel-setup.sql    # 생성된 SQL 스크립트 (Git 제외)
-├── setup-ch2otel.sh     # Setup 스크립트
+├── .credentials          # Authentication info (Git excluded)
+├── ch2otel.conf         # Configuration file (Git excluded)
+├── ch2otel-setup.sql    # Generated SQL script (Git excluded)
+├── setup-ch2otel.sh     # Setup script
 ├── scripts/
-│   ├── status.sh        # 상태 확인
-│   └── refresh.sh       # 수동 갱신
+│   ├── status.sh        # Status check
+│   └── refresh.sh       # Manual refresh
 ├── sql/
-│   └── ch2otel-template.sql  # SQL 템플릿
-└── archive_sql_v0/      # 이전 버전 (참고용)
+│   └── ch2otel-template.sql  # SQL template
+└── archive_sql_v0/      # Previous version (reference)
 ```
 
-## 사용 방법
+## Usage
 
-### 상태 확인
+### Check Status
 
 ```bash
 ./scripts/status.sh
 ```
 
-출력 예시:
+Output example:
 ```
 ━━━ Tables ━━━
 otel_logs
@@ -95,130 +95,130 @@ rmv_mview_logs      Scheduled  2025-12-08 10:30:00
 rmv_status_logs     Scheduled  2025-12-08 10:30:00
 ```
 
-### 수동 갱신
+### Manual Refresh
 
 ```bash
 ./scripts/refresh.sh
 ```
 
-모든 RMV를 즉시 갱신합니다.
+Refreshes all RMVs immediately.
 
-### SQL로 데이터 조회
+### Query Data with SQL
 
 ```sql
--- 최근 로그 확인
+-- Check recent logs
 SELECT * FROM ch2otel.otel_logs
 ORDER BY Timestamp DESC
 LIMIT 10;
 
--- 최근 트레이스 확인
+-- Check recent traces
 SELECT * FROM ch2otel.otel_traces
 ORDER BY Timestamp DESC
 LIMIT 10;
 
--- 최근 메트릭 확인
+-- Check recent metrics
 SELECT * FROM ch2otel.otel_metrics_gauge
 ORDER BY TimeUnix DESC
 LIMIT 10;
 
--- RMV 상태 확인
+-- Check RMV status
 SELECT * FROM system.view_refreshes
 WHERE database = 'ch2otel';
 ```
 
-## 데이터 구조
+## Data Structure
 
 ### OTEL Tables
 
 | Table | Description | Refresh Source |
 |-------|-------------|----------------|
-| `otel_logs` | OTEL 표준 로그 | system.part_log, system.query_views_log, system.view_refreshes |
-| `otel_traces` | OTEL 표준 트레이스 | (미구현) |
-| `otel_metrics_gauge` | OTEL Gauge 메트릭 | (미구현) |
-| `otel_metrics_sum` | OTEL Sum 메트릭 | (미구현) |
-| `otel_metrics_histogram` | OTEL Histogram 메트릭 | (미구현) |
-| `hyperdx_sessions` | HyperDX 세션 데이터 | (미구현) |
+| `otel_logs` | OTEL standard logs | system.part_log, system.query_views_log, system.view_refreshes |
+| `otel_traces` | OTEL standard traces | (Not implemented) |
+| `otel_metrics_gauge` | OTEL Gauge metrics | (Not implemented) |
+| `otel_metrics_sum` | OTEL Sum metrics | (Not implemented) |
+| `otel_metrics_histogram` | OTEL Histogram metrics | (Not implemented) |
+| `hyperdx_sessions` | HyperDX session data | (Not implemented) |
 
 ### Refreshable Materialized Views
 
 | RMV | Description | Refresh Interval | Target Table |
 |-----|-------------|------------------|--------------|
-| `rmv_part_logs` | Part 이벤트 → 로그 | 10분 | otel_logs |
-| `rmv_mview_logs` | MView 실행 → 로그 | 10분 | otel_logs |
-| `rmv_status_logs` | RMV 상태 → 로그 | 10분 | otel_logs |
+| `rmv_part_logs` | Part events → logs | 10 min | otel_logs |
+| `rmv_mview_logs` | MView execution → logs | 10 min | otel_logs |
+| `rmv_status_logs` | RMV status → logs | 10 min | otel_logs |
 
-## 설정 변경
+## Configuration Changes
 
-### Refresh 주기 변경
+### Change Refresh Interval
 
-1. `ch2otel.conf` 파일 수정:
+1. Edit `ch2otel.conf`:
    ```bash
-   REFRESH_INTERVAL_MINUTES=5  # 10 → 5분으로 변경
+   REFRESH_INTERVAL_MINUTES=5  # Change from 10 to 5 minutes
    ```
 
-2. SQL 스크립트 재생성 및 실행:
-   ```bash
-   ./setup-ch2otel.sh
-   ```
-
-### 데이터 보관 기간 변경
-
-1. `ch2otel.conf` 파일 수정:
-   ```bash
-   DATA_RETENTION_DAYS=60  # 30 → 60일로 변경
-   ```
-
-2. SQL 스크립트 재생성 및 실행:
+2. Regenerate and execute SQL script:
    ```bash
    ./setup-ch2otel.sh
    ```
 
-## 문제 해결
+### Change Data Retention Period
 
-### RMV가 실행되지 않을 때
+1. Edit `ch2otel.conf`:
+   ```bash
+   DATA_RETENTION_DAYS=60  # Change from 30 to 60 days
+   ```
+
+2. Regenerate and execute SQL script:
+   ```bash
+   ./setup-ch2otel.sh
+   ```
+
+## Troubleshooting
+
+### RMVs Not Running
 
 ```sql
--- RMV 상태 확인
+-- Check RMV status
 SELECT view, status, exception
 FROM system.view_refreshes
 WHERE database = 'ch2otel';
 
--- RMV 수동 실행
+-- Manual RMV execution
 SYSTEM REFRESH VIEW ch2otel.rmv_part_logs;
 ```
 
-### 연결 오류
+### Connection Error
 
 ```bash
-# 인증 정보 확인
+# Check credentials
 source .credentials
 echo $CH_HOST
 echo $CH_USER
 
-# 연결 테스트
+# Test connection
 clickhouse-client --host=$CH_HOST --user=$CH_USER --password=$CH_PASSWORD --secure --query="SELECT version()"
 ```
 
-### 데이터가 수집되지 않을 때
+### No Data Collection
 
 ```sql
--- 시스템 테이블에 데이터가 있는지 확인
+-- Check if system tables have data
 SELECT count() FROM system.part_log WHERE event_time >= now() - INTERVAL 1 HOUR;
 SELECT count() FROM system.query_views_log WHERE event_time >= now() - INTERVAL 1 HOUR;
 
--- OTEL 테이블에 데이터가 있는지 확인
+-- Check if OTEL tables have data
 SELECT count() FROM ch2otel.otel_logs WHERE TimestampTime >= now() - INTERVAL 1 HOUR;
 ```
 
-## 제거 방법
+## Uninstallation
 
 ```sql
--- 모든 RMV 삭제
+-- Drop all RMVs
 DROP VIEW IF EXISTS ch2otel.rmv_part_logs;
 DROP VIEW IF EXISTS ch2otel.rmv_mview_logs;
 DROP VIEW IF EXISTS ch2otel.rmv_status_logs;
 
--- 모든 테이블 삭제
+-- Drop all tables
 DROP TABLE IF EXISTS ch2otel.otel_logs;
 DROP TABLE IF EXISTS ch2otel.otel_traces;
 DROP TABLE IF EXISTS ch2otel.otel_metrics_gauge;
@@ -228,23 +228,23 @@ DROP TABLE IF EXISTS ch2otel.otel_metrics_summary;
 DROP TABLE IF EXISTS ch2otel.otel_metrics_exponentialhistogram;
 DROP TABLE IF EXISTS ch2otel.hyperdx_sessions;
 
--- Database 삭제
+-- Drop database
 DROP DATABASE IF EXISTS ch2otel;
 ```
 
-## 로드맵
+## Roadmap
 
-### v1.1 (계획)
-- [ ] Traces RMV 구현 (rmv_pipeline_traces)
-- [ ] Metrics RMVs 구현 (gauge, sum, histogram)
-- [ ] Sessions RMV 구현 (rmv_pipeline_sessions)
+### v1.1 (Planned)
+- [ ] Implement Traces RMV (rmv_pipeline_traces)
+- [ ] Implement Metrics RMVs (gauge, sum, histogram)
+- [ ] Implement Sessions RMV (rmv_pipeline_sessions)
 
-### v2.0 (계획)
-- [ ] Collector 기반 구현 (org 내 다른 서비스 지원)
-- [ ] 멀티 서비스 모니터링
-- [ ] Alert 기능
+### v2.0 (Planned)
+- [ ] Collector-based implementation (support for other services in org)
+- [ ] Multi-service monitoring
+- [ ] Alert functionality
 
-## 참고 자료
+## References
 
 - [OpenTelemetry Specification](https://opentelemetry.io/docs/specs/otel/)
 - [ClickHouse Refreshable Materialized Views](https://clickhouse.com/docs/en/materialized-view)
@@ -254,14 +254,14 @@ DROP DATABASE IF EXISTS ch2otel;
 
 MIT License
 
-## 기여
+## Contributing
 
-이슈 및 PR은 환영합니다!
+Issues and PRs are welcome!
 
-## 버전 히스토리
+## Version History
 
-- **v1.0.0** (2025-12-08): 초기 릴리스
-  - 기본 OTEL 테이블 구조
-  - 로그 수집 RMVs (part_logs, mview_logs, status_logs)
-  - Interactive setup 스크립트
-  - 관리 스크립트 (status, refresh)
+- **v1.0.0** (2025-12-08): Initial release
+  - Basic OTEL table structure
+  - Log collection RMVs (part_logs, mview_logs, status_logs)
+  - Interactive setup script
+  - Management scripts (status, refresh)
