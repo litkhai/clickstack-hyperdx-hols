@@ -1,0 +1,31 @@
+# AWS Configuration
+aws_region = "ap-northeast-2"
+environment = "demo"
+
+# User-defined Tags
+user_name    = "John Doe"
+user_contact = "john.doe@example.com"
+application  = "o11y-vector-ai-demo"
+end_date     = "2025-12-31"
+
+# Network Configuration
+vpc_id    = "vpc-xxxxxxxxx"
+subnet_id = "subnet-xxxxxxxxx"
+
+# EC2 Configuration
+ami_id        = "ami-086cae3329a3f7d75"  # Ubuntu 22.04 LTS in ap-northeast-2
+instance_type = "t3.large"
+
+# SSH Configuration
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2E... your-public-key"
+allowed_ssh_cidr = ["0.0.0.0/0"]  # Restrict this in production!
+
+# ClickHouse Cloud Configuration
+clickhouse_host = "your-instance.clickhouse.cloud"
+clickhouse_port = "8443"
+clickhouse_user = "default"
+clickhouse_db   = "o11y"
+# Note: clickhouse_password is set via TF_VAR_clickhouse_password environment variable
+
+# OpenAI Configuration
+# Note: openai_api_key is set via TF_VAR_openai_api_key environment variable

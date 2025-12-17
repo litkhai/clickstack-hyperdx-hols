@@ -1,0 +1,141 @@
+-- ===================================================================
+-- 02_vector_tables.sql
+-- Vector Search tables with embeddings and usearch indexes
+-- ===================================================================
+
+-- ===================================================================
+-- LOGS WITH EMBEDDINGS
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS o11y.logs_with_embeddings
+(
+    Timestamp DateTime64(9) CODEC(Delta, ZSTD),
+    TraceId String CODEC(ZSTD),
+    SpanId String CODEC(ZSTD),
+    SeverityText LowCardinality(String),
+    ServiceName LowCardinality(String),
+    Body String CODEC(ZSTD),
+
+    -- Embedding fields
+    embedding Array(Float32) CODEC(ZSTD),
+    embedding_model LowCardinality(String) DEFAULT 'text-embedding-ada-002',
+    embedding_created_at DateTime64(3) DEFAULT now64(3),
+
+    -- Vector Index using usearch
+    INDEX vec_idx embedding TYPE usearch('metric=cosine') GRANULARITY 1
+)
+ENGINE = MergeTree()
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, Timestamp)
+SETTINGS index_granularity = 8192;
+
+-- Additional indexes
+ALTER TABLE o11y.logs_with_embeddings ADD INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1;
+ALTER TABLE o11y.logs_with_embeddings ADD INDEX idx_body Body TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1;
+
+-- ===================================================================
+-- TRACES WITH EMBEDDINGS
+-- Stores trace-level embeddings for anomaly detection
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS o11y.traces_with_embeddings
+(
+    TraceId String CODEC(ZSTD),
+    Timestamp DateTime64(9) CODEC(Delta, ZSTD),
+    ServiceName LowCardinality(String),
+
+    -- Trace summary information
+    span_sequence String CODEC(ZSTD),  -- "checkout -> payment -> inventory"
+    total_duration Int64 CODEC(T64, ZSTD),
+    span_count UInt32,
+    error_count UInt32,
+    error_messages Array(String) CODEC(ZSTD),
+
+    -- Embedding fields
+    embedding Array(Float32) CODEC(ZSTD),
+    embedding_model LowCardinality(String) DEFAULT 'text-embedding-ada-002',
+    embedding_created_at DateTime64(3) DEFAULT now64(3),
+
+    -- Classification labels (for supervised learning)
+    is_anomaly UInt8 DEFAULT 0,
+    anomaly_type LowCardinality(String) DEFAULT '',
+    anomaly_confidence Float32 DEFAULT 0.0,
+
+    -- Vector Index
+    INDEX vec_idx embedding TYPE usearch('metric=cosine') GRANULARITY 1
+)
+ENGINE = MergeTree()
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, Timestamp)
+SETTINGS index_granularity = 8192;
+
+-- Indexes
+ALTER TABLE o11y.traces_with_embeddings ADD INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1;
+ALTER TABLE o11y.traces_with_embeddings ADD INDEX idx_is_anomaly is_anomaly TYPE set(0) GRANULARITY 1;
+
+-- ===================================================================
+-- ERROR PATTERNS
+-- Knowledge base of past error patterns for RAG
+-- ===================================================================
+CREATE TABLE IF NOT EXISTS o11y.error_patterns
+(
+    pattern_id UUID DEFAULT generateUUIDv4() CODEC(ZSTD),
+    created_at DateTime64(3) DEFAULT now64(3) CODEC(Delta, ZSTD),
+    updated_at DateTime64(3) DEFAULT now64(3) CODEC(Delta, ZSTD),
+
+    -- Error information
+    error_signature String CODEC(ZSTD),  -- Unique signature of the error
+    error_message String CODEC(ZSTD),
+    service_name LowCardinality(String),
+    error_type LowCardinality(String),  -- e.g., 'timeout', 'connection_error', 'null_pointer'
+
+    -- Root cause and resolution
+    root_cause String CODEC(ZSTD),
+    resolution String CODEC(ZSTD),
+    resolution_steps Array(String) CODEC(ZSTD),
+
+    -- Metadata
+    occurrence_count UInt32 DEFAULT 1,
+    last_seen DateTime64(3) CODEC(Delta, ZSTD),
+    related_trace_ids Array(String) CODEC(ZSTD),
+    tags Array(String) CODEC(ZSTD),
+    severity LowCardinality(String) DEFAULT 'medium',  -- 'low', 'medium', 'high', 'critical'
+
+    -- Embedding for semantic search
+    embedding Array(Float32) CODEC(ZSTD),
+    embedding_model LowCardinality(String) DEFAULT 'text-embedding-ada-002',
+
+    -- Vector Index
+    INDEX vec_idx embedding TYPE usearch('metric=cosine') GRANULARITY 1
+)
+ENGINE = MergeTree()
+ORDER BY (service_name, created_at)
+SETTINGS index_granularity = 8192;
+
+-- Indexes
+ALTER TABLE o11y.error_patterns ADD INDEX idx_pattern_id pattern_id TYPE bloom_filter(0.01) GRANULARITY 1;
+ALTER TABLE o11y.error_patterns ADD INDEX idx_error_sig error_signature TYPE bloom_filter(0.01) GRANULARITY 1;
+ALTER TABLE o11y.error_patterns ADD INDEX idx_error_msg error_message TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1;
+
+-- ===================================================================
+-- MATERIALIZED VIEWS FOR AUTO-POPULATION
+-- ===================================================================
+
+-- Note: Embeddings are generated by the embedding-pipeline service
+-- These views are placeholders for future real-time embedding integration
+
+-- Example: Track which logs need embeddings
+CREATE MATERIALIZED VIEW IF NOT EXISTS o11y.logs_pending_embeddings
+ENGINE = MergeTree()
+ORDER BY (Timestamp, TraceId, SpanId)
+AS SELECT
+    Timestamp,
+    TraceId,
+    SpanId,
+    SeverityText,
+    ServiceName,
+    Body
+FROM o11y.otel_logs
+WHERE SeverityText IN ('ERROR', 'FATAL', 'CRITICAL', 'WARNING')
+    AND (TraceId, SpanId) NOT IN (
+        SELECT TraceId, SpanId
+        FROM o11y.logs_with_embeddings
+    );

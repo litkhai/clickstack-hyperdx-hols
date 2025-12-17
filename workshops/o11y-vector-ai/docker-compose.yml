@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.93.0
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./hyperdx/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics
+    environment:
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
+    networks:
+      - o11y-network
+    restart: unless-stopped
+
+  # Sample E-commerce Application
+  sample-app:
+    build:
+      context: ./sample-app
+      dockerfile: Dockerfile
+    container_name: sample-app
+    ports:
+      - "8000:8000"
+    environment:
+      - OTEL_SERVICE_NAME=ecommerce-api
+      - OTEL_SERVICE_VERSION=1.0.0
+      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
+      - ENVIRONMENT=production
+      - PORT=8000
+      - HOST=0.0.0.0
+    depends_on:
+      - otel-collector
+    networks:
+      - o11y-network
+    restart: unless-stopped
+
+  # Data Generator
+  data-generator:
+    build:
+      context: ./data-generator
+      dockerfile: Dockerfile
+    container_name: data-generator
+    environment:
+      - SAMPLE_APP_URL=http://sample-app:8000
+      - CONFIG_FILE=config.yaml
+    depends_on:
+      - sample-app
+    networks:
+      - o11y-network
+    restart: unless-stopped
+
+  # Embedding Pipeline
+  embedding-pipeline:
+    build:
+      context: ./embedding-pipeline
+      dockerfile: Dockerfile
+    container_name: embedding-pipeline
+    environment:
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CONFIG_FILE=config.yaml
+    depends_on:
+      - otel-collector
+    networks:
+      - o11y-network
+    restart: unless-stopped
+
+networks:
+  o11y-network:
+    driver: bridge

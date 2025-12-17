@@ -1,0 +1,89 @@
+# Traffic Generation Configuration
+generation:
+  rate_per_minute: 60  # Target requests per minute
+  duration_minutes: 0  # 0 = run indefinitely
+
+# Traffic pattern distribution
+patterns:
+  normal_flow: 0.70      # 70% normal user journey
+  error_injection: 0.15  # 15% intentional errors
+  anomaly: 0.10          # 10% anomalous patterns
+  edge_cases: 0.05       # 5% edge cases
+
+# Error scenarios
+error_scenarios:
+  - name: "payment_timeout"
+    description: "Payment Gateway timeout - DB Connection Pool exhaustion"
+    trigger_rate: 0.05
+    root_cause: "inventory_service_db_pool_exhaustion"
+    endpoints: ["/checkout", "/payment"]
+
+  - name: "cascade_failure"
+    description: "Inventory → Payment → Checkout cascade failure"
+    trigger_rate: 0.02
+    root_cause: "inventory_service_memory_leak"
+    endpoints: ["/inventory/check", "/checkout", "/payment"]
+
+  - name: "intermittent_error"
+    description: "Intermittent 500 errors"
+    trigger_rate: 0.03
+    root_cause: "race_condition_in_cart_update"
+    endpoints: ["/cart/add"]
+
+  - name: "database_timeout"
+    description: "Database timeout on product listing"
+    trigger_rate: 0.05
+    root_cause: "slow_query_on_products_table"
+    endpoints: ["/products"]
+
+# User journey scenarios
+journeys:
+  - name: "happy_path"
+    weight: 0.60
+    steps:
+      - endpoint: "/products"
+        delay_ms: [500, 2000]
+      - endpoint: "/products/{product_id}"
+        delay_ms: [1000, 3000]
+      - endpoint: "/cart/add"
+        delay_ms: [500, 1500]
+      - endpoint: "/cart/{user_id}"
+        delay_ms: [300, 1000]
+      - endpoint: "/checkout"
+        delay_ms: [1000, 2000]
+      - endpoint: "/payment"
+        delay_ms: [500, 1500]
+
+  - name: "browse_only"
+    weight: 0.25
+    steps:
+      - endpoint: "/products"
+        delay_ms: [500, 2000]
+      - endpoint: "/products/{product_id}"
+        delay_ms: [1000, 3000]
+      - endpoint: "/products/{product_id}"
+        delay_ms: [1000, 3000]
+
+  - name: "cart_abandonment"
+    weight: 0.10
+    steps:
+      - endpoint: "/products"
+        delay_ms: [500, 2000]
+      - endpoint: "/products/{product_id}"
+        delay_ms: [1000, 3000]
+      - endpoint: "/cart/add"
+        delay_ms: [500, 1500]
+      - endpoint: "/cart/{user_id}"
+        delay_ms: [300, 1000]
+
+  - name: "rapid_retry"
+    weight: 0.05
+    steps:
+      - endpoint: "/products/{product_id}"
+        delay_ms: [100, 300]
+      - endpoint: "/products/{product_id}"
+        delay_ms: [100, 300]
+      - endpoint: "/products/{product_id}"
+        delay_ms: [100, 300]
+      - endpoint: "/products/{product_id}"
+        delay_ms: [100, 300]
