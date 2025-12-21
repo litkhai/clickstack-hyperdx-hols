@@ -1,0 +1,75 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+exporters:
+  # ClickHouse exporter for traces (ClickStack/HyperDX compatible schema)
+  clickhouse/traces:
+    endpoint: tcp://${env:CH_HOST}:9440?secure=true
+    database: ${env:CH_DATABASE}
+    username: ${env:CH_USER}
+    password: ${env:CH_PASSWORD}
+    traces_table_name: otel_traces
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+  # ClickHouse exporter for logs (ClickStack/HyperDX compatible schema)
+  clickhouse/logs:
+    endpoint: tcp://${env:CH_HOST}:9440?secure=true
+    database: ${env:CH_DATABASE}
+    username: ${env:CH_USER}
+    password: ${env:CH_PASSWORD}
+    logs_table_name: otel_logs
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+  # ClickHouse exporter for metrics (ClickStack/HyperDX compatible schema)
+  clickhouse/metrics:
+    endpoint: tcp://${env:CH_HOST}:9440?secure=true
+    database: ${env:CH_DATABASE}
+    username: ${env:CH_USER}
+    password: ${env:CH_PASSWORD}
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+  # Logging for debugging
+  logging:
+    loglevel: info
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouse/traces, logging]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouse/logs, logging]
+
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouse/metrics, logging]

@@ -1,299 +1,360 @@
-"""
-E-commerce Sample Application with OpenTelemetry
-"""
-import os
-import sys
+from fastapi import FastAPI, Request, Query, HTTPException
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.sdk.resources import Resource
+
+# Logging imports
 import logging
-import time
+from opentelemetry import _logs
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+
+# Metrics imports
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+
 import random
-import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from dotenv import load_dotenv
+import time
+import os
+import uuid
+from datetime import datetime
+import requests
 
-# Load environment variables
-load_dotenv()
+# Setup OpenTelemetry
+resource = Resource.create({
+    "service.name": "sample-ecommerce-app",
+    "service.version": "1.0.0"
+})
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+trace.set_tracer_provider(TracerProvider(resource=resource))
+tracer = trace.get_tracer(__name__)
+
+# OTLP Trace Exporter (HTTP)
+otlp_trace_exporter = OTLPSpanExporter(
+    endpoint="http://otel-collector:4318/v1/traces"
 )
+
+span_processor = BatchSpanProcessor(otlp_trace_exporter)
+trace.get_tracer_provider().add_span_processor(span_processor)
+
+# Setup Logging with OpenTelemetry
+logger_provider = LoggerProvider(resource=resource)
+_logs.set_logger_provider(logger_provider)
+
+# OTLP Log Exporter (HTTP)
+otlp_log_exporter = OTLPLogExporter(
+    endpoint="http://otel-collector:4318/v1/logs"
+)
+
+log_processor = BatchLogRecordProcessor(otlp_log_exporter)
+logger_provider.add_log_record_processor(log_processor)
+
+# Attach OTEL handler to root logger
+handler = LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
+logging.getLogger().addHandler(handler)
+logging.getLogger().setLevel(logging.INFO)
+
+# Create a logger instance
 logger = logging.getLogger(__name__)
 
-# Import OpenTelemetry configuration
-from otel_config import setup_otel, instrument_fastapi, get_tracer
+# Setup Metrics
+metric_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint="http://otel-collector:4318/v1/metrics"),
+    export_interval_millis=5000
+)
+meter_provider = MeterProvider(metric_readers=[metric_reader], resource=resource)
+metrics.set_meter_provider(meter_provider)
+meter = metrics.get_meter(__name__)
 
-# Setup OpenTelemetry before creating FastAPI app
-setup_otel()
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifecycle manager for the application"""
-    logger.info("Starting E-commerce Sample Application...")
-    yield
-    logger.info("Shutting down E-commerce Sample Application...")
-
-# Create FastAPI app
-app = FastAPI(
-    title="E-commerce API",
-    description="Sample E-commerce API for O11y Vector AI Demo",
-    version="1.0.0",
-    lifespan=lifespan
+# Create metrics
+request_counter = meter.create_counter(
+    "http_requests_total",
+    description="Total HTTP requests",
+    unit="1"
+)
+response_time_histogram = meter.create_histogram(
+    "http_response_time_ms",
+    description="HTTP response time in milliseconds",
+    unit="ms"
+)
+active_sessions_gauge = meter.create_up_down_counter(
+    "active_sessions",
+    description="Number of active sessions",
+    unit="1"
+)
+cart_items_gauge = meter.create_up_down_counter(
+    "cart_items_total",
+    description="Total items in cart",
+    unit="1"
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Session storage (in-memory for demo)
+sessions = {}
 
-# Instrument FastAPI with OpenTelemetry
-instrument_fastapi(app)
+# FastAPI app
+app = FastAPI(title="E-commerce Demo")
 
-# Get tracer for manual instrumentation
-tracer = get_tracer()
+# Session middleware
+@app.middleware("http")
+async def session_middleware(request: Request, call_next):
+    # Get or create session
+    session_id = request.headers.get("X-Session-ID") or str(uuid.uuid4())
+    request.state.session_id = session_id
 
-# In-memory data store (for demo purposes)
-products_db = [
-    {"id": 1, "name": "Laptop Pro", "price": 1299.99, "stock": 50},
-    {"id": 2, "name": "Wireless Mouse", "price": 29.99, "stock": 200},
-    {"id": 3, "name": "Mechanical Keyboard", "price": 89.99, "stock": 150},
-    {"id": 4, "name": "USB-C Hub", "price": 49.99, "stock": 100},
-    {"id": 5, "name": "Monitor 27\"", "price": 349.99, "stock": 75},
-]
+    # Track session
+    if session_id not in sessions:
+        sessions[session_id] = {
+            "created_at": datetime.now(),
+            "requests": 0,
+            "cart_items": 0
+        }
+        active_sessions_gauge.add(1, {"status": "new"})
 
-carts_db = {}
-orders_db = []
+        # Log session start to otel_sessions
+        logger.info(f"Session started", extra={
+            "session.id": session_id,
+            "session.event": "start",
+            "timestamp": datetime.now().isoformat()
+        })
 
-# ===================================================================
-# Root Endpoint
-# ===================================================================
+    sessions[session_id]["requests"] += 1
+
+    # Process request
+    start_time = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - start_time) * 1000
+
+    # Record metrics
+    request_counter.add(1, {
+        "method": request.method,
+        "endpoint": request.url.path,
+        "status": response.status_code
+    })
+    response_time_histogram.record(duration_ms, {
+        "method": request.method,
+        "endpoint": request.url.path
+    })
+
+    # Add session ID to response
+    response.headers["X-Session-ID"] = session_id
+
+    return response
+
+# Instrument FastAPI and Requests
+FastAPIInstrumentor.instrument_app(app)
+RequestsInstrumentor().instrument()
+
+# Service URLs
+INVENTORY_SERVICE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://inventory-service:8002")
+PAYMENT_SERVICE_URL = os.getenv("PAYMENT_SERVICE_URL", "http://payment-service:8001")
+
 @app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "ecommerce-api", "version": "1.0.0"}
+def read_root(request: Request):
+    session_id = request.state.session_id
+    logger.info("Root endpoint accessed", extra={
+        "session.id": session_id,
+        "endpoint": "/"
+    })
+    return {"message": "E-commerce API", "session_id": session_id}
 
-@app.get("/health")
-async def health():
-    """Health check endpoint"""
-    return {"status": "ok"}
-
-# ===================================================================
-# Products Endpoints
-# ===================================================================
 @app.get("/products")
-async def get_products(request: Request):
-    """Get all products"""
+def get_products(request: Request):
+    session_id = request.state.session_id
     with tracer.start_as_current_span("get_products") as span:
-        span.set_attribute("product.count", len(products_db))
+        span.set_attribute("session.id", session_id)
 
-        # Simulate occasional database timeout
-        if random.random() < 0.05:  # 5% chance
-            logger.error("Database timeout error in get_products")
-            span.set_attribute("error", True)
-            span.set_attribute("error.type", "DatabaseTimeout")
-            time.sleep(2)
-            raise HTTPException(status_code=504, detail="Database timeout")
+        logger.info("Fetching product list from inventory service", extra={
+            "session.id": session_id
+        })
 
-        logger.info(f"Fetched {len(products_db)} products")
-        return {"products": products_db}
+        # Call inventory service
+        try:
+            response = requests.get(f"{INVENTORY_SERVICE_URL}/products", timeout=5)
+            response.raise_for_status()
+            products_data = response.json()
+            span.set_attribute("product.count", len(products_data.get("products", {})))
+
+            logger.info("Successfully fetched products from inventory service", extra={
+                "session.id": session_id,
+                "product.count": len(products_data.get("products", {}))
+            })
+
+            return {"products": products_data.get("products", {}), "session_id": session_id}
+        except Exception as e:
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            logger.error(f"Failed to fetch products from inventory service: {e}", extra={
+                "session.id": session_id
+            })
+            raise HTTPException(status_code=503, detail="Inventory service unavailable")
 
 @app.get("/products/{product_id}")
-async def get_product(product_id: int):
-    """Get product by ID"""
-    with tracer.start_as_current_span("get_product") as span:
+def get_product(product_id: int, request: Request):
+    session_id = request.state.session_id
+    with tracer.start_as_current_span("get_product_detail") as span:
         span.set_attribute("product.id", product_id)
+        span.set_attribute("session.id", session_id)
+        logger.info(f"Fetching product detail", extra={
+            "product.id": product_id,
+            "session.id": session_id
+        })
 
-        product = next((p for p in products_db if p["id"] == product_id), None)
-
-        if not product:
-            logger.warning(f"Product not found: {product_id}")
+        # Simulate 404
+        if product_id > 100:
             span.set_attribute("error", True)
-            span.set_attribute("error.type", "NotFound")
-            raise HTTPException(status_code=404, detail="Product not found")
+            span.set_status(trace.Status(trace.StatusCode.ERROR, "Product not found"))
+            logger.error(f"Product not found: {product_id}", extra={
+                "product.id": product_id,
+                "session.id": session_id
+            })
+            return {"error": "Product not found"}, 404
 
-        logger.info(f"Fetched product: {product_id}")
-        return product
+        return {"id": product_id, "name": f"Product {product_id}", "price": 99.99, "session_id": session_id}
 
-# ===================================================================
-# Cart Endpoints
-# ===================================================================
 @app.post("/cart/add")
-async def add_to_cart(user_id: str, product_id: int, quantity: int = 1):
-    """Add item to cart"""
+def add_to_cart(request: Request, product_id: int = Query(...)):
+    session_id = request.state.session_id
     with tracer.start_as_current_span("add_to_cart") as span:
-        span.set_attribute("user.id", user_id)
         span.set_attribute("product.id", product_id)
-        span.set_attribute("quantity", quantity)
+        span.set_attribute("session.id", session_id)
 
-        product = next((p for p in products_db if p["id"] == product_id), None)
+        logger.info("Adding product to cart, checking availability", extra={
+            "product.id": product_id,
+            "session.id": session_id
+        })
 
-        if not product:
-            logger.error(f"Product not found: {product_id}")
-            raise HTTPException(status_code=404, detail="Product not found")
+        # Check inventory availability
+        try:
+            availability_response = requests.post(
+                f"{INVENTORY_SERVICE_URL}/check-availability",
+                params={"product_id": product_id},
+                timeout=5
+            )
+            availability_response.raise_for_status()
+            availability_data = availability_response.json()
 
-        # Check stock
-        if product["stock"] < quantity:
-            logger.warning(f"Insufficient stock for product {product_id}: requested={quantity}, available={product['stock']}")
-            span.set_attribute("error", True)
-            span.set_attribute("error.type", "InsufficientStock")
-            raise HTTPException(status_code=400, detail="Insufficient stock")
+            if not availability_data.get("available"):
+                span.set_status(trace.Status(trace.StatusCode.ERROR, "Product unavailable"))
+                logger.warning(f"Product {product_id} is out of stock", extra={
+                    "product.id": product_id,
+                    "session.id": session_id
+                })
+                raise HTTPException(status_code=400, detail="Product out of stock")
 
-        # Initialize cart if not exists
-        if user_id not in carts_db:
-            carts_db[user_id] = []
+            # Update cart items
+            sessions[session_id]["cart_items"] += 1
+            cart_items_gauge.add(1, {"session.id": session_id})
 
-        # Add to cart
-        cart_item = {"product_id": product_id, "quantity": quantity, "price": product["price"]}
-        carts_db[user_id].append(cart_item)
+            logger.info("Product added to cart successfully", extra={
+                "product.id": product_id,
+                "session.id": session_id,
+                "cart_items": sessions[session_id]["cart_items"]
+            })
 
-        logger.info(f"Added to cart: user={user_id}, product={product_id}, quantity={quantity}")
-        return {"message": "Added to cart", "cart": carts_db[user_id]}
+            return {
+                "message": "Added to cart",
+                "product_id": product_id,
+                "cart_items": sessions[session_id]["cart_items"],
+                "session_id": session_id
+            }
+        except requests.exceptions.RequestException as e:
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            logger.error(f"Failed to check inventory: {e}", extra={
+                "session.id": session_id
+            })
+            raise HTTPException(status_code=503, detail="Inventory service unavailable")
 
-@app.get("/cart/{user_id}")
-async def get_cart(user_id: str):
-    """Get user's cart"""
-    with tracer.start_as_current_span("get_cart") as span:
-        span.set_attribute("user.id", user_id)
-
-        cart = carts_db.get(user_id, [])
-        span.set_attribute("cart.item_count", len(cart))
-
-        logger.info(f"Fetched cart for user: {user_id}")
-        return {"cart": cart}
-
-# ===================================================================
-# Checkout Endpoint
-# ===================================================================
 @app.post("/checkout")
-async def checkout(user_id: str):
-    """Process checkout"""
+def checkout(request: Request):
+    session_id = request.state.session_id
     with tracer.start_as_current_span("checkout") as span:
-        span.set_attribute("user.id", user_id)
+        span.set_attribute("session.id", session_id)
+        cart_items = sessions[session_id]["cart_items"]
+        span.set_attribute("cart.items", cart_items)
 
-        cart = carts_db.get(user_id, [])
+        logger.info("Starting checkout process", extra={
+            "session.id": session_id,
+            "cart_items": cart_items
+        })
 
-        if not cart:
-            logger.warning(f"Empty cart for user: {user_id}")
+        if cart_items == 0:
             raise HTTPException(status_code=400, detail="Cart is empty")
 
-        span.set_attribute("cart.item_count", len(cart))
+        # Calculate total amount (simplified)
+        total_amount = cart_items * 99.99
 
-        # Calculate total
-        total = sum(item["price"] * item["quantity"] for item in cart)
-        span.set_attribute("order.total", total)
+        # Reserve inventory
+        try:
+            with tracer.start_as_current_span("reserve_inventory") as reserve_span:
+                reserve_span.set_attribute("cart.items", cart_items)
+                # Simplified: reserve product_id=1 for demo
+                reserve_response = requests.post(
+                    f"{INVENTORY_SERVICE_URL}/reserve",
+                    params={"product_id": 1, "quantity": cart_items},
+                    timeout=5
+                )
+                reserve_response.raise_for_status()
+                logger.info("Inventory reserved successfully", extra={"session.id": session_id})
+        except requests.exceptions.RequestException as e:
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            logger.error(f"Failed to reserve inventory: {e}", extra={"session.id": session_id})
+            raise HTTPException(status_code=503, detail="Failed to reserve inventory")
 
-        # Simulate payment gateway error (10% chance)
-        if random.random() < 0.10:
-            logger.error(f"Payment gateway error for user: {user_id}")
-            span.set_attribute("error", True)
-            span.set_attribute("error.type", "PaymentGatewayError")
-            raise HTTPException(status_code=502, detail="Payment gateway error")
+        # Process payment via payment service
+        try:
+            with tracer.start_as_current_span("process_payment_request") as payment_span:
+                payment_span.set_attribute("payment.amount", total_amount)
+                payment_response = requests.post(
+                    f"{PAYMENT_SERVICE_URL}/process",
+                    params={"amount": total_amount, "session_id": session_id},
+                    timeout=10
+                )
+                payment_response.raise_for_status()
+                payment_data = payment_response.json()
 
-        # Process order
-        order_id = len(orders_db) + 1
-        order = {
+                transaction_id = payment_data.get("transaction_id")
+                span.set_attribute("payment.transaction_id", transaction_id)
+
+                logger.info("Payment processed successfully", extra={
+                    "session.id": session_id,
+                    "transaction_id": transaction_id
+                })
+        except requests.exceptions.RequestException as e:
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            logger.error(f"Payment failed: {e}", extra={"session.id": session_id})
+            raise HTTPException(status_code=503, detail="Payment service unavailable")
+
+        order_id = random.randint(1000, 9999)
+
+        # Reset cart items after successful checkout
+        cart_items_count = sessions[session_id]["cart_items"]
+        if cart_items_count > 0:
+            cart_items_gauge.add(-cart_items_count, {"session.id": session_id})
+            sessions[session_id]["cart_items"] = 0
+
+        logger.info("Order completed successfully", extra={
+            "order.id": order_id,
+            "session.id": session_id,
+            "session.event": "checkout",
+            "transaction_id": transaction_id
+        })
+        return {
+            "message": "Order completed",
             "order_id": order_id,
-            "user_id": user_id,
-            "items": cart,
-            "total": total,
-            "status": "completed"
+            "transaction_id": transaction_id,
+            "session_id": session_id
         }
-        orders_db.append(order)
 
-        # Clear cart
-        carts_db[user_id] = []
+@app.get("/health")
+def health(request: Request):
+    session_id = request.state.session_id
+    return {"status": "healthy", "session_id": session_id}
 
-        logger.info(f"Checkout completed: user={user_id}, order_id={order_id}, total={total}")
-        return {"message": "Checkout successful", "order": order}
-
-# ===================================================================
-# Payment Endpoint
-# ===================================================================
-@app.post("/payment")
-async def process_payment(order_id: int, payment_method: str):
-    """Process payment"""
-    with tracer.start_as_current_span("process_payment") as span:
-        span.set_attribute("order.id", order_id)
-        span.set_attribute("payment.method", payment_method)
-
-        # Simulate payment processing delay
-        time.sleep(random.uniform(0.1, 0.5))
-
-        # Simulate timeout (5% chance)
-        if random.random() < 0.05:
-            logger.error(f"Payment timeout for order: {order_id}")
-            span.set_attribute("error", True)
-            span.set_attribute("error.type", "PaymentTimeout")
-            time.sleep(5)
-            raise HTTPException(status_code=504, detail="Payment processing timeout")
-
-        # Simulate duplicate payment error (3% chance)
-        if random.random() < 0.03:
-            logger.error(f"Duplicate payment detected for order: {order_id}")
-            span.set_attribute("error", True)
-            span.set_attribute("error.type", "DuplicatePayment")
-            raise HTTPException(status_code=409, detail="Duplicate payment detected")
-
-        logger.info(f"Payment processed: order_id={order_id}, method={payment_method}")
-        return {"message": "Payment successful", "order_id": order_id, "status": "paid"}
-
-# ===================================================================
-# Inventory Endpoint
-# ===================================================================
-@app.get("/inventory/check")
-async def check_inventory(product_id: int):
-    """Check inventory status"""
-    with tracer.start_as_current_span("check_inventory") as span:
-        span.set_attribute("product.id", product_id)
-
-        # Simulate DB connection pool exhaustion (2% chance)
-        if random.random() < 0.02:
-            logger.error("Database connection pool exhausted")
-            span.set_attribute("error", True)
-            span.set_attribute("error.type", "DBConnectionPoolExhausted")
-            time.sleep(10)
-            raise HTTPException(status_code=503, detail="Service temporarily unavailable")
-
-        product = next((p for p in products_db if p["id"] == product_id), None)
-
-        if not product:
-            raise HTTPException(status_code=404, detail="Product not found")
-
-        logger.info(f"Inventory checked: product_id={product_id}, stock={product['stock']}")
-        return {"product_id": product_id, "stock": product["stock"], "available": product["stock"] > 0}
-
-# ===================================================================
-# Exception Handlers
-# ===================================================================
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler"""
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"}
-    )
-
-# ===================================================================
-# Main
-# ===================================================================
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    host = os.getenv("HOST", "0.0.0.0")
-
-    logger.info(f"Starting server on {host}:{port}")
-
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=False,
-        log_level="info"
-    )
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

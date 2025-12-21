@@ -1,82 +1,87 @@
 version: '3.8'
 
 services:
-  # OpenTelemetry Collector
+  # Standard OTEL Collector (not HyperDX specific)
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.93.0
     container_name: otel-collector
     command: ["--config=/etc/otel-collector-config.yaml"]
+    env_file:
+      - .env
     volumes:
-      - ./hyperdx/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./otel-collector/config.yaml:/etc/otel-collector-config.yaml
     ports:
       - "4317:4317"   # OTLP gRPC receiver
       - "4318:4318"   # OTLP HTTP receiver
       - "8888:8888"   # Prometheus metrics
-    environment:
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
     networks:
       - o11y-network
-    restart: unless-stopped
 
-  # Sample E-commerce Application
-  sample-app:
+  # Payment Service
+  payment-service:
     build:
-      context: ./sample-app
-      dockerfile: Dockerfile
-    container_name: sample-app
-    ports:
-      - "8000:8000"
+      context: ./payment-service
+    container_name: payment-service
     environment:
-      - OTEL_SERVICE_NAME=ecommerce-api
-      - OTEL_SERVICE_VERSION=1.0.0
-      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
-      - ENVIRONMENT=production
-      - PORT=8000
-      - HOST=0.0.0.0
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=payment-service
+    env_file:
+      - .env
+    ports:
+      - "8001:8001"
     depends_on:
       - otel-collector
     networks:
       - o11y-network
-    restart: unless-stopped
+
+  # Inventory Service
+  inventory-service:
+    build:
+      context: ./inventory-service
+    container_name: inventory-service
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=inventory-service
+    env_file:
+      - .env
+    ports:
+      - "8002:8002"
+    depends_on:
+      - otel-collector
+    networks:
+      - o11y-network
+
+  # Sample Application (Main E-commerce App)
+  sample-app:
+    build:
+      context: ./sample-app
+    container_name: sample-app
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=sample-ecommerce-app
+      - INVENTORY_SERVICE_URL=http://inventory-service:8002
+      - PAYMENT_SERVICE_URL=http://payment-service:8001
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - otel-collector
+      - payment-service
+      - inventory-service
+    networks:
+      - o11y-network
 
   # Data Generator
   data-generator:
     build:
       context: ./data-generator
-      dockerfile: Dockerfile
     container_name: data-generator
-    environment:
-      - SAMPLE_APP_URL=http://sample-app:8000
-      - CONFIG_FILE=config.yaml
     depends_on:
       - sample-app
-    networks:
-      - o11y-network
-    restart: unless-stopped
-
-  # Embedding Pipeline
-  embedding-pipeline:
-    build:
-      context: ./embedding-pipeline
-      dockerfile: Dockerfile
-    container_name: embedding-pipeline
-    environment:
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - CONFIG_FILE=config.yaml
-    depends_on:
       - otel-collector
     networks:
       - o11y-network
-    restart: unless-stopped
 
 networks:
   o11y-network:
