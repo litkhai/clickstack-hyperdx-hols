@@ -85,31 +85,33 @@ When inspecting network requests in Service Map, HyperDX returns errors suggesti
 
 ## Root Cause Analysis
 
-The `Span Kind Expression` appears to be applied in SELECT clauses but **not in WHERE clauses** when Service Map queries for CLIENT and SERVER spans.
+### Verified Issues
 
-HyperDX Service Map likely generates SQL similar to:
+1. **Primary Issue:** Span Kind Expression not applied in WHERE clauses
+   - Configured expressions work in direct ClickHouse queries
+   - Same expressions fail in HyperDX Service Map
+   - Evidence suggests WHERE clauses use literal values instead of applying configured expressions
+
+2. **Secondary Issue:** Case sensitivity requirement
+   - Testing revealed HyperDX expects **title case** (`Client`, `Server`, `Internal`)
+   - OpenTelemetry standard produces: `SPAN_KIND_CLIENT`, `SPAN_KIND_SERVER`
+   - Simple `replaceAll(SpanKind, 'SPAN_KIND_', '')` produces uppercase: `CLIENT`, `SERVER`
+   - This mismatch means users need CASE expressions, not simple replaceAll
+
+### Expected SQL Pattern
 
 ```sql
--- Current (incorrect):
-WHERE client.SpanKind = 'Client'  -- Hardcoded, doesn't use expression
-  AND server.SpanKind = 'Server'  -- Hardcoded, doesn't use expression
+-- What should work but doesn't:
+WHERE <configured_span_kind_expression> = 'Client'
+  AND <configured_span_kind_expression> = 'Server'
 
--- Expected (correct):
-WHERE replaceAll(client.SpanKind, 'SPAN_KIND_', '') = 'Client'
-  AND replaceAll(server.SpanKind, 'SPAN_KIND_', '') = 'Server'
--- Note: Expression output must match HyperDX's expected title case format
+-- Example with proper expression and case handling:
+WHERE CASE
+    WHEN SpanKind = 'SPAN_KIND_CLIENT' THEN 'Client'
+    WHEN SpanKind = 'SPAN_KIND_SERVER' THEN 'Server'
+    ELSE SpanKind
+  END = 'Client'
 ```
-
-### Two Issues Identified
-
-1. **Primary Issue:** Span Kind Expression not applied in WHERE clauses (the bug)
-2. **Secondary Issue:** Even if expressions were applied, `replaceAll(SpanKind, 'SPAN_KIND_', '')` produces wrong case
-   - Produces: `CLIENT`, `SERVER` (uppercase)
-   - Expected: `Client`, `Server` (title case)
-
-**Proper solution requires:**
-- Fix: Apply expressions in WHERE clauses
-- Plus: Document expected SpanKind format (title case) or make Service Map case-insensitive
 
 ## Proposed Solution
 
@@ -151,30 +153,16 @@ While the materialized view workaround successfully enables Service Map function
 
 ### Recommended Implementation
 
-Apply expressions in **all** SQL clause contexts:
-- ✅ SELECT clauses (already working)
-- ❌ WHERE clauses (currently broken - this is the bug)
-- ❌ JOIN conditions (if applicable)
-- ❌ GROUP BY clauses (if applicable)
+1. **Apply expressions consistently:**
+   - ✅ SELECT clauses (currently working)
+   - ❌ WHERE clauses (needs fix - this is the bug)
+   - JOIN conditions (if applicable)
+   - GROUP BY clauses (if applicable)
 
-**Example of expected behavior:**
-
-```javascript
-// User configuration
-const traceSourceConfig = {
-  spanKindExpression: "replaceAll(SpanKind, 'SPAN_KIND_', '')"
-};
-
-// Generated SQL should apply expression in WHERE clause
-const query = `
-  SELECT ...
-  FROM otel_traces client
-  JOIN otel_traces server
-    ON client.TraceId = server.TraceId
-  WHERE ${traceSourceConfig.spanKindExpression} = 'Client'  -- Apply expression!
-    AND ${traceSourceConfig.spanKindExpression} = 'Server'  -- Apply expression!
-`;
-```
+2. **Document SpanKind format requirements:**
+   - Document that Service Map expects title case (`Client`, `Server`, `Internal`)
+   - Or make Service Map case-insensitive for SpanKind comparisons
+   - Provide example CASE expressions for OpenTelemetry data
 
 ## Workaround
 
@@ -259,16 +247,13 @@ SELECT * FROM o11y.otel_traces_conv_mv;
 #### HyperDX Configuration for Workaround
 
 ```
-Database: o11y
-Table: otel_traces_conv
+Table: otel_traces_conv  (the converted table)
 Span Kind Expression: SpanKind  (no transformation needed!)
 ```
 
 #### Test Results
 
-✅ **Service Map Successfully Displays:**
-- **sample-ecommerce-app → inventory-service:** 10,533 calls, 98.28ms avg latency
-- **sample-ecommerce-app → payment-service:** 50 calls, 766.65ms avg latency
+✅ **Service Map Successfully Displays:** Multiple microservice connections with call counts and latency metrics
 
 #### Key Learnings
 
@@ -279,12 +264,9 @@ Span Kind Expression: SpanKind  (no transformation needed!)
 
 ### Alternative Workarounds
 
-1. **Use `ingest_otel` database (if available):**
-   - SpanKind already in `Client`/`Server` format
-   - No additional setup required
-
-2. **Use ClickHouse queries directly:**
-   - Bypass HyperDX UI and query ClickHouse directly for Service Map data
+**Use ClickHouse queries directly:**
+- Bypass HyperDX UI and query ClickHouse directly for Service Map data
+- Apply transformations in SQL queries manually
 
 ## Additional Context
 
@@ -295,23 +277,12 @@ Span Kind Expression: SpanKind  (no transformation needed!)
 
 ## Code Investigation
 
-Based on repository structure analysis:
+The issue appears to be in how Service Map constructs ClickHouse queries when applying Trace Source expression configurations.
 
-- **API Layer:** `packages/api/` - Node.js API that executes ClickHouse queries
-- **Architecture:** HyperDX API acts as intermediary between frontend and ClickHouse
-- **Query Pattern:** HyperDX constructs SQL queries like:
-  ```sql
-  SELECT Timestamp, ServiceName, ... FROM otel_traces
-  WHERE (Timestamp >= ... AND Timestamp <= ...)
-  ORDER BY Timestamp DESC
-  ```
-
-The issue likely exists in the query construction logic within `packages/api/` where:
-1. Expression fields (like `Span Kind Expression`) are defined in Trace Source configuration
-2. These expressions should be applied in WHERE clauses when filtering by span kind
-3. Currently appears to use hardcoded values (`'Client'`, `'Server'`) instead of applying expressions
-
-**Note:** Direct code access requires authentication to GitHub code search. The API implementation that constructs Service Map queries would be in `packages/api/src/` directory.
+**Areas to investigate:**
+- Query construction logic for Service Map feature
+- How Trace Source expressions are applied in different SQL clauses
+- SpanKind filtering implementation in WHERE clauses
 
 ## Related GitHub Issues
 
@@ -325,34 +296,30 @@ The issue likely exists in the query construction logic within `packages/api/` w
 - [OpenTelemetry Span Kind Specification](https://opentelemetry.io/docs/reference/specification/trace/api/#spankind)
 - [ClickStack Configuration Options](https://clickhouse.com/docs/use-cases/observability/clickstack/config)
 
-## Sample Data Schema
+## Sample Data
 
-```sql
-DESCRIBE TABLE o11y.otel_traces;
+### OpenTelemetry Standard SpanKind Format
 
--- Key columns:
--- SpanKind: LowCardinality(String)  -- Contains: 'SPAN_KIND_CLIENT', 'SPAN_KIND_SERVER', 'SPAN_KIND_INTERNAL'
--- ServiceName: LowCardinality(String)
--- TraceId: String
--- SpanId: String
--- ParentSpanId: String
+When using OTEL Collector with ClickHouse exporter, SpanKind values follow the OpenTelemetry specification:
+
+```
+SPAN_KIND_CLIENT
+SPAN_KIND_SERVER
+SPAN_KIND_INTERNAL
+SPAN_KIND_PRODUCER
+SPAN_KIND_CONSUMER
 ```
 
-## ClickHouse Data Sample
+### HyperDX Expected Format
 
-```sql
-SELECT ServiceName, SpanKind, TraceId, SpanId, ParentSpanId
-FROM o11y.otel_traces
-WHERE ServiceName = 'sample-ecommerce-app'
-  AND SpanKind = 'SPAN_KIND_CLIENT'
-LIMIT 2;
+Testing revealed Service Map expects title case:
 
--- Result:
--- ServiceName: sample-ecommerce-app
--- SpanKind: SPAN_KIND_CLIENT
--- TraceId: 37ff659bbd99befec8b023514620002b
--- SpanId: ef6d36370a1843c0
--- ParentSpanId: ba4f4f1c6c7cbf9c
+```
+Client
+Server
+Internal
+Producer
+Consumer
 ```
 
 ## Impact
