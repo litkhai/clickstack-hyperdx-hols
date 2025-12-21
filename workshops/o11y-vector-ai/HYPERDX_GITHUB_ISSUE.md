@@ -4,7 +4,7 @@
 
 **Title:** Service Map: Span Kind Expression not applied in WHERE clause for span kind filtering
 
-**Labels:** bug, service-map, beta
+**Labels:** service-map, beta, expression-support
 
 ## Preliminary Note
 
@@ -117,52 +117,23 @@ WHERE CASE
 
 Apply the configured `Span Kind Expression` in WHERE clauses when filtering for CLIENT and SERVER spans in Service Map queries.
 
-### Why Expression Support is Critical
+### Why Expression Support Matters
 
-While the materialized view workaround successfully enables Service Map functionality, **proper Expression support is essential** for the following reasons:
+Proper Expression support would eliminate the need for workarounds:
 
-1. **Storage Efficiency:**
-   - Workaround requires maintaining duplicate tables (~2x storage cost)
-   - Expression-based transformation would process data on-the-fly without duplication
-   - For large-scale deployments, this storage overhead becomes significant
+- **Storage**: Eliminates ~2x storage overhead from duplicate tables
+- **Simplicity**: No manual materialized view creation or maintenance
+- **Consistency**: Expression fields work as documented in the UI
+- **Compatibility**: Native support for OpenTelemetry standard format (`SPAN_KIND_*`)
 
-2. **Operational Complexity:**
-   - Users must manually create and maintain materialized views
-   - Requires understanding of ClickHouse schema and SQL
-   - Additional operational burden (monitoring, updates, schema changes)
+### Suggested Implementation
 
-3. **Data Consistency:**
-   - Materialized views need to stay in sync with source tables
-   - Schema changes in source table require MV recreation
-   - Potential for data inconsistencies if MV fails
-
-4. **User Experience:**
-   - Expression fields are provided in the UI but don't work as expected
-   - Confusing user experience when configured expressions are silently ignored
-   - Forces users to learn ClickHouse workarounds instead of using the feature directly
-
-5. **OpenTelemetry Standard Compliance:**
-   - OpenTelemetry specification uses `SPAN_KIND_*` format
-   - All OTEL Collector exporters follow this standard
-   - HyperDX should support standard OTEL data without transformation
-
-6. **Flexibility:**
-   - Different users may have different SpanKind formats
-   - Expression support allows adapting to various data sources
-   - Workaround forces one specific format
-
-### Recommended Implementation
-
-1. **Apply expressions consistently:**
+1. **Apply expressions consistently in all SQL clauses:**
    - ✅ SELECT clauses (currently working)
-   - ❌ WHERE clauses (needs fix - this is the bug)
-   - JOIN conditions (if applicable)
-   - GROUP BY clauses (if applicable)
+   - ⚠️ WHERE clauses (not working)
+   - JOIN, GROUP BY clauses (if applicable)
 
-2. **Document SpanKind format requirements:**
-   - Document that Service Map expects title case (`Client`, `Server`, `Internal`)
-   - Or make Service Map case-insensitive for SpanKind comparisons
-   - Provide example CASE expressions for OpenTelemetry data
+2. **Consider case-insensitive SpanKind comparison or document the title case requirement**
 
 ## Workaround
 
@@ -277,24 +248,87 @@ Span Kind Expression: SpanKind  (no transformation needed!)
 
 ## Code Investigation
 
-The issue appears to be in how Service Map constructs ClickHouse queries when applying Trace Source expression configurations.
+### Bug Location Confirmed
 
-**Areas to investigate:**
-- Query construction logic for Service Map feature
-- How Trace Source expressions are applied in different SQL clauses
-- SpanKind filtering implementation in WHERE clauses
+**File:** `packages/app/src/hooks/useServiceMap.tsx`
 
-## Related GitHub Issues
+**Function:** `getServiceMapQuery`
 
-- [Issue #1283: Latest HyperDX can't scan data from ClickHouse](https://github.com/hyperdxio/hyperdx/issues/1283) - Related to ClickHouse data access issues
+The bug exists in the Service Map query construction code:
 
-## Related Documentation
+```javascript
+async function getServiceMapQuery({
+  source,
+  dateRange,
+  traceId,
+  metadata,
+  samplingFactor,
+}: {
+  source: TSource;
+  dateRange: [Date, Date];
+  traceId?: string;
+  metadata: Metadata;
+  samplingFactor: number;
+}) {
+  // ... other code ...
 
-- [HyperDX GitHub Repository](https://github.com/hyperdxio/hyperdx)
-- [HyperDX Source Configuration](https://www.hyperdx.io/docs/v2/sources)
-- [What's New in ClickStack - November 2025](https://clickhouse.com/blog/whats-new-in-clickstack-november-2025) (Service Map announcement)
-- [OpenTelemetry Span Kind Specification](https://opentelemetry.io/docs/reference/specification/trace/api/#spankind)
-- [ClickStack Configuration Options](https://clickhouse.com/docs/use-cases/observability/clickstack/config)
+  const [serverCTE, clientCTE] = await Promise.all([
+    renderChartConfig(
+      {
+        ...baseCTEConfig,
+        filters: [
+          ...baseCTEConfig.filters,
+          {
+            type: 'sql',
+            condition: `${source.spanKindExpression} IN ('Server', 'Consumer')`,  // ⚠️ Expression not applied
+          },
+        ],
+        where: '',
+      },
+      metadata,
+    ),
+    renderChartConfig(
+      {
+        ...baseCTEConfig,
+        filters: [
+          ...baseCTEConfig.filters,
+          {
+            type: 'sql',
+            condition: `${source.spanKindExpression} IN ('Client', 'Producer')`,  // ⚠️ Expression not applied
+          },
+        ],
+        where: '',
+      },
+      metadata,
+    ),
+  ]);
+```
+
+### The Problem
+
+When `source.spanKindExpression` contains a ClickHouse expression like `replaceAll(SpanKind, 'SPAN_KIND_', '')`, the code correctly inserts it into the SQL string template:
+
+```javascript
+condition: `${source.spanKindExpression} IN ('Server', 'Consumer')`
+```
+
+**However**, somewhere in the query rendering pipeline (likely in `renderChartConfig`), the expression is not being properly applied or is being replaced with just the column name.
+
+### Expected Behavior
+
+The generated SQL should be:
+```sql
+WHERE replaceAll(SpanKind, 'SPAN_KIND_', '') IN ('Server', 'Consumer')
+```
+
+### Actual Behavior
+
+Testing suggests the expression transformation is not applied in WHERE clauses, causing queries to match no rows when SpanKind values are in OpenTelemetry format (`SPAN_KIND_SERVER`, `SPAN_KIND_CONSUMER`).
+
+### Analysis
+
+The `renderChartConfig` function (or its downstream processing) may not be preserving the full expression when building WHERE clauses.
+
 
 ## Sample Data
 
@@ -338,33 +372,12 @@ However, the workaround:
 - Needs ClickHouse SQL expertise
 - Doesn't scale well for large deployments
 
-### User Impact Categories
+### Impact Summary
 
-1. **New Users:**
-   - Confusing first experience with Service Map
-   - "No services found" despite having valid data
-   - Must learn ClickHouse workarounds before using the feature
-
-2. **Production Users:**
-   - Storage costs increase significantly (2x data duplication)
-   - Additional maintenance overhead for materialized views
-   - Schema evolution becomes more complex
-
-3. **Large-Scale Deployments:**
-   - Storage overhead becomes cost-prohibitive
-   - Multiple databases may require multiple MV setups
-   - Operational complexity increases exponentially
-
-### Why This Should Be Fixed
-
-While a workaround exists, **fixing the Expression support would**:
-- ✅ Eliminate storage duplication (reduce costs)
-- ✅ Simplify user experience (no SQL knowledge required)
-- ✅ Make the feature work as documented/expected
-- ✅ Support OpenTelemetry standard format out-of-the-box
-- ✅ Reduce operational burden
-- ✅ Enable flexibility for different data sources
+- Workaround requires ~2x storage and manual maintenance
+- Affects standard OpenTelemetry Collector setups
+- Expression fields in UI don't work as expected
 
 ## Priority
 
-**High** - Core feature (Service Map) requires workaround for standard OTEL setups. While functional with workaround, proper Expression support is needed for production use at scale.
+**Medium-High** - Service Map requires workaround for standard OpenTelemetry setups. Expression support would improve user experience and eliminate storage overhead.
