@@ -720,7 +720,7 @@ Restart services:
 ## Additional Resources
 
 - [ClickHouse Documentation](https://clickhouse.com/docs)
-- [ClickStack Guide](https://clickhouse.com/docs/en/cloud/clickstack)
+- [ClickStack Guide](https://clickhouse.com/docs/use-cases/observability/clickstack)
 - [HyperDX Documentation](https://www.hyperdx.io/docs)
 - [OpenTelemetry Specification](https://opentelemetry.io/docs/specs/otel/)
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
@@ -1455,7 +1455,7 @@ EVENTS_PER_SECOND=50  # 기본값은 100
 ## 추가 리소스
 
 - [ClickHouse 문서](https://clickhouse.com/docs)
-- [ClickStack 가이드](https://clickhouse.com/docs/en/cloud/clickstack)
+- [ClickStack 가이드](https://clickhouse.com/docs/use-cases/observability/clickstack)
 - [HyperDX 문서](https://www.hyperdx.io/docs)
 - [OpenTelemetry 명세](https://opentelemetry.io/docs/specs/otel/)
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
