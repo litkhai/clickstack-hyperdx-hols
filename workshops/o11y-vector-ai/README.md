@@ -245,7 +245,7 @@ HyperDX Service Map에서 다음과 같은 서비스 간 의존성이 표시됩�
 - **Compression**: ZSTD(1) in table schemas
 - **Pipelines**: traces, logs, metrics 모두 지원
 
-**주요 설정** ([config.yaml](otel-collector/config.yaml:15-75)):
+**주요 설정** ([config.yaml](otel-collector/config.yaml)):
 ```yaml
 exporters:
   clickhouse/traces:

@@ -215,7 +215,7 @@ The system uses severity-based False Negative rates that mirror real-world WAF p
 
 ### Configuration
 
-Adjust False Negative rates in [.env](.env):
+Adjust False Negative rates in `.env`:
 
 ```bash
 # Base rate for attack bypass (affects high severity)
@@ -950,7 +950,7 @@ WAF는 세션 상태를 유지하지 않고 각 요청을 독립적으로 검사
 
 ### 설정
 
-[.env](.env) 파일에서 False Negative 비율을 조정합니다:
+`.env` 파일에서 False Negative 비율을 조정합니다:
 
 ```bash
 # 공격 우회를 위한 기본 비율 (high severity에 영향)
