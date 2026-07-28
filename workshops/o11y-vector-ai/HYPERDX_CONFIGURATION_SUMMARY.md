@@ -176,7 +176,7 @@ replaceAll(SpanKind, 'SPAN_KIND_', '')
 ### 1. 현재 데이터 확인
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 source .env
 clickhouse client --host=${CH_HOST} --user=${CH_USER} --password=${CH_PASSWORD} --secure --query="
 SELECT
@@ -293,7 +293,7 @@ FORMAT Vertical
 
 4. **OTEL Collector 재시작** (필요시)
    ```bash
-   cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+   cd workshop/o11y-vector-ai
    docker-compose restart otel-collector
    ```
 

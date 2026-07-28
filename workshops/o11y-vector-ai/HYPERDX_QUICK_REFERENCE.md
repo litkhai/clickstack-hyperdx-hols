@@ -140,7 +140,7 @@ StatusMessage
 ## ✅ 검증 명령어
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 ./verify-hyperdx-data.sh
 ```
 

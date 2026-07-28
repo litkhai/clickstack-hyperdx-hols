@@ -14,7 +14,7 @@
 ### 데이터 수집 확인
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 source .env
 clickhouse client --host=${CH_HOST} --user=${CH_USER} --password=${CH_PASSWORD} --secure --query="
 SELECT
@@ -149,7 +149,7 @@ count: 105
 HyperDX UI 없이도 Service Map 데이터를 확인할 수 있습니다:
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 source .env
 clickhouse client --host=${CH_HOST} --user=${CH_USER} --password=${CH_PASSWORD} --secure --queries-file=clickhouse/queries/hyperdx_service_map.sql
 ```
@@ -290,7 +290,7 @@ PYEOF
 ##### 5. OTEL Collector 재시작 (필요시)
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 docker-compose restart otel-collector
 ```
 

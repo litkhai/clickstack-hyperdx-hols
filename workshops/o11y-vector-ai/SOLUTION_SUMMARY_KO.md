@@ -152,7 +152,7 @@ https://www.hyperdx.io/ 접속
 ### ClickHouse에서 직접 확인
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 ./verify-hyperdx-data.sh
 ```
 

@@ -131,7 +131,7 @@ HyperDX Service Map은 성능을 위해 데이터를 샘플링할 수 있습니�
 ### 1단계: ClickHouse 직접 확인
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 python3 << 'PYEOF'
 import os
 import subprocess
@@ -270,7 +270,7 @@ HyperDX가 오래된 스키마 정보를 캐싱하고 있을 수 있습니다.
 HyperDX UI 없이도 데이터를 확인할 수 있습니다:
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 source .env
 python3 << 'PYEOF'
 import os

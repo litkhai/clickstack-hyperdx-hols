@@ -118,7 +118,7 @@ def get_products():
 ### 1. ClickHouse에서 확인
 
 ```bash
-cd /Users/kenlee/Documents/GitHub/clickhouse-hols/workshop/o11y-vector-ai
+cd workshop/o11y-vector-ai
 source .env
 clickhouse client --host=${CH_HOST} --user=${CH_USER} --password=${CH_PASSWORD} --secure \
   --queries-file=clickhouse/queries/hyperdx_service_map.sql
