@@ -729,7 +729,7 @@ Restart services:
 
 ## License
 
-MIT License - See LICENSE file for details
+[MIT](../../LICENSE) — same as the rest of the repository.
 
 ---
 
@@ -1464,7 +1464,7 @@ EVENTS_PER_SECOND=50  # 기본값은 100
 
 ## 라이선스
 
-MIT License - 자세한 내용은 LICENSE 파일 참조
+[MIT](../../LICENSE) — 저장소 전체와 동일합니다.
 
 ---
 

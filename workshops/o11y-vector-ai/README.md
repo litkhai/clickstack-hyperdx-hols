@@ -489,3 +489,7 @@ ORDER BY p99_ms DESC;
 - [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
 - [OpenTelemetry Collector Contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib)
 - [ClickHouse Exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)
+
+## License
+
+[MIT](../../LICENSE) — same as the rest of the repository.
