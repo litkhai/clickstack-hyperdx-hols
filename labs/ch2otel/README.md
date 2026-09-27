@@ -324,8 +324,8 @@ clickhouse-client --host=$CH_HOST --user=$CH_USER --password=$CH_PASSWORD --secu
 
 ## License
 
-[MIT](../../../LICENSE) — same as the rest of the repository.
+[MIT](../../LICENSE) — same as the rest of the repository.
 
 ## 라이선스
 
-[MIT](../../../LICENSE) — 저장소 전체와 동일합니다.
+[MIT](../../LICENSE) — 저장소 전체와 동일합니다.

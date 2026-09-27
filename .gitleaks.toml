@@ -1,0 +1,95 @@
+# gitleaks configuration for clickstack-hyperdx-hols (rules copied from clickhouse-hols)
+#
+# This repository is public and every lab talks to a database, so connection
+# details are the thing most likely to be committed by accident. The rules below
+# extend the default set with ClickHouse-specific shapes; the allowlist keeps
+# documented placeholders and synthetic demo data from failing every run.
+#
+# Local use:   gitleaks detect  --config .gitleaks.toml --no-banner --redact
+# Staged only: gitleaks protect --staged --config .gitleaks.toml --no-banner
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "clickhouse-cloud-host"
+description = "ClickHouse Cloud service hostname"
+# Go's regexp is RE2: no lookahead, so "8-12 chars containing a digit" is
+# spelled out as digit-before-or-after-letters. Doc placeholders such as
+# production.us-east-1... are pure letters and therefore do not match.
+regex = '''\b[a-z0-9]{0,11}[0-9][a-z0-9]{0,11}\.[a-z0-9-]+\.(aws|gcp|azure)\.clickhouse\.cloud'''
+tags = ["clickhouse", "endpoint"]
+
+[[rules]]
+id = "clickhouse-managed-postgres-host"
+description = "ClickHouse Managed Postgres service hostname"
+# A different suffix from the analytics services: the region sits before an
+# extra `pg` label, as in
+# <name>.<id>.c0.ap-northeast-2.aws.pg.clickhouse.cloud
+# so the clickhouse-cloud-host rule above does not reach it.
+regex = '''\b[a-z0-9-]+\.[a-z0-9]+\.c[0-9]+\.[a-z0-9-]+\.(aws|gcp|azure)\.pg\.clickhouse\.cloud'''
+tags = ["clickhouse", "postgres", "endpoint"]
+
+[[rules]]
+id = "postgres-password-assignment"
+description = "Non-empty Postgres password assigned in code or config"
+regex = '''(?i)(PGPASSWORD|POSTGRES_PASSWORD|PG_PASSWORD|postgres[_-]?password)\s*[:=]\s*["']?[^"'\s$<{}-][^"'\s$<{}]{7,}["']?'''
+tags = ["postgres", "credential"]
+
+[[rules]]
+id = "postgres-connection-uri"
+description = "Postgres connection URI with an inline password"
+regex = '''postgres(ql)?://[A-Za-z0-9_.-]+:[^@\s/"']{6,}@[A-Za-z0-9_.-]+'''
+tags = ["postgres", "credential"]
+
+[[rules]]
+id = "clickhouse-cloud-api-key-secret"
+description = "ClickHouse Cloud API key secret"
+regex = '''(?i)(api[_-]?key[_-]?secret|CHC_API_KEY_SECRET|CLICKHOUSE_API_KEY_SECRET)\s*[:=]\s*["']?[A-Za-z0-9]{40,50}["']?'''
+tags = ["clickhouse", "credential"]
+
+[[rules]]
+id = "clickhouse-cloud-api-key-id"
+description = "ClickHouse Cloud API key id"
+regex = '''(?i)(api[_-]?key[_-]?id|CHC_API_KEY_ID|CLICKHOUSE_API_KEY_ID)\s*[:=]\s*["']?[A-Za-z0-9]{18,24}["']?'''
+tags = ["clickhouse", "credential"]
+
+[[rules]]
+id = "clickhouse-password-assignment"
+description = "Non-empty ClickHouse password assigned in code or config"
+regex = '''(?i)(CLICKHOUSE_PASSWORD|CH_PASSWORD|clickhouse[_-]?password)\s*[:=]\s*["'][^"'\s]{6,}["']'''
+tags = ["clickhouse", "credential"]
+
+[allowlist]
+description = "Placeholders, documented demo values and synthetic datasets"
+# Test the patterns below against the whole matched text, not just the captured
+# secret, so `CLICKHOUSE_PASSWORD='your-password'` is recognised as a template.
+regexTarget = "match"
+
+paths = [
+    '''\.example$''',
+    '''\.template$''',
+    '''(^|/)\.gitleaks\.toml$''',
+]
+
+regexes = [
+    # placeholder shapes used throughout the docs
+    '''<[A-Za-z_ -]+>''',
+    '''(?i)(your|example|placeholder|changeme|change_me|dummy|sample|xxx+|redacted)''',
+    '''\$\{?[A-Za-z_][A-Za-z0-9_]*(:-[^}]*)?\}?''',
+    # the demo broker credential documented in the six Kafka connection guides
+    '''admin-secret''',
+    # local-only endpoints
+    '''localhost''',
+    '''127\.0\.0\.1''',
+    '''clickhouse-2[0-9]-[0-9]+''',
+    # the standard AWS documentation account id
+    '''123456789012''',
+    # the example service id used across the docs
+    '''abc123\.''',
+    # Postgres' own default credential, used by the local compose stacks whose
+    # containers only listen on the compose network. Anchored to the end of the
+    # match so a real password in the same field is still reported.
+    '''[:=]\s*["']?postgres["']?$''',
+    '''postgres(ql)?://postgres:postgres@''',
+]

@@ -348,7 +348,7 @@ This workshop uses a multi-cloud microservices architecture to provide realistic
 ### 1. Clone the Repository
 
 ```bash
-cd workshop/observability-waf
+cd workshops/observability-waf
 ```
 
 ### 2. Configure the Environment
@@ -1083,7 +1083,7 @@ False Negative 이해는 다음에 도움이 됩니다:
 ### 1. 레포지토리 클론
 
 ```bash
-cd workshop/observability-waf
+cd workshops/observability-waf
 ```
 
 ### 2. 환경 설정

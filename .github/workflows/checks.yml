@@ -1,0 +1,112 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    name: markdown links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve every relative link
+        run: python3 .github/scripts/check_links.py
+
+  syntax:
+    name: shell / python / yaml syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse-check tracked files
+        run: ./.github/scripts/check_syntax.sh
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint shell scripts (advisory)
+        # Style and portability issues across 200+ scripts written over a long
+        # period: reported, but not a merge blocker. The `syntax` job is.
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          git ls-files '*.sh' | xargs -r shellcheck -S error -f gcc || true
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  hygiene:
+    name: repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No tracked file may match an ignore rule
+        # gitignore does not apply to already-tracked files, so a rule added
+        # after the fact is silently inert. Catch that instead of trusting it.
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            if git check-ignore --no-index -q "$f"; then
+              echo "tracked but matches an ignore rule: $f"
+              fail=1
+            fi
+          done < <(git ls-files)
+          if [ "$fail" -eq 1 ]; then
+            echo
+            echo "Either untrack the file (git rm --cached) or add an explicit"
+            echo "negation to .gitignore so the exception is deliberate."
+            exit 1
+          fi
+          echo "OK: no tracked file is shadowed by an ignore rule"
+      - name: No infrastructure state committed
+        # Naming rules are not enough. A saved plan is a zip with the whole
+        # tfstate inside it, so it slipped past a *.tfstate rule and shipped
+        # real AWS account IDs, a bucket name and role ARNs. Check content.
+        run: |
+          fail=0
+          # exclude the checkers themselves: they name the markers they look for
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            case "$(file -b --mime-type "$f")" in
+              application/zip)
+                echo "archive committed, may carry state: $f"; fail=1; continue;;
+            esac
+            if grep -qa '"terraform_version"' "$f" && grep -qa '"lineage"' "$f"; then
+              echo "looks like terraform state: $f"; fail=1
+            fi
+          done < <(git ls-files -- ':!.github/*' ':!.githooks/*')
+          if [ "$fail" -eq 1 ]; then
+            echo
+            echo "Terraform state and saved plans record real account IDs, bucket"
+            echo "names and role ARNs. Untrack it: git rm --cached <file>"
+            exit 1
+          fi
+          echo "OK: no terraform state or archives tracked"
+      - name: No machine-specific absolute paths
+        # Only /Users/ — a container path such as /home/jovyan is legitimate,
+        # and /Users/ is the shape that actually broke five scripts here.
+        run: |
+          # exclude the checkers themselves: they contain the pattern by nature
+          if git grep -InI -e '/Users/' -- ':!*.md' ':!.github/*' ':!.githooks/*'; then
+            echo
+            echo "Use paths derived from BASH_SOURCE or __file__ instead."
+            exit 1
+          fi
+          echo "OK: no host home paths in code"

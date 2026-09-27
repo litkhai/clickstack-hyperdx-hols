@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Pre-commit guard (copied from litkhai/clickhouse-hols).
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#
+# Checks only what is staged, so it stays fast. CI re-runs the full set.
+set -uo pipefail
+
+fail=0
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# 1. Secrets ---------------------------------------------------------------
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks protect --staged --config .gitleaks.toml --no-banner --redact; then
+        echo "pre-commit: gitleaks flagged a staged change" >&2
+        fail=1
+    fi
+else
+    echo "pre-commit: gitleaks not installed, skipping secret scan" >&2
+    echo "            brew install gitleaks" >&2
+fi
+
+# 2. Machine-specific absolute paths ---------------------------------------
+while IFS= read -r f; do
+    case "$f" in *.md|.githooks/*|.github/*) continue;; esac
+    [ -f "$f" ] || continue
+    # /Users/ only: /home/jovyan and friends are container paths, not host paths
+    if grep -nI -e '/Users/' "$f" >/dev/null 2>&1; then
+        echo "pre-commit: host absolute path in $f" >&2
+        grep -nI -e '/Users/' "$f" | head -3 | sed 's/^/            /' >&2
+        fail=1
+    fi
+done <<< "$staged"
+
+# 3. Syntax of the staged files only ---------------------------------------
+while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    case "$f" in
+        *.sh)  bash -n "$f" || { echo "pre-commit: shell syntax error in $f" >&2; fail=1; };;
+        *.py)  python3 -m py_compile "$f" || { echo "pre-commit: python syntax error in $f" >&2; fail=1; };;
+    esac
+done <<< "$staged"
+find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+
+# 4. A staged file must not be shadowed by an ignore rule ------------------
+while IFS= read -r f; do
+    if git check-ignore --no-index -q "$f"; then
+        echo "pre-commit: $f matches an ignore rule but is being committed" >&2
+        echo "            add an explicit negation to .gitignore if deliberate" >&2
+        fail=1
+    fi
+done <<< "$staged"
+
+if [ "$fail" -ne 0 ]; then
+    echo >&2
+    echo "Commit blocked. Use 'git commit --no-verify' only if you are certain." >&2
+fi
+exit "$fail"

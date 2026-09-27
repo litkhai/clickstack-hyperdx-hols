@@ -185,7 +185,7 @@ clickhouse client --host=${CH_HOST} --user=${CH_USER} --password=${CH_PASSWORD} 
 ### 프로젝트 구조
 
 ```
-workshop/o11y-vector-ai/
+workshops/o11y-vector-ai/
 ├── .env                              # ClickHouse 연결 정보
 ├── docker-compose.yml                # 서비스 정의
 ├── verify-hyperdx-data.sh           # 검증 스크립트
