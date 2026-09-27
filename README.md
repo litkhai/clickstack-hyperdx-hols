@@ -43,6 +43,8 @@ Planned — not written yet.
 
 ### ✅ Repository checks
 
+Current state and what still needs a re-run: [STATUS.md](STATUS.md).
+
 ```bash
 git config core.hooksPath .githooks
 python3 .github/scripts/check_links.py
@@ -95,6 +97,8 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 | [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols) | ClickHouse 핵심 실습 |
 
 ### ✅ 저장소 검사
+
+현재 상태와 재실행이 필요한 항목: [STATUS.md](STATUS.md).
 
 ```bash
 git config core.hooksPath .githooks
