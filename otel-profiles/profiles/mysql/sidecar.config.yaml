@@ -1,0 +1,54 @@
+# mysql — Tier B half (metrics)
+#
+# ClickStack's collector build has no `mysql` receiver, so engine metrics run
+# in a sidecar `otel/opentelemetry-collector-contrib` container that forwards
+# OTLP to ClickStack. The receiver is beta for metrics (development for logs,
+# which this profile does not use here -- see custom.config.yaml for logs
+# instead), distributions: [contrib], so the public image has it -- no custom
+# build needed.
+#
+# No hw.* mapping: mysql.* metrics are database metrics, not hardware sensor
+# readings, and the receiver already follows the database semantic
+# conventions (see metrics.md).
+#
+# Alternative for anyone already running mysqld_exporter: scrape it with the
+# prometheus receiver instead and stay in Tier A entirely. Not the default
+# here because it requires a separately-run exporter; see metrics.md.
+
+receivers:
+  mysql:
+    endpoint: ${env:MYSQL_ENDPOINT}
+    username: ${env:MYSQL_USERNAME}
+    password: ${env:MYSQL_PASSWORD}
+    collection_interval: 30s
+    initial_delay: 1s
+    tls:
+      insecure: ${env:MYSQL_TLS_INSECURE}
+
+processors:
+  resource/mysql:
+    attributes:
+      - key: deploy.platform
+        value: host
+        action: upsert
+      - key: service.name
+        value: mysql
+        action: upsert
+      # The receiver has no db.system.name (or db.system) resource attribute
+      # to enable at the collector version this repo pins (0.155.0) -- that
+      # attribute was added to mysqlreceiver's metadata.yaml in a later
+      # release. Set it ourselves so it is there regardless; see metrics.md.
+      - key: db.system.name
+        value: mysql
+        action: upsert
+
+service:
+  pipelines:
+    metrics/mysql:
+      receivers: [mysql]
+      processors:
+        - memory_limiter
+        - resourcedetection/common
+        - resource/mysql
+        - batch
+      exporters: [otlp/clickstack]

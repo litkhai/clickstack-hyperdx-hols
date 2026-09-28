@@ -23,10 +23,12 @@ ingestion with no error at startup.
 | [baremetal-node](profiles/baremetal-node/) | A | in-band hwmon plus out-of-band BMC sensors | `baremetal` |
 | [virt-kvm](profiles/virt-kvm/) | A | KVM/libvirt per-domain counters and hypervisor OS | `vm` |
 | [virt-vsphere](profiles/virt-vsphere/) | B | vSphere clusters, hosts, VMs, datastores | `vm` |
+| [mysql](profiles/mysql/) | A+B | self-managed MySQL: engine metrics, error and slow query logs | `host` |
+| [aws-rds-mysql](profiles/aws-rds-mysql/) | B | MySQL on RDS: engine metrics plus CloudWatch instance metrics, Enhanced Monitoring and logs | `managed` |
 
-None carry a `Verified on …` line yet: each needs its own class of hardware to
-run against, and per AGENTS.md the claim waits for an end-to-end run confirmed
-by SQL.
+None carry a `Verified on …` line yet: each needs its own class of hardware (or,
+for `aws-rds-mysql`, a real RDS instance) to run against, and per AGENTS.md the
+claim waits for an end-to-end run confirmed by SQL.
 
 ### Tier A and Tier B
 
@@ -127,10 +129,12 @@ stability, and the `vcenter` receiver is alpha — pin your sidecar image.
 | [baremetal-node](profiles/baremetal-node/) | A | in-band hwmon과 out-of-band BMC 센서 | `baremetal` |
 | [virt-kvm](profiles/virt-kvm/) | A | KVM/libvirt 도메인별 카운터와 하이퍼바이저 OS | `vm` |
 | [virt-vsphere](profiles/virt-vsphere/) | B | vSphere 클러스터·호스트·VM·데이터스토어 | `vm` |
+| [mysql](profiles/mysql/) | A+B | 자체 운영 MySQL: 엔진 지표, 에러·슬로우 쿼리 로그 | `host` |
+| [aws-rds-mysql](profiles/aws-rds-mysql/) | B | RDS의 MySQL: 엔진 지표 + CloudWatch 인스턴스 지표·Enhanced Monitoring·로그 | `managed` |
 
-아직 어느 프로파일에도 `Verified on …` 줄이 없습니다. 각각 해당 장비군이 있어야
-실행할 수 있고, AGENTS.md에 따라 SQL로 확인한 end-to-end 실행 전에는 그 주장을
-쓰지 않습니다.
+아직 어느 프로파일에도 `Verified on …` 줄이 없습니다. 각각 해당 장비군이(또는
+`aws-rds-mysql`은 실제 RDS 인스턴스가) 있어야 실행할 수 있고, AGENTS.md에 따라
+SQL로 확인한 end-to-end 실행 전에는 그 주장을 쓰지 않습니다.
 
 ### Tier A와 Tier B
 

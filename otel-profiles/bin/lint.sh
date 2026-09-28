@@ -44,14 +44,17 @@ for p in "${profiles[@]}"; do
         continue
     fi
 
-    # Rule 9: which tier, and are the required files there
-    if [ -f "$dir/custom.config.yaml" ]; then
-        tier=a
-        config="$dir/custom.config.yaml"
-    elif [ -f "$dir/sidecar.config.yaml" ]; then
-        tier=b
-        config="$dir/sidecar.config.yaml"
-    else
+    # Rule 9: which tier(s), and are the required files there. A profile may
+    # ship both custom.config.yaml (tier A) and sidecar.config.yaml (tier B)
+    # when its signals genuinely come from different places -- see
+    # CONVENTIONS.md rules 4 and 9. Collect every config file it ships so both
+    # get the rule 2 and 3 checks below; picking one with elif would leave the
+    # other's pipelines and components unchecked.
+    configs=()
+    [ -f "$dir/custom.config.yaml" ] && configs+=("a:$dir/custom.config.yaml")
+    [ -f "$dir/sidecar.config.yaml" ] && configs+=("b:$dir/sidecar.config.yaml")
+
+    if [ "${#configs[@]}" -eq 0 ]; then
         fail "has neither custom.config.yaml (tier A) nor sidecar.config.yaml (tier B)"
         continue
     fi
@@ -60,48 +63,58 @@ for p in "${profiles[@]}"; do
         [ -f "$dir/$f" ] || fail "missing $f"
     done
 
-    if ! yq '.' "$config" >/dev/null 2>&1; then
-        fail "$(basename "$config") is not valid YAML"
-        continue
-    fi
+    for entry in "${configs[@]}"; do
+        tier="${entry%%:*}"
+        config="${entry#*:}"
 
-    # Rule 2: every pipeline is named, and named after this profile
-    while IFS= read -r key; do
-        [ -n "$key" ] || continue
-        case "$key" in
-            metrics|logs|traces)
-                fail "bare pipeline '$key' replaces ClickStack's own -- use '$key/$p'" ;;
-            */"$p")
-                : ;;
-            *)
-                fail "pipeline '$key' is not named after the profile (expected <signal>/$p)" ;;
-        esac
-    done < <(yq '.service.pipelines // {} | keys | .[]' "$config")
+        if ! yq '.' "$config" >/dev/null 2>&1; then
+            fail "$(basename "$config") is not valid YAML"
+            continue
+        fi
 
-    # Rule 3: no redefining a base component (tier A only -- a tier B sidecar
-    # is a separate collector and defines its own)
-    if [ "$tier" = a ]; then
-        for kind in receivers processors exporters; do
-            case "$kind" in
-                receivers)  reserved="$base_receivers" ;;
-                processors) reserved="$base_processors" ;;
-                exporters)  reserved="$base_exporters" ;;
-                *)          reserved="" ;;
+        # Rule 2: every pipeline is named, and named after this profile.
+        # Applies to every config a profile ships, tier A or B.
+        while IFS= read -r key; do
+            [ -n "$key" ] || continue
+            case "$key" in
+                metrics|logs|traces)
+                    fail "$(basename "$config"): bare pipeline '$key' replaces ClickStack's own -- use '$key/$p'" ;;
+                */"$p")
+                    : ;;
+                *)
+                    fail "$(basename "$config"): pipeline '$key' is not named after the profile (expected <signal>/$p)" ;;
             esac
-            while IFS= read -r name; do
-                [ -n "$name" ] || continue
-                for r in $reserved; do
-                    [ "$name" = "$r" ] && \
-                        fail "redefines base $kind '$name' -- reference it by name, or use '$name/custom'"
-                done
-                # Rule 3, second half: anything it does define is suffixed
-                case "$name" in
-                    */"$p"|*/common) : ;;
-                    *) fail "$kind '$name' is not suffixed with the profile name (expected '$name/$p')" ;;
+        done < <(yq '.service.pipelines // {} | keys | .[]' "$config")
+
+        # Rule 3: no redefining a base component (tier A only -- a tier B
+        # sidecar is a separate collector and defines its own memory_limiter,
+        # batch and exporter). Each config gets the reserved-component set for
+        # its own tier, not the profile's -- a dual-tier profile's sidecar
+        # file is checked as tier B even though custom.config.yaml next to it
+        # is tier A.
+        if [ "$tier" = a ]; then
+            for kind in receivers processors exporters; do
+                case "$kind" in
+                    receivers)  reserved="$base_receivers" ;;
+                    processors) reserved="$base_processors" ;;
+                    exporters)  reserved="$base_exporters" ;;
+                    *)          reserved="" ;;
                 esac
-            done < <(yq ".$kind // {} | keys | .[]" "$config")
-        done
-    fi
+                while IFS= read -r name; do
+                    [ -n "$name" ] || continue
+                    for r in $reserved; do
+                        [ "$name" = "$r" ] && \
+                            fail "$(basename "$config"): redefines base $kind '$name' -- reference it by name, or use '$name/custom'"
+                    done
+                    # Rule 3, second half: anything it does define is suffixed
+                    case "$name" in
+                        */"$p"|*/common) : ;;
+                        *) fail "$(basename "$config"): $kind '$name' is not suffixed with the profile name (expected '$name/$p')" ;;
+                    esac
+                done < <(yq ".$kind // {} | keys | .[]" "$config")
+            done
+        fi
+    done
 done
 
 echo

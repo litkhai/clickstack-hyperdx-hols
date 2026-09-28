@@ -1,0 +1,91 @@
+# mysql — Tier A half (logs)
+#
+# filelog on the MySQL error log and the slow query log. Engine metrics run in
+# the Tier B sidecar instead -- the mysql receiver is not in ClickStack's
+# build -- see sidecar.config.yaml. This profile ships both files because the
+# two signals genuinely come from different places: the logs are files
+# already on the machine ClickStack's own collector reads (mount the host
+# filesystem, same as linux-host), metrics need a live connection to the
+# instance. See ../../CONVENTIONS.md rules 4 and 9.
+#
+# Written against the MySQL 8.x log formats:
+#   - error log:  <UTC timestamp> <thread id> [<severity>] [<MY-error-code>] [<subsystem>] <message>
+#   - slow log:   multi-line, each entry starting at a "# Time: " comment line
+# The error log format changed at 8.0 (5.7 has no [MY-######] error-code
+# field), so the regex below will not match on 5.7 -- lines fall through with
+# on_error: send, so they still arrive, just with a raw, unparsed body.
+#
+# Both logs are read by one filelog/mysql receiver rather than two, so its one
+# component name can stay suffixed with the profile name (rule 3). The single
+# multiline.line_start_pattern below covers both formats at once: every error
+# log line starts with an ISO-8601 timestamp, so each matches the pattern and
+# stays its own entry (the same behaviour as if multiline were unset); every
+# slow log entry starts with "# Time: ", so its continuation lines (User@Host,
+# Query_time, the SQL text itself) are buffered into the same entry until the
+# next "# Time: " line.
+
+receivers:
+  filelog/mysql:
+    include:
+      - /hostfs/var/log/mysql/error.log
+      - /hostfs/var/log/mysql/mysql-slow.log
+    start_at: end
+    include_file_name: true
+    include_file_path: true
+    retry_on_failure:
+      enabled: true
+    multiline:
+      line_start_pattern: '^(?:\d{4}-\d{2}-\d{2}T|# Time: )'
+    operators:
+      # Slow query log: log.file.name is the basename filelog attaches to
+      # every entry it reads from that file.
+      - type: regex_parser
+        if: 'attributes["log.file.name"] == "mysql-slow.log"'
+        regex: '(?s)^# Time: (?P<slow_time>\S+)\s*\n# User@Host: (?P<user_host>[^\n]*)\n# Query_time: (?P<query_time>[0-9.]+)\s+Lock_time: (?P<lock_time>[0-9.]+)\s+Rows_sent: (?P<rows_sent>\d+)\s+Rows_examined: (?P<rows_examined>\d+)'
+        parse_from: body
+        parse_to: attributes
+        on_error: send
+
+      - type: time_parser
+        if: 'attributes.slow_time != nil'
+        parse_from: attributes.slow_time
+        layout_type: strptime
+        layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+
+      # Error log, 8.x format.
+      - type: regex_parser
+        if: 'attributes["log.file.name"] == "error.log"'
+        regex: '^(?P<error_ts>\S+)\s+(?P<thread_id>\d+)\s+\[(?P<severity>[^\]]+)\]\s+\[(?P<error_code>[^\]]+)\]\s+\[(?P<subsystem>[^\]]+)\]\s+(?P<msg>.*)$'
+        parse_from: body
+        parse_to: attributes
+        on_error: send
+
+      - type: time_parser
+        if: 'attributes.error_ts != nil'
+        parse_from: attributes.error_ts
+        layout_type: strptime
+        layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+
+processors:
+  resource/mysql:
+    attributes:
+      - key: deploy.platform
+        value: host
+        action: upsert
+      - key: service.name
+        value: mysql
+        action: upsert
+      # sidecar.config.yaml sets the same attribute on the metrics half via
+      # resource/mysql there, for the same reason: neither filelog nor the
+      # mysql receiver at this repo's pinned collector version (0.155.0) can
+      # set it on its own. See metrics.md.
+      - key: db.system.name
+        value: mysql
+        action: upsert
+
+service:
+  pipelines:
+    logs/mysql:
+      receivers: [filelog/mysql]
+      processors: [memory_limiter, resourcedetection/common, resource/mysql, transform, batch]
+      exporters: [clickhouse]

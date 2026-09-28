@@ -26,6 +26,22 @@ services:
       VCENTER_USERNAME: ${VCENTER_USERNAME:-}
       VCENTER_PASSWORD: ${VCENTER_PASSWORD:-}
       VCENTER_TLS_INSECURE_SKIP_VERIFY: ${VCENTER_TLS_INSECURE_SKIP_VERIFY:-false}
+      MYSQL_ENDPOINT: ${MYSQL_ENDPOINT:-}
+      MYSQL_USERNAME: ${MYSQL_USERNAME:-}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      MYSQL_TLS_INSECURE: ${MYSQL_TLS_INSECURE:-false}
+      RDS_MYSQL_ENDPOINT: ${RDS_MYSQL_ENDPOINT:-}
+      RDS_MYSQL_USERNAME: ${RDS_MYSQL_USERNAME:-}
+      RDS_MYSQL_PASSWORD: ${RDS_MYSQL_PASSWORD:-}
+      RDS_DB_INSTANCE_IDENTIFIER: ${RDS_DB_INSTANCE_IDENTIFIER:-}
+      RDS_RESOURCE_ID: ${RDS_RESOURCE_ID:-}
+      AWS_REGION: ${AWS_REGION:-}
+      # Picked up directly by the AWS SDK's own environment credential chain,
+      # not referenced via ${env:...} in aws-rds-mysql's sidecar.config.yaml --
+      # passed through here only so they reach the container at all.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
       # health_check from base.yaml
       - "13133:13133"

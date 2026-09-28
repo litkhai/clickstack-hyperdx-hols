@@ -11,9 +11,10 @@ GitHub secret scanning and push protection are on.
 
 3 labs in the README tables; 2 single-language: `workshops/o11y-vector-ai`, `workshops/observability-waf`.
 
-5 OTel profiles in `otel-profiles/` — `linux-host`, `gpu-nvidia`, `baremetal-node`, `virt-kvm`, `virt-vsphere`.
-**None verified**: each needs its own class of hardware to run against, so none carries a
-`Verified on …` line yet.
+7 OTel profiles in `otel-profiles/` — `linux-host`, `gpu-nvidia`, `baremetal-node`, `virt-kvm`,
+`virt-vsphere`, `mysql`, `aws-rds-mysql`.
+**None verified**: each needs its own class of hardware (or, for `aws-rds-mysql`, a real RDS
+instance) to run against, so none carries a `Verified on …` line yet.
 
 ## Open work
 
