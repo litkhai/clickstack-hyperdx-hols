@@ -35,3 +35,15 @@ split. The original locations:
 | `chc/tool/ch2otel/` | `labs/ch2otel/` |
 | `workshop/o11y-vector-ai/` | `workshops/o11y-vector-ai/` |
 | `workshop/observability-waf/` | `workshops/observability-waf/` |
+
+## Tracking work
+
+Planned work, re-verification and follow-ups are **GitHub issues**; every change
+lands through a **pull request** that references its issue (`Closes #N`).
+`STATUS.md` is a snapshot of the current state and links to the open issues
+instead of keeping its own to-do list. When you find something to do that you
+are not doing now, open an issue rather than writing it into a README or
+`STATUS.md`. Labels: `re-verify` (changed but not re-run), `enhancement`,
+`docs`, `ops`, `security`.
+
+한국어: 해야 할 일은 GitHub 이슈로, 변경은 이슈를 참조하는 PR로 관리합니다. `STATUS.md`는 열린 이슈를 링크합니다.
