@@ -1,0 +1,31 @@
+# Copy to cloud.tfvars (gitignored -- *.tfvars is, *.tfvars.example is not)
+# and fill in. Pair with envs/cloud.env.example for the provider credentials,
+# which are NOT tfvars -- see ../provider.tf.
+#
+#   cp envs/cloud.tfvars.example envs/cloud.tfvars
+#   terraform -chdir=. apply -var-file=envs/cloud.tfvars
+
+deployment = "cloud"
+
+# clickhouse_host / clickhouse_user / clickhouse_password are unused in
+# cloud mode -- connection.tf does not create a connection resource there.
+# Leave unset.
+
+# The database ClickStack's own collector migrated into on your Cloud
+# service. "default" is the common case; check if unsure.
+clickhouse_database = "default"
+
+# Required in cloud mode: the Cloud API exposes no connections endpoint and
+# the provider has no clickstack_source data source, so this has to come in
+# as a variable. Read it once from an existing source -- see the comment on
+# the cloud_connection_id variable in ../variables.tf for the curl command.
+cloud_connection_id = ""
+
+# Leave "": a Cloud service is a single ClickStack team, and the API
+# rejects the team attribute outright there.
+team = ""
+
+webhook_service = "generic"
+webhook_url     = ""
+
+alert_threshold = 100
