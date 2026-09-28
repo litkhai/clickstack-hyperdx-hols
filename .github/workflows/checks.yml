@@ -56,8 +56,8 @@ jobs:
           fi
           yq --version
           ./otel-profiles/bin/lint.sh
-          ./otel-profiles/bin/build-config.sh linux-host gpu-nvidia baremetal-node virt-kvm > /dev/null
-          ./otel-profiles/bin/build-config.sh --tier b virt-vsphere > /dev/null
+          ./otel-profiles/bin/build-config.sh linux-host gpu-nvidia baremetal-node virt-kvm mysql > /dev/null
+          ./otel-profiles/bin/build-config.sh --tier b virt-vsphere mysql aws-rds-mysql > /dev/null
 
   secrets:
     name: secret scan

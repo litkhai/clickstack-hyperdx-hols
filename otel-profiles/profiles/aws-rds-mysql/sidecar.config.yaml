@@ -1,0 +1,158 @@
+# aws-rds-mysql — Tier B
+#
+# RDS removes the filesystem the mysql profile's logs half relies on, which is
+# why this is a separate profile rather than a variant of ../mysql -- there is
+# nowhere to mount /hostfs on a managed instance. Everything here runs in the
+# sidecar; ClickStack's collector build has neither the mysql nor the
+# awscloudwatch receiver.
+#
+#   mysql receiver          — engine metrics, same as ../mysql, against the
+#                             RDS endpoint. beta (metrics), distributions: [contrib]
+#   awscloudwatch receiver  — instance metrics (CPUUtilization, FreeStorageSpace,
+#                             DatabaseConnections, ReadIOPS, WriteLatency),
+#                             Enhanced Monitoring, and the error/slow query
+#                             logs -- RDS ships these to CloudWatch Logs, not
+#                             files. alpha (logs and metrics), distributions: [contrib]
+#
+#                             Renamed to `aws_cloudwatch` (deprecated alias
+#                             `awscloudwatch`) upstream, but only in a release
+#                             after 0.155.0 -- the version this repo pins (see
+#                             ../../README.md "Reference versions"). At
+#                             0.155.0 the receiver's own type is still
+#                             `awscloudwatch`; that is what is used below. If
+#                             you bump the sidecar image past the rename, use
+#                             `aws_cloudwatch` instead.
+#
+# No hw.* mapping, same reasoning as ../mysql. deploy.platform=managed (not a
+# machine class) plus cloud.provider/cloud.region/db.system.name carry the
+# specifics -- see CONVENTIONS.md rule 6.
+#
+# CloudWatch GetMetricData is billed per metric per call. Explicit `queries`
+# with a single `stats` entry each cost one API sub-query per metric per
+# scrape, a quarter of the four-statistic Summary default; the interval below
+# matches the receiver's own 5-minute default rather than something shorter.
+# See metrics.md for the cost math and for Metric Streams as a cheaper option
+# at fleet scale.
+#
+# Performance Insights is out of scope: it has no OTel receiver, only its own
+# API.
+
+receivers:
+  mysql:
+    endpoint: ${env:RDS_MYSQL_ENDPOINT}
+    username: ${env:RDS_MYSQL_USERNAME}
+    password: ${env:RDS_MYSQL_PASSWORD}
+    collection_interval: 30s
+    initial_delay: 1s
+    tls:
+      insecure: false
+
+  awscloudwatch:
+    region: ${env:AWS_REGION}
+    metrics:
+      collection_interval: 5m
+      period: 5m
+      delay: 10m
+      queries:
+        - namespace: AWS/RDS
+          metric_name: CPUUtilization
+          dimensions:
+            DBInstanceIdentifier: ${env:RDS_DB_INSTANCE_IDENTIFIER}
+          stats: [Average]
+        - namespace: AWS/RDS
+          metric_name: FreeStorageSpace
+          dimensions:
+            DBInstanceIdentifier: ${env:RDS_DB_INSTANCE_IDENTIFIER}
+          stats: [Average]
+        - namespace: AWS/RDS
+          metric_name: DatabaseConnections
+          dimensions:
+            DBInstanceIdentifier: ${env:RDS_DB_INSTANCE_IDENTIFIER}
+          stats: [Average]
+        - namespace: AWS/RDS
+          metric_name: ReadIOPS
+          dimensions:
+            DBInstanceIdentifier: ${env:RDS_DB_INSTANCE_IDENTIFIER}
+          stats: [Average]
+        - namespace: AWS/RDS
+          metric_name: WriteLatency
+          dimensions:
+            DBInstanceIdentifier: ${env:RDS_DB_INSTANCE_IDENTIFIER}
+          stats: [Average]
+    logs:
+      poll_interval: 1m
+      groups:
+        named:
+          # Enhanced Monitoring: one shared log group per account/region, one
+          # stream per DB instance (named after the instance's Resource ID,
+          # not its identifier -- RDS console -> Configuration -> Resource ID).
+          # The transform below parses each entry's JSON body. `prefixes` sits
+          # directly under the group name -- confirmed against the receiver's
+          # config.go (StreamConfig has no nested `streams` wrapper here); the
+          # upstream README's own worked example agrees, its prose table does
+          # not.
+          RDSOSMetrics:
+            prefixes: ["${env:RDS_RESOURCE_ID}"]
+          # Error and slow query logs, only present once log exports are
+          # enabled on the instance (see README) -- fixed naming convention,
+          # not configurable. No streams filter needed: each group already
+          # holds only this instance's own log stream.
+          /aws/rds/instance/${env:RDS_DB_INSTANCE_IDENTIFIER}/error: {}
+          /aws/rds/instance/${env:RDS_DB_INSTANCE_IDENTIFIER}/slowquery: {}
+
+processors:
+  resource/aws-rds-mysql:
+    attributes:
+      - key: deploy.platform
+        value: managed
+        action: upsert
+      - key: service.name
+        value: aws-rds-mysql
+        action: upsert
+      - key: cloud.provider
+        value: aws
+        action: upsert
+      - key: cloud.region
+        value: ${env:AWS_REGION}
+        action: upsert
+      # Set uniformly here rather than per receiver: the mysql receiver at the
+      # pinned collector version (0.155.0) has no db.system.name resource
+      # attribute to enable at all -- that attribute was added upstream in a
+      # later release than this repo pins, see ../mysql/metrics.md -- and
+      # awscloudwatch has no concept of db.system in the first place. This is
+      # the only way both signal sources end up tagged the same.
+      - key: db.system.name
+        value: mysql
+        action: upsert
+
+  # Enhanced Monitoring's log body is a JSON blob (per-second OS metrics).
+  # Parsed into one nested attribute rather than mapped field-by-field: the
+  # schema has dozens of fields (cpuUtilization, memory, diskIO, ...) and
+  # CONVENTIONS.md rule 5 says not to invent a mapping when uncertain -- this
+  # keeps every field, queryable via JSON functions, without guessing at which
+  # ones matter or what they should be renamed to.
+  transform/aws-rds-mysql:
+    error_mode: ignore
+    log_statements:
+      - set(log.attributes["rds.os_metrics"], ParseJSON(log.body)) where resource.attributes["cloudwatch.log.group.name"] == "RDSOSMetrics"
+
+service:
+  pipelines:
+    metrics/aws-rds-mysql:
+      receivers: [mysql, awscloudwatch]
+      processors:
+        - memory_limiter
+        - resourcedetection/common
+        - resource/aws-rds-mysql
+        - batch
+      exporters: [otlp/clickstack]
+
+    logs/aws-rds-mysql:
+      receivers: [awscloudwatch]
+      processors:
+        - memory_limiter
+        - resourcedetection/common
+        - resource/aws-rds-mysql
+        - transform/aws-rds-mysql
+        - batch
+      exporters: [otlp/clickstack]

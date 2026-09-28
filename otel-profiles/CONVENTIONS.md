@@ -75,6 +75,7 @@ ClickStack does not ship `otelcol-contrib`. It is an OCB build (`otelcol-hyperdx
 |---|---|---|
 | **A** | `custom.config.yaml` | inside ClickStack, merged into its config |
 | **B** | `sidecar.config.yaml` | a separate collector image, exporting OTLP to ClickStack |
+| **A+B** | both `custom.config.yaml` and `sidecar.config.yaml` | split: some signals inside ClickStack, others in the sidecar |
 
 A receiver not in the list above forces Tier B. Before adding a Tier B profile, check the
 receiver's `metadata.yaml` for `distributions:` — `[contrib]` means the public
@@ -83,6 +84,11 @@ and the profile README must say so.
 
 The `prometheus` receiver is the reason most hardware profiles stay in Tier A: scraping an
 existing exporter needs no new receiver.
+
+A profile ships both files only when its signals genuinely come from different places — for
+example logs that are already files on the machine ClickStack's own collector reads, next to
+metrics that need a receiver ClickStack does not build. It is not a way to avoid deciding a
+single tier for a profile whose signals could all be collected the same way; see rule 9.
 
 ### 5. Normalise to `hw.*`, keep the original
 
@@ -119,7 +125,12 @@ be queryable rather than implied by a table name. Each profile sets, via `resour
 
 | Attribute | Values |
 |---|---|
-| `deploy.platform` | `host` · `gpu` · `baremetal` · `vm` · `container` · `k8s` |
+| `deploy.platform` | `host` · `gpu` · `baremetal` · `vm` · `container` · `k8s` · `managed` |
+
+`managed` covers a managed service — for example a cloud provider's managed database — rather
+than a machine class: there is no host or VM to describe. Pair it with the standard
+`cloud.provider`, `cloud.region` and the relevant `db.system`/`db.system.name` attributes for
+the specifics, rather than adding a new `deploy.platform` value per managed service.
 
 `host.name` and `host.id` come from `resourcedetection/common` in `common/resource.yaml`.
 Keep resource attributes low-cardinality: they are repeated on every row.
@@ -140,13 +151,16 @@ collector image tag.
 
 ### 9. Required files
 
-| Tier A | Tier B | Purpose |
-|---|---|---|
-| `README.md` | `README.md` | bilingual, English first; prerequisites, tier, verification |
-| `custom.config.yaml` | `sidecar.config.yaml` | the config fragment |
-| `.env.example` | `.env.example` | endpoints and credentials, empty values |
-| `metrics.md` | `metrics.md` | source metric to `hw.*` mapping, and what is deliberately unmapped |
-| `verify.sql` | `verify.sql` | ingestion check |
+| Tier A | Tier B | Both tiers | Purpose |
+|---|---|---|---|
+| `README.md` | `README.md` | `README.md` | bilingual, English first; prerequisites, tier, verification |
+| `custom.config.yaml` | `sidecar.config.yaml` | `custom.config.yaml` **and** `sidecar.config.yaml` | the config fragment(s) |
+| `.env.example` | `.env.example` | `.env.example` | endpoints and credentials, empty values |
+| `metrics.md` | `metrics.md` | `metrics.md` | source metric to `hw.*` mapping, and what is deliberately unmapped |
+| `verify.sql` | `verify.sql` | `verify.sql` | ingestion check |
+
+A profile ships both `custom.config.yaml` and `sidecar.config.yaml` only when its signals
+genuinely come from different places — see rule 4. It is not a way to avoid choosing a tier.
 
 `bin/lint.sh` enforces 2, 3 and 9.
 
@@ -224,6 +238,7 @@ ClickStack은 `otelcol-contrib`를 쓰지 않습니다. OCB 빌드(`otelcol-hype
 |---|---|---|
 | **A** | `custom.config.yaml` | ClickStack 내부, 설정에 병합됨 |
 | **B** | `sidecar.config.yaml` | 별도 컬렉터 이미지, OTLP로 ClickStack에 전달 |
+| **A+B** | `custom.config.yaml`과 `sidecar.config.yaml` 둘 다 | 분리: 일부 신호는 ClickStack 내부, 나머지는 사이드카 |
 
 위 목록에 없는 receiver는 무조건 Tier B입니다. Tier B 프로파일을 추가하기 전에 해당
 receiver의 `metadata.yaml`에서 `distributions:`를 확인하세요. `[contrib]`이면 공개
@@ -232,6 +247,11 @@ receiver의 `metadata.yaml`에서 `distributions:`를 확인하세요. `[contrib
 
 대부분의 하드웨어 프로파일이 Tier A에 머무를 수 있는 이유는 `prometheus` receiver입니다.
 이미 있는 exporter를 스크레이프하는 데는 새 receiver가 필요 없습니다.
+
+두 파일을 모두 제공하는 것은 신호가 정말로 서로 다른 곳에서 오는 경우뿐입니다 — 예를 들어
+ClickStack 자체 컬렉터가 이미 읽는 파일에 있는 로그와, ClickStack이 빌드하지 않은 receiver가
+필요한 지표. 모든 신호를 같은 방식으로 모을 수 있는 프로파일에서 tier 하나를 고르지 않으려는
+용도가 아닙니다. 9번 규칙 참고.
 
 ### 5. `hw.*`로 정규화하되 원본을 남긴다
 
@@ -268,7 +288,12 @@ exporter 기준 쿼리도 계속 동작합니다.
 
 | 속성 | 값 |
 |---|---|
-| `deploy.platform` | `host` · `gpu` · `baremetal` · `vm` · `container` · `k8s` |
+| `deploy.platform` | `host` · `gpu` · `baremetal` · `vm` · `container` · `k8s` · `managed` |
+
+`managed`는 머신 종류가 아니라 관리형 서비스(예: 클라우드 제공자의 관리형 데이터베이스)를
+나타냅니다 — 설명할 호스트나 VM이 없기 때문입니다. 관리형 서비스마다 새 `deploy.platform`
+값을 추가하는 대신, 표준 `cloud.provider`, `cloud.region`과 해당하는
+`db.system`/`db.system.name` 속성으로 구체적인 내용을 표현하세요.
 
 `host.name`과 `host.id`는 `common/resource.yaml`의 `resourcedetection/common`이 채웁니다.
 리소스 속성은 모든 행에 반복되므로 카디널리티를 낮게 유지하세요.
@@ -288,12 +313,15 @@ ClickStack/HyperDX, 그리고 Tier B라면 사이드카 컬렉터 이미지 태�
 
 ### 9. 필수 파일
 
-| Tier A | Tier B | 용도 |
-|---|---|---|
-| `README.md` | `README.md` | 이중 언어(영어 먼저), 전제조건·Tier·검증 |
-| `custom.config.yaml` | `sidecar.config.yaml` | 설정 조각 |
-| `.env.example` | `.env.example` | 엔드포인트·자격증명, 값은 비움 |
-| `metrics.md` | `metrics.md` | 원본 메트릭 → `hw.*` 매핑, 의도적으로 매핑하지 않은 것 |
-| `verify.sql` | `verify.sql` | 수집 확인 |
+| Tier A | Tier B | 두 Tier 모두 | 용도 |
+|---|---|---|---|
+| `README.md` | `README.md` | `README.md` | 이중 언어(영어 먼저), 전제조건·Tier·검증 |
+| `custom.config.yaml` | `sidecar.config.yaml` | `custom.config.yaml` **과** `sidecar.config.yaml` | 설정 조각 |
+| `.env.example` | `.env.example` | `.env.example` | 엔드포인트·자격증명, 값은 비움 |
+| `metrics.md` | `metrics.md` | `metrics.md` | 원본 메트릭 → `hw.*` 매핑, 의도적으로 매핑하지 않은 것 |
+| `verify.sql` | `verify.sql` | `verify.sql` | 수집 확인 |
+
+`custom.config.yaml`과 `sidecar.config.yaml`을 둘 다 제공하는 것은 신호가 정말로 서로 다른
+곳에서 오는 경우뿐입니다 — 4번 규칙 참고. tier 하나를 고르지 않으려는 용도가 아닙니다.
 
 `bin/lint.sh`가 2·3·9번을 검사합니다.
