@@ -1,0 +1,32 @@
+# Copy to oss.tfvars (gitignored -- *.tfvars is, *.tfvars.example is not)
+# and fill in. Pair with envs/oss.env.example for the provider credentials,
+# which are NOT tfvars -- see ../provider.tf.
+#
+#   cp envs/oss.tfvars.example envs/oss.tfvars
+#   terraform -chdir=. apply -var-file=envs/oss.tfvars
+
+deployment = "oss"
+
+# _base/'s all-in-one image: ClickStack and ClickHouse share one container,
+# so this is the same localhost the container's own ClickStack server sees,
+# not necessarily reachable from yours. api/api is that image's published
+# dev default for a user allowed to connect over HTTP -- not a secret, and
+# not a password to reuse anywhere else. See _base/README.md.
+clickhouse_host     = "http://localhost:8123"
+clickhouse_user     = "api"
+clickhouse_password = "api"
+clickhouse_database = "default"
+
+# cloud_connection_id is unused in oss mode -- leave unset.
+
+# Single-team OSS ignores the x-hdx-team header, so "" is fine (and portable
+# to a multi-team EE deployment without editing this file).
+team = ""
+
+# A webhook destination is required for alerts.tf to apply (channels cannot
+# be empty). Point this at something you control -- e.g. https://webhook.site
+# while trying this out, or your real endpoint/Slack incoming-webhook URL.
+webhook_service = "generic"
+webhook_url     = ""
+
+alert_threshold = 100

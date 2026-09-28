@@ -1,0 +1,41 @@
+{
+  "name": "OTel overview",
+  "tags": ["otel", "clickstack-config"],
+  "tiles": [
+    {
+      "name": "Log volume",
+      "x": 0, "y": 0, "w": 6, "h": 3,
+      "config": {
+        "displayType": "line",
+        "sourceId": "${logs_source_id}",
+        "select": [
+          { "aggFn": "count", "alias": "Logs" }
+        ]
+      }
+    },
+    {
+      "name": "p95 span duration",
+      "x": 6, "y": 0, "w": 6, "h": 3,
+      "config": {
+        "displayType": "line",
+        "sourceId": "${traces_source_id}",
+        "select": [
+          { "aggFn": "quantile", "level": 0.95, "valueExpression": "Duration", "alias": "p95 duration (ns)" }
+        ]
+      }
+    },
+    {
+      "name": "Error count",
+      "x": 0, "y": 3, "w": 6, "h": 3,
+      "config": {
+        "displayType": "number",
+        "sourceId": "${logs_source_id}",
+        "where": "SeverityText:error",
+        "whereLanguage": "lucene",
+        "select": [
+          { "aggFn": "count", "alias": "Errors" }
+        ]
+      }
+    }
+  ]
+}
