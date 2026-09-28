@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-09-28** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-09-29** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -16,6 +16,13 @@ GitHub secret scanning and push protection are on.
 **None verified**: each needs its own class of hardware (or, for `aws-rds-mysql`, a real RDS
 instance) to run against, so none carries a `Verified on …` line yet.
 
+`_base/` has the local OSS stack and the Cloud target shape, plus `bin/check.sh` (readiness)
+and `bin/verify.sh` (telemetry through to search). `verify.sh` has not been run end to end:
+it needs the ingestion API key, which is only obtainable from the ClickStack UI.
+
+`clickstack-config/` applies and destroys cleanly against the local OSS stack. **Not verified
+against Cloud** — that needs org credentials, so no `Verified on …` line.
+
 ## Open work
 
 Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-hols/issues) · [needs a re-run](https://github.com/litkhai/clickstack-hyperdx-hols/issues?q=is%3Aopen+label%3Are-verify):
@@ -25,4 +32,4 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Turn on a Pages site](https://github.com/litkhai/clickstack-hyperdx-hols/issues/4)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
-- [otel-profiles/: per-target-class collector config](https://github.com/litkhai/clickstack-hyperdx-hols/issues/8)
+- [verify/: staged end-to-end verification](https://github.com/litkhai/clickstack-hyperdx-hols/issues/13) — scope cut to `_base/bin/verify.sh`
