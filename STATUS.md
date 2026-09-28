@@ -11,11 +11,12 @@ GitHub secret scanning and push protection are on.
 
 3 labs in the README tables; 2 single-language: `workshops/o11y-vector-ai`, `workshops/observability-waf`.
 
-## Re-verification notes
+## Open work
 
-Not re-run; update a README's verification line only after a real end-to-end run.
+Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-hols/issues) · [needs a re-run](https://github.com/litkhai/clickstack-hyperdx-hols/issues?q=is%3Aopen+label%3Are-verify):
 
-| What | Note |
-|------|------|
-| `workshops/*` | Single-language (translation backlog). |
-| Roadmap slots in README | Planned, not written. Needs a ClickStack instance (`_base/` first). |
+- [F0: _base/ shared ClickStack environment](https://github.com/litkhai/clickstack-hyperdx-hols/issues/1)
+- [F1–F7: roadmap labs](https://github.com/litkhai/clickstack-hyperdx-hols/issues/2)
+- [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
+- [Turn on a Pages site](https://github.com/litkhai/clickstack-hyperdx-hols/issues/4)
+- [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
