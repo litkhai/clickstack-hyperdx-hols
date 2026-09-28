@@ -1,0 +1,41 @@
+# Local open-source ClickStack, for developing and verifying labs against
+# something throwaway. Everything in one container: ClickHouse, HyperDX,
+# MongoDB and the collector.
+#
+#   cd _base && cp .env.example .env && docker compose up -d
+#   ./bin/check.sh
+#
+# The tag is pinned rather than `latest` so a lab's verification line means
+# something. 2.39.1 is the HyperDX version the otel-profiles/ docs were written
+# against; its collector is built from components 0.155.0.
+
+services:
+  clickstack:
+    image: clickhouse/clickstack-all-in-one:2.39.1
+    container_name: clickstack-local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"      # HyperDX UI
+      - "8000:8000"      # HyperDX external API (/api/v2/...)
+      - "4317:4317"      # OTLP gRPC
+      - "4318:4318"      # OTLP HTTP
+      - "8123:8123"      # ClickHouse HTTP
+      - "9000:9000"      # ClickHouse native
+      - "8888:8888"      # collector internal telemetry (Prometheus)
+      - "13133:13133"    # collector health_check
+    environment:
+      # Set once a profile is in play. Empty is fine: the collector then runs
+      # with ClickStack's own configuration only.
+      CUSTOM_OTELCOL_CONFIG_FILE: ${CUSTOM_OTELCOL_CONFIG_FILE:-}
+    volumes:
+      - clickstack-data:/data
+      - clickstack-logs:/var/log
+      # The host filesystem, for the linux-host and virt-kvm profiles. Read
+      # only: nothing here should ever write to the host.
+      - /:/hostfs:ro
+      # Uncomment together with CUSTOM_OTELCOL_CONFIG_FILE in .env:
+      # - ../otel-profiles/custom.config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+
+volumes:
+  clickstack-data:
+  clickstack-logs:
