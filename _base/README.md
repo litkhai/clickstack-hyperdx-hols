@@ -98,6 +98,24 @@ EXPECT_RECEIVER=hostmetrics/linux-host ./bin/check.sh
 **A `SKIP` is not a `PASS`.** The script says so at the end and counts them,
 because a check that quietly did not run is how a broken pipeline looks healthy.
 
+### End-to-end check
+
+`bin/check.sh` only says the target is reachable. `bin/verify.sh` sends known
+telemetry and follows it through:
+
+```bash
+./bin/verify.sh
+```
+
+It tags 200 log records with a unique `verify.run_id`, waits for them, then
+counts them in `otel_logs` and searches for them through the HyperDX API. The
+two are checked separately on purpose: **SQL passing while search fails means
+the log source definition is wrong, not the ingestion** — which is the failure
+that just looks like an empty UI.
+
+Needs `HYPERDX_INGESTION_KEY` as well as `HYPERDX_API_KEY`; they are different
+keys and ClickStack's OTLP receiver rejects unauthenticated data.
+
 ### Secrets
 
 `.env` is gitignored; `.env.example` carries placeholders and is not. Nothing
@@ -199,6 +217,23 @@ EXPECT_RECEIVER=hostmetrics/linux-host ./bin/check.sh
 
 **`SKIP`은 `PASS`가 아닙니다.** 스크립트가 마지막에 개수를 세어 알려줍니다.
 조용히 실행되지 않은 검사가 바로 깨진 파이프라인이 건강해 보이는 방식입니다.
+
+### End-to-end 검사
+
+`bin/check.sh`는 대상이 닿는지만 말합니다. `bin/verify.sh`는 알려진 텔레메트리를
+보내고 끝까지 따라갑니다.
+
+```bash
+./bin/verify.sh
+```
+
+로그 레코드 200개에 고유한 `verify.run_id`를 붙여 보낸 뒤, `otel_logs`에서 개수를
+세고 HyperDX API로 검색합니다. 둘을 따로 확인하는 건 의도적입니다 — **SQL은
+통과하는데 검색이 실패하면 수집이 아니라 로그 source 정의가 잘못된 것**이고, 이게
+UI에서는 그냥 빈 화면으로만 보이는 실패입니다.
+
+`HYPERDX_API_KEY`와 함께 `HYPERDX_INGESTION_KEY`가 필요합니다. 서로 다른 키이고,
+ClickStack의 OTLP 리시버는 인증 없는 데이터를 거부합니다.
 
 ### 비밀값
 

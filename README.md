@@ -29,6 +29,15 @@ Composable collector configuration, one fragment per class of machine — what t
 |---|---|
 | [otel-profiles](otel-profiles/) | `linux-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` |
 
+### 🧰 ClickStack config (`clickstack-config/`)
+
+Sources, dashboards and alerts as one Terraform configuration, switched between
+self-hosted and Cloud by environment alone.
+
+| | |
+|---|---|
+| [clickstack-config](clickstack-config/) | log/trace/metric sources, a dashboard, an alert and a webhook |
+
 ### 🗺 Roadmap
 
 Planned — not written yet.
@@ -91,6 +100,15 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 | | |
 |---|---|
 | [otel-profiles](otel-profiles/) | `linux-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` |
+
+### 🧰 ClickStack 설정 (`clickstack-config/`)
+
+source·대시보드·알림을 하나의 Terraform 설정으로 관리하며, self-hosted와 Cloud를
+환경변수만으로 전환합니다.
+
+| | |
+|---|---|
+| [clickstack-config](clickstack-config/) | log/trace/metric source, 대시보드, 알림, 웹훅 |
 
 ### 🗺 로드맵
 
