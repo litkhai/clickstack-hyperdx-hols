@@ -1,0 +1,70 @@
+# linux-host — Tier A
+#
+# Host metrics and syslog from a plain Linux machine or VM guest.
+# Merged into ClickStack's own config; see ../../CONVENTIONS.md before editing.
+
+receivers:
+  hostmetrics/linux-host:
+    collection_interval: 30s
+    # The collector runs in a container, so the host filesystem must be bind
+    # mounted and named here. Remove this line when running the collector
+    # directly on the host.
+    root_path: /hostfs
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      load:
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      filesystem:
+      network:
+      paging:
+      processes:
+      system:
+
+  filelog/linux-host:
+    include:
+      - /hostfs/var/log/syslog
+      - /hostfs/var/log/messages
+    start_at: end
+    include_file_path: true
+    retry_on_failure:
+      enabled: true
+    operators:
+      - type: regex_parser
+        regex: '^(?P<ts>\w{3}\s+\d+\s\d{2}:\d{2}:\d{2}) (?P<host>\S+) (?P<unit>[^:\[]+)(?:\[(?P<pid>\d+)\])?: (?P<msg>.*)$'
+        parse_from: body
+        parse_to: attributes
+        on_error: send
+      - type: time_parser
+        parse_from: attributes.ts
+        layout_type: strptime
+        layout: '%b %d %H:%M:%S'
+        if: 'attributes.ts != nil'
+
+processors:
+  resource/linux-host:
+    attributes:
+      - key: deploy.platform
+        value: host
+        action: upsert
+      - key: service.name
+        value: linux-host
+        action: insert
+
+service:
+  pipelines:
+    metrics/linux-host:
+      receivers: [hostmetrics/linux-host]
+      processors: [memory_limiter, resourcedetection/common, resource/linux-host, batch]
+      exporters: [clickhouse]
+
+    logs/linux-host:
+      receivers: [filelog/linux-host]
+      processors: [memory_limiter, resourcedetection/common, resource/linux-host, transform, batch]
+      exporters: [clickhouse]

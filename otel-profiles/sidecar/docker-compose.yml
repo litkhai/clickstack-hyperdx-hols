@@ -1,0 +1,31 @@
+# Tier B sidecar: a contrib collector holding receivers ClickStack's own build
+# does not have, forwarding everything to it over OTLP.
+#
+#   ../bin/build-config.sh --tier b virt-vsphere > sidecar.config.yaml
+#   docker compose --env-file .env up -d
+#
+# The image tag is pinned deliberately. Tier B profiles use alpha-stability
+# receivers whose metric names can change between releases, so an unpinned
+# `latest` would break dashboards on a silent image update. 0.155.0 is the
+# component version ClickStack 2.39.1 is built from, which keeps both
+# collectors on the same OTLP and semconv behaviour.
+
+services:
+  otel-sidecar:
+    image: otel/opentelemetry-collector-contrib:0.155.0
+    container_name: otel-sidecar
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/sidecar.config.yaml"]
+    volumes:
+      - ./sidecar.config.yaml:/etc/otelcol-contrib/sidecar.config.yaml:ro
+    environment:
+      CLICKSTACK_OTLP_ENDPOINT: ${CLICKSTACK_OTLP_ENDPOINT}
+      CLICKSTACK_OTLP_INSECURE: ${CLICKSTACK_OTLP_INSECURE}
+      CLICKSTACK_API_KEY: ${CLICKSTACK_API_KEY}
+      VCENTER_ENDPOINT: ${VCENTER_ENDPOINT:-}
+      VCENTER_USERNAME: ${VCENTER_USERNAME:-}
+      VCENTER_PASSWORD: ${VCENTER_PASSWORD:-}
+      VCENTER_TLS_INSECURE_SKIP_VERIFY: ${VCENTER_TLS_INSECURE_SKIP_VERIFY:-false}
+    ports:
+      # health_check from base.yaml
+      - "13133:13133"

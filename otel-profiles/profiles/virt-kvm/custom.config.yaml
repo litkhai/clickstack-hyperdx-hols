@@ -1,0 +1,61 @@
+# virt-kvm — Tier A
+#
+# Hypervisor-side view of a KVM/libvirt host: per-domain CPU, memory, block and
+# network counters scraped from a libvirt Prometheus exporter.
+#
+# Deliberately does no hw.* mapping. Domain counters are not hardware metrics,
+# and libvirt exporters disagree on metric names and units, so a mapping written
+# here would be wrong for most of them. metrics.md records what to check and
+# how to add your own mapping.
+#
+# For the guest's own view, run the linux-host profile inside the guest. The two
+# compose: `bin/build-config.sh virt-kvm linux-host`.
+
+receivers:
+  prometheus/virt-kvm:
+    config:
+      scrape_configs:
+        - job_name: libvirt
+          scrape_interval: 30s
+          static_configs:
+            - targets:
+                - ${env:LIBVIRT_EXPORTER_ENDPOINT}
+
+  # Physical health of the hypervisor host itself.
+  hostmetrics/virt-kvm:
+    collection_interval: 30s
+    root_path: /hostfs
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      load:
+      disk:
+      filesystem:
+      network:
+
+processors:
+  resource/virt-kvm:
+    attributes:
+      - key: deploy.platform
+        value: vm
+        action: upsert
+      - key: service.name
+        value: virt-kvm
+        action: upsert
+
+service:
+  pipelines:
+    metrics/virt-kvm:
+      receivers: [prometheus/virt-kvm, hostmetrics/virt-kvm]
+      processors:
+        - memory_limiter
+        - resourcedetection/common
+        - resource/virt-kvm
+        - batch
+      exporters: [clickhouse]

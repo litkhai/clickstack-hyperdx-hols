@@ -1,0 +1,95 @@
+# baremetal-node — Tier A
+#
+# Bare-metal server health from two Prometheus exporters:
+#   node_exporter  in-band OS and hwmon sensors
+#   ipmi_exporter  out-of-band BMC sensors (power, fans, temperatures)
+#
+# This is the recommended default for bare metal. The native `redfish` receiver
+# is `distributions: []` upstream — not in the contrib image and not in
+# ClickStack's build — so it needs a custom OCB build; see ../baremetal-bmc.
+#
+# ipmi_exporter is scraped with a target parameter, which is why it gets its own
+# scrape_config rather than another entry in the same one.
+
+receivers:
+  prometheus/baremetal-node:
+    config:
+      scrape_configs:
+        - job_name: node
+          scrape_interval: 30s
+          static_configs:
+            - targets:
+                - ${env:NODE_EXPORTER_ENDPOINT}
+
+        - job_name: ipmi
+          scrape_interval: 60s
+          metrics_path: /ipmi
+          params:
+            target:
+              - ${env:IPMI_TARGET}
+          static_configs:
+            - targets:
+                - ${env:IPMI_EXPORTER_ENDPOINT}
+
+processors:
+  resource/baremetal-node:
+    attributes:
+      - key: deploy.platform
+        value: baremetal
+        action: upsert
+      - key: service.name
+        value: baremetal-node
+        action: upsert
+
+  metricstransform/baremetal-node:
+    transforms:
+      # ipmi_exporter, already Cel. `name` is the sensor name (e.g. "Inlet Temp").
+      - include: ipmi_temperature_celsius
+        match_type: strict
+        action: insert
+        new_name: hw.temperature
+        operations:
+          - action: update_label
+            label: id
+            new_label: hw.id
+          - action: update_label
+            label: name
+            new_label: hw.sensor_location
+
+      # node_exporter hwmon, already Cel.
+      - include: node_hwmon_temp_celsius
+        match_type: strict
+        action: insert
+        new_name: hw.temperature
+        operations:
+          - action: update_label
+            label: sensor
+            new_label: hw.id
+          - action: update_label
+            label: chip
+            new_label: hw.sensor_location
+
+      # ipmi_exporter, already W.
+      - include: ipmi_dcmi_power_consumption_watts
+        match_type: strict
+        action: insert
+        new_name: hw.power
+        operations:
+          - action: add_label
+            new_label: hw.id
+            new_value: dcmi
+          - action: add_label
+            new_label: hw.type
+            new_value: power_supply
+
+service:
+  pipelines:
+    metrics/baremetal-node:
+      receivers: [prometheus/baremetal-node]
+      processors:
+        - memory_limiter
+        - resourcedetection/common
+        - resource/baremetal-node
+        - metricstransform/baremetal-node
+        - batch
+      exporters: [clickhouse]

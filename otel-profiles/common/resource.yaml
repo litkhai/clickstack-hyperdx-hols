@@ -1,0 +1,22 @@
+# Shared resource attributes for every Tier A profile.
+#
+# Merged first by bin/build-config.sh, so profile pipelines can reference
+# `resourcedetection/common` without each profile redefining it.
+#
+# override: false — a receiver that already set host.name (the prometheus
+# receiver derives it from the scrape target) keeps its own value.
+
+processors:
+  resourcedetection/common:
+    detectors: [env, system]
+    timeout: 5s
+    override: false
+    system:
+      hostname_sources: [os]
+      resource_attributes:
+        host.name:
+          enabled: true
+        host.id:
+          enabled: true
+        os.type:
+          enabled: true

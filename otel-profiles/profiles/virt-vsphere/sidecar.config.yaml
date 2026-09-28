@@ -1,0 +1,45 @@
+# virt-vsphere — Tier B
+#
+# ClickStack's collector build has no `vcenter` receiver, so this runs in a
+# sidecar `otel/opentelemetry-collector-contrib` container that forwards OTLP to
+# ClickStack. The receiver is `distributions: [contrib]`, so the public image has
+# it — no custom build needed.
+#
+# Stability: vcenter metrics are alpha upstream. Metric names and attributes can
+# change between collector releases, so pin the sidecar image tag.
+#
+# No hw.* mapping: vcenter.* metrics are virtual-infrastructure metrics, not
+# hardware sensor readings, and they already follow their own convention.
+
+receivers:
+  vcenter:
+    endpoint: ${env:VCENTER_ENDPOINT}
+    username: ${env:VCENTER_USERNAME}
+    password: ${env:VCENTER_PASSWORD}
+    # vCenter's QueryPerf API is slow on large inventories. Raise this before
+    # raising max_query_metrics if collection starts overrunning the interval.
+    collection_interval: 5m
+    initial_delay: 1s
+    tls:
+      insecure_skip_verify: ${env:VCENTER_TLS_INSECURE_SKIP_VERIFY}
+
+processors:
+  resource/virt-vsphere:
+    attributes:
+      - key: deploy.platform
+        value: vm
+        action: upsert
+      - key: service.name
+        value: virt-vsphere
+        action: upsert
+
+service:
+  pipelines:
+    metrics/virt-vsphere:
+      receivers: [vcenter]
+      processors:
+        - memory_limiter
+        - resourcedetection/common
+        - resource/virt-vsphere
+        - batch
+      exporters: [otlp/clickstack]
