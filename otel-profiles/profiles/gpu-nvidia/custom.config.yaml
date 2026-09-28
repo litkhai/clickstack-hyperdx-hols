@@ -1,0 +1,184 @@
+# gpu-nvidia — Tier A
+#
+# NVIDIA GPU telemetry by scraping dcgm-exporter. dcgm-exporter has no native
+# OTLP output, so Prometheus scraping is the supported path — and it keeps this
+# profile in Tier A, since ClickStack's collector build has no dcgm receiver
+# but does have `prometheus`.
+#
+# Every hw.* metric is INSERTED, so the original DCGM_FI_* metric survives
+# next to the normalised copy. See metrics.md for the mapping and for what is
+# deliberately left unmapped.
+
+receivers:
+  prometheus/gpu-nvidia:
+    config:
+      scrape_configs:
+        - job_name: dcgm
+          scrape_interval: 15s
+          static_configs:
+            - targets:
+                - ${env:DCGM_EXPORTER_ENDPOINT}
+
+processors:
+  resource/gpu-nvidia:
+    attributes:
+      - key: deploy.platform
+        value: gpu
+        action: upsert
+      - key: service.name
+        value: gpu-nvidia
+        action: upsert
+
+  # Renames, unit conversions and the hw.* attributes required by semconv.
+  # The attribute work is done here rather than in an OTTL transform so that it
+  # applies only to the inserted copies and leaves the DCGM originals untouched.
+  metricstransform/gpu-nvidia:
+    transforms:
+      # percent (0-100) -> ratio (0-1)
+      - include: DCGM_FI_DEV_GPU_UTIL
+        match_type: strict
+        action: insert
+        new_name: hw.gpu.utilization
+        operations:
+          - action: experimental_scale_value
+            experimental_scale: 0.01
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: update_label
+            label: modelName
+            new_label: hw.name
+
+      # MiB -> By
+      - include: DCGM_FI_DEV_FB_USED
+        match_type: strict
+        action: insert
+        new_name: hw.gpu.memory.usage
+        operations:
+          - action: experimental_scale_value
+            experimental_scale: 1048576
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: update_label
+            label: modelName
+            new_label: hw.name
+
+      # MiB -> By. Not exported by every dcgm-exporter build; see metrics.md.
+      - include: DCGM_FI_DEV_FB_TOTAL
+        match_type: strict
+        action: insert
+        new_name: hw.gpu.memory.limit
+        operations:
+          - action: experimental_scale_value
+            experimental_scale: 1048576
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: update_label
+            label: modelName
+            new_label: hw.name
+
+      # already W
+      - include: DCGM_FI_DEV_POWER_USAGE
+        match_type: strict
+        action: insert
+        new_name: hw.power
+        operations:
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: update_label
+            label: modelName
+            new_label: hw.name
+          - action: add_label
+            new_label: hw.type
+            new_value: gpu
+
+      # mJ -> J
+      - include: DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION
+        match_type: strict
+        action: insert
+        new_name: hw.energy
+        operations:
+          - action: experimental_scale_value
+            experimental_scale: 0.001
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: update_label
+            label: modelName
+            new_label: hw.name
+          - action: add_label
+            new_label: hw.type
+            new_value: gpu
+
+      # already Cel
+      - include: DCGM_FI_DEV_GPU_TEMP
+        match_type: strict
+        action: insert
+        new_name: hw.temperature
+        operations:
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: update_label
+            label: modelName
+            new_label: hw.name
+
+      - include: DCGM_FI_DEV_XID_ERRORS
+        match_type: strict
+        action: insert
+        new_name: hw.errors
+        operations:
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: add_label
+            new_label: hw.type
+            new_value: gpu
+          - action: add_label
+            new_label: error.type
+            new_value: xid
+
+      - include: DCGM_FI_DEV_ECC_SBE_VOL_TOTAL
+        match_type: strict
+        action: insert
+        new_name: hw.errors
+        operations:
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: add_label
+            new_label: hw.type
+            new_value: gpu
+          - action: add_label
+            new_label: error.type
+            new_value: corrected
+
+      - include: DCGM_FI_DEV_ECC_DBE_VOL_TOTAL
+        match_type: strict
+        action: insert
+        new_name: hw.errors
+        operations:
+          - action: update_label
+            label: UUID
+            new_label: hw.id
+          - action: add_label
+            new_label: hw.type
+            new_value: gpu
+          - action: add_label
+            new_label: error.type
+            new_value: uncorrected
+
+service:
+  pipelines:
+    metrics/gpu-nvidia:
+      receivers: [prometheus/gpu-nvidia]
+      processors:
+        - memory_limiter
+        - resourcedetection/common
+        - resource/gpu-nvidia
+        - metricstransform/gpu-nvidia
+        - batch
+      exporters: [clickhouse]

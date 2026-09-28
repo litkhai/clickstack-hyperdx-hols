@@ -1,0 +1,52 @@
+# Shared base for Tier B profiles.
+#
+# A Tier B profile runs in its own collector, so unlike Tier A it has to define
+# memory_limiter, batch and an exporter itself. They live here so that two Tier B
+# profiles merged into one sidecar do not each define them differently.
+#
+# Merged first by bin/build-config.sh --tier b.
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 75
+    spike_limit_percentage: 25
+
+  batch:
+    timeout: 10s
+    send_batch_size: 1000
+
+  resourcedetection/common:
+    detectors: [env, system]
+    timeout: 5s
+    override: false
+    system:
+      hostname_sources: [os]
+      resource_attributes:
+        host.name:
+          enabled: true
+        host.id:
+          enabled: true
+        os.type:
+          enabled: true
+
+exporters:
+  # ClickStack's own OTLP receiver. The header is the HyperDX ingestion API key.
+  otlp/clickstack:
+    endpoint: ${env:CLICKSTACK_OTLP_ENDPOINT}
+    tls:
+      insecure: ${env:CLICKSTACK_OTLP_INSECURE}
+    headers:
+      authorization: ${env:CLICKSTACK_API_KEY}
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+service:
+  extensions: [health_check]

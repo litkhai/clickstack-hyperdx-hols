@@ -39,6 +39,26 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           git ls-files '*.sh' | xargs -r shellcheck -S error -f gcc || true
 
+  otel-profiles:
+    name: otel profile conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint profiles and check they merge
+        # A bare pipeline key or a redefined base component disables ClickStack's
+        # own ingestion with no error at startup, so this is checked here rather
+        # than left to review. See otel-profiles/CONVENTIONS.md.
+        run: |
+          if ! command -v yq >/dev/null; then
+            sudo curl -sSL -o /usr/local/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+          yq --version
+          ./otel-profiles/bin/lint.sh
+          ./otel-profiles/bin/build-config.sh linux-host gpu-nvidia baremetal-node virt-kvm > /dev/null
+          ./otel-profiles/bin/build-config.sh --tier b virt-vsphere > /dev/null
+
   secrets:
     name: secret scan
     runs-on: ubuntu-latest

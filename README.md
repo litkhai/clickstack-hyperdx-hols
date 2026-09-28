@@ -21,6 +21,14 @@ Observability on ClickHouse: OpenTelemetry ingestion, the ClickStack/HyperDX UI,
 | [workshops/o11y-vector-ai](workshops/o11y-vector-ai/) | Observability with ClickStack, Vector and OpenTelemetry |
 | [workshops/observability-waf](workshops/observability-waf/) | WAF observability across a multi-cloud MSA |
 
+### 🧩 OTel profiles (`otel-profiles/`)
+
+Composable collector configuration, one fragment per class of machine — what to collect from a GPU node, a bare-metal server with a BMC, a KVM hypervisor or a vSphere cluster. Merged into ClickStack's own config, or run in a sidecar when ClickStack's collector build lacks the receiver.
+
+| | |
+|---|---|
+| [otel-profiles](otel-profiles/) | `linux-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` |
+
 ### 🗺 Roadmap
 
 Planned — not written yet.
@@ -75,6 +83,14 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 |-----|----------------|
 | [workshops/o11y-vector-ai](workshops/o11y-vector-ai/) | ClickStack·Vector·OpenTelemetry 기반 관측성 |
 | [workshops/observability-waf](workshops/observability-waf/) | 멀티 클라우드 MSA 환경의 WAF 관측성 |
+
+### 🧩 OTel 프로파일 (`otel-profiles/`)
+
+장비군별로 나눈 조합 가능한 컬렉터 설정입니다. GPU 노드, BMC 달린 베어메탈, KVM 하이퍼바이저, vSphere 클러스터에서 각각 무엇을 수집할지 정의합니다. ClickStack 설정에 병합하거나, ClickStack 컬렉터 빌드에 해당 리시버가 없으면 사이드카로 실행합니다.
+
+| | |
+|---|---|
+| [otel-profiles](otel-profiles/) | `linux-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` |
 
 ### 🗺 로드맵
 
