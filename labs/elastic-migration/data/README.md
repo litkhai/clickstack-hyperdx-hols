@@ -431,6 +431,21 @@ migration target). Against the 300,000-document seed and a 4-chunk plan:
 | state against a regenerated plan | refused, naming both `generated_at` timestamps |
 | lock held by a live process | refused, naming the pid, host and `--force-unlock` |
 
+### `idmap/`: when the two systems disagree about identity
+
+A separate problem from moving the rows, and the one with no official
+coverage at all: the same entity carries a different id on each side, and the
+mapping table is too large to hold in the exporter.
+
+[`idmap/`](idmap/) answers it in ClickHouse rather than in flight -- load raw,
+translate with a dictionary or a spilling `JOIN`, quarantine what does not
+map. The hard part is not the SQL: `long` -> `Int64` is a direct conversion,
+so a row that was never translated is indistinguishable from one that was. No
+cast fails and nothing is null. So that directory is mostly a **case matrix**
+and the checks that make a wrong translation loud -- 70 assertions across
+four axes, including the two that fail silently in a hand-written
+translation: translating twice, and conservation of row counts.
+
 ### Try it end to end
 
 ```bash
@@ -876,6 +891,20 @@ OOM으로 죽은 실행은 자기 잠금을 해제할 수 없고 바로 그것�
 | 중복 감지 | 한 청크의 part를 의도적으로 재적재: 메모에 중복 149,916건을 명시하고, distinct `_id`가 맞으므로 여전히 `verified` -- 문서화된 최소 한 번 의미를 눈에 보이게 만든 것 |
 | 다시 만든 계획에 대한 상태 파일 | 양쪽 `generated_at`을 짚어 거부 |
 | 살아 있는 프로세스가 쥔 잠금 | pid·호스트와 `--force-unlock`을 알려주며 거부 |
+
+### `idmap/`: 두 시스템이 동일성에 대해 다를 때
+
+행을 옮기는 것과는 별개의 문제이고, 공식 문서가 전혀 다루지 않는 부분입니다.
+같은 실체가 양쪽에서 다른 id를 갖고, 매핑 테이블은 익스포터에 올리기엔 너무
+큽니다.
+
+[`idmap/`](idmap/)은 이것을 전송 중이 아니라 ClickHouse 안에서 해결합니다 --
+원본을 적재하고, 딕셔너리나 스필하는 `JOIN`으로 변환하고, 매핑되지 않는 것은
+격리합니다. 어려운 부분은 SQL이 아닙니다. `long` → `Int64`는 직접 변환이라서,
+변환되지 않은 행과 변환된 행을 구별할 수 없습니다. 캐스팅 오류도 없고 null도
+없습니다. 그래서 그 디렉터리는 대부분 **케이스 매트릭스**와 잘못된 변환을 시끄럽게
+만드는 검사들입니다 -- 네 개의 축에 걸친 70개 단정이고, 직접 작성한 변환에서 조용히
+실패하는 두 가지(두 번 실행, 행 수 보존)를 포함합니다.
 
 ### 처음부터 끝까지 해보기
 

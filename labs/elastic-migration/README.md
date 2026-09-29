@@ -13,7 +13,8 @@ first useful thing this lab does is let you establish which ones you can skip.
 | Part | Elastic input | ClickStack output | Status |
 |---|---|---|---|
 | ingest | `GET _ingest/pipeline`, Beats or Logstash config, index templates | a collector config fragment | planned, `ingest/` |
-| data | `GET _mapping` plus the index contents | ClickHouse DDL and a load | planned, `data/` |
+| data | `GET _mapping` plus the index contents | ClickHouse DDL and a load | written, [`data/`](data/) |
+| identity | ids that differ between the two systems | a mapping table, a dictionary and a quarantine | written, [`data/idmap/`](data/idmap/) |
 | dashboards, alerts | Kibana saved objects, alerting rules | HyperDX dashboards and alerts | separate, under `skills/` |
 
 Two of the three already have a destination in this repository:
@@ -99,7 +100,8 @@ Elastic Agent를 쓰던 팀은 그쪽이 대부분입니다. 그래서 세 부�
 | 부분 | Elastic 입력 | ClickStack 출력 | 상태 |
 |---|---|---|---|
 | 입수 | `GET _ingest/pipeline`, Beats·Logstash 설정, index template | 컬렉터 설정 조각 | 예정, `ingest/` |
-| 데이터 | `GET _mapping`과 인덱스 내용 | ClickHouse DDL과 적재 | 예정, `data/` |
+| 데이터 | `GET _mapping`과 인덱스 내용 | ClickHouse DDL과 적재 | 작성됨, [`data/`](data/) |
+| 동일성 | 두 시스템에서 값이 다른 id | 매핑 테이블, 딕셔너리, 격리 | 작성됨, [`data/idmap/`](data/idmap/) |
 | 대시보드·알림 | Kibana saved objects, alerting rules | HyperDX 대시보드·알림 | 별도, `skills/` 아래 |
 
 세 부분 중 둘은 이미 이 저장소에 도착지가 있습니다 — 컬렉터 설정은
