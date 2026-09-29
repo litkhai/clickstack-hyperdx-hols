@@ -32,6 +32,12 @@ order the steps go in, which two steps are human decisions, the invariants
 whose failure mode is a migration that *looks* finished, and the questions an
 agent should put to a person instead of answering by default.
 
+It opens with **what this lab does not do** -- schema design, the scale it was
+actually verified at, the Cloud-specific path, an index pattern whose
+mappings disagree -- because the lab's own rule is to refuse plausible output
+for a case that did not convert, and that has to apply to the documentation
+too.
+
 Read it before the sections below if you are running a real migration. Read
 the repository root's [`AGENTS.md`](../../AGENTS.md) instead if you are
 changing this lab.
@@ -130,6 +136,10 @@ Elastic Agent를 쓰던 팀은 그쪽이 대부분입니다. 그래서 세 부�
 독자**를 위해 쓰였습니다: 질문별로 어디를 볼지, 단계의 순서, 그중 사람이 판단해야
 하는 두 단계, 어겼을 때 *완료된 것처럼 보이는* 마이그레이션이 나오는 불변식, 그리고
 에이전트가 기본값으로 답하지 말고 사람에게 물어야 하는 질문들.
+
+그 파일은 **이 랩이 하지 않는 것**으로 시작합니다 -- 스키마 설계, 실제로 검증한
+규모, Cloud 고유 경로, 매핑이 서로 다른 인덱스 패턴. 변환되지 않은 것에 그럴듯한
+결과를 내놓지 않는다는 이 랩의 원칙은 문서 자신에게도 적용되어야 하기 때문입니다.
 
 실제 마이그레이션을 실행한다면 아래 절들보다 먼저 읽으세요. 이 랩 자체를
 변경한다면 저장소 루트의 [`AGENTS.md`](../../AGENTS.md)를 읽으세요.
