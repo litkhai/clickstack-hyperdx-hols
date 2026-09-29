@@ -23,6 +23,19 @@ Two of the three already have a destination in this repository:
 alerts. So the new surface is smaller than "three parts" suggests — the data
 path, plus converters that feed assets that already exist.
 
+### Driving this with an agent
+
+Most people running this will be driving it with a coding agent, the same way
+it was built. [`AGENTS.md`](AGENTS.md) in this directory is written for that
+reader rather than for a contributor: where to look for each question, the
+order the steps go in, which two steps are human decisions, the invariants
+whose failure mode is a migration that *looks* finished, and the questions an
+agent should put to a person instead of answering by default.
+
+Read it before the sections below if you are running a real migration. Read
+the repository root's [`AGENTS.md`](../../AGENTS.md) instead if you are
+changing this lab.
+
 ### Start with the official documentation
 
 ClickHouse documents this migration already, and this lab does not restate it:
@@ -109,6 +122,17 @@ Elastic Agent를 쓰던 팀은 그쪽이 대부분입니다. 그래서 세 부�
 [clickstack-config](../../clickstack-config/). 그래서 "세 부분"이라는 말보다 실제로
 새로 만들 면적은 작습니다. 데이터 경로, 그리고 이미 있는 자산에 입력을 공급하는
 변환기들입니다.
+
+### 에이전트로 실행하는 경우
+
+이것을 실행하는 대부분은 이 랩이 만들어진 방식과 마찬가지로 코딩 에이전트로
+진행할 것입니다. 이 디렉터리의 [`AGENTS.md`](AGENTS.md)는 기여자가 아니라 **그
+독자**를 위해 쓰였습니다: 질문별로 어디를 볼지, 단계의 순서, 그중 사람이 판단해야
+하는 두 단계, 어겼을 때 *완료된 것처럼 보이는* 마이그레이션이 나오는 불변식, 그리고
+에이전트가 기본값으로 답하지 말고 사람에게 물어야 하는 질문들.
+
+실제 마이그레이션을 실행한다면 아래 절들보다 먼저 읽으세요. 이 랩 자체를
+변경한다면 저장소 루트의 [`AGENTS.md`](../../AGENTS.md)를 읽으세요.
 
 ### 공식 문서부터
 
