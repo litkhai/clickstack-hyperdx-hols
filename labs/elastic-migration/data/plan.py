@@ -37,6 +37,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+import es_client
+
 # Intervals the probe is allowed to choose, coarsest first. Anything finer
 # than a minute is not useful for planning: the packer refines a hot bucket
 # instead, and a single minute holding more rows than the target is reported
@@ -64,14 +66,14 @@ def warn(msg):
 
 
 def es_request(base_url, method, path, body=None, timeout=120):
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(f"{base_url}{path}", data=data,
-                                 headers={"Content-Type": "application/json"}, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        _, raw = es_client.request(base_url, method, path, body, timeout)
+        return json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"{method} {path} -> HTTP {e.code}: {e.read().decode('utf-8', 'replace')}")
+        # The hint is added once, at the top level, by es_client.cli_error --
+        # appending it here too printed it twice.
+        detail = e.read().decode("utf-8", "replace")
+        raise RuntimeError(f"{method} {path} -> HTTP {e.code}: {detail}") from e
 
 
 def iso(ms):
@@ -322,6 +324,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--url", default=os.environ.get("ES_URL", "http://localhost:9200"))
+    es_client.add_arguments(p)
     p.add_argument("--index", required=True, help="index name or pattern, e.g. 'logs-*'")
     p.add_argument("--time-field", help="date field to chunk on (auto-detected if omitted)")
     p.add_argument("--target-rows", type=int, default=5_000_000,
@@ -342,6 +345,7 @@ def main():
     p.add_argument("--out-root", default="out", help="prefix for each chunk's NDJSON directory")
     args = p.parse_args()
 
+    es_client.configure(args, args.url)
     query = json.loads(args.query) if args.query else None
     indices = resolve_indices(args.url, args.index)
     if not indices:
@@ -510,4 +514,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (RuntimeError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+        print(es_client.cli_error(exc), file=sys.stderr)
+        sys.exit(1)

@@ -47,6 +47,8 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+import es_client
+
 # A chunk's progress and whether its last attempt failed are two different
 # facts: overwriting the first with "failed" loses the step a retry should
 # resume from, and the retry then has nothing to resume.
@@ -122,11 +124,8 @@ def ch_query(target, sql, timeout=120):
 
 
 def es_count(es_url, index, query, timeout=120):
-    body = json.dumps({"query": query}).encode("utf-8")
-    req = urllib.request.Request(f"{es_url}/{index}/_count", data=body,
-                                 headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))["count"]
+    _, raw = es_client.request(es_url, "POST", f"/{index}/_count", {"query": query}, timeout)
+    return json.loads(raw.decode("utf-8"))["count"]
 
 
 def write_state(path, state):
@@ -189,8 +188,9 @@ def summarize_error(code, stdout, stderr, tool):
     return f"{tool} exit {code}: {lines[-1][:300] if lines else '(no output)'}"
 
 
-def run_tool(cmd, cwd=HERE, timeout=None):
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+def run_tool(cmd, cwd=HERE, timeout=None, env=None):
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                          env=env)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -218,7 +218,9 @@ def do_export(args, chunk, plan):
            "--query", json.dumps(chunk["query"])]
     if args.manifest:
         cmd += ["--manifest", args.manifest]
-    return run_tool(cmd)
+    # Credentials go to the child in its environment, never in its argv: a
+    # password in a command line is visible in `ps` to everyone on the box.
+    return run_tool(cmd, env=es_client.child_env(args))
 
 
 def do_load(args, chunk, table):
@@ -448,6 +450,7 @@ def main():
     p.add_argument("--batch-size", type=int, help="override the plan's recommendation; the one "
                                                   "dial that changes memory use")
     p.add_argument("--env-file", help="passed to load.sh, and read for CH_TARGET_*/CH_*")
+    es_client.add_arguments(p)
     p.add_argument("--ch-url", help="verification queries go here (default: CH_TARGET_URL, "
                                     "then CH_URL, same rule as load.sh)")
     p.add_argument("--ch-user")
@@ -459,6 +462,9 @@ def main():
 
     with open(args.plan) as fh:
         plan = json.load(fh)
+    # The plan records the cluster it was built against; the credential comes
+    # from this invocation, so a plan file never carries one.
+    es_client.configure(args, plan.get("es_url", ""))
     state_path = args.state or (os.path.splitext(args.plan)[0] + ".state.json")
 
     if args.status:

@@ -27,11 +27,13 @@ Needs only Python 3's standard library (urllib), matching the rest of this
 repository's tooling.
 """
 import argparse
+import base64
 import json
 import os
 import random
 import sys
 import time
+import ssl
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -123,10 +125,22 @@ TAG_VALUES = ["us-east-1", "us-west-2", "eu-west-1", "a", "b", "gold", "standard
 DYNAMIC_LABEL_POOL = 500  # cap on distinct dynamic field names, regardless of --docs
 
 
+# Set once in main() from the environment or the arguments. Security is on by
+# default in Elasticsearch 8.x, so a seeder that cannot authenticate can only
+# seed a cluster with security switched off -- which is not the cluster anyone
+# migrates from. labs/elastic-migration/data/es_client.py does the same for
+# the migration tools; this file cannot import it (different tree), so it
+# carries the small version.
+AUTH_HEADER = None
+SSL_CONTEXT = None
+
+
 def es_request(base_url, method, path, body=None, timeout=30):
     url = f"{base_url}{path}"
     data = None
     headers = {"Content-Type": "application/json"}
+    if AUTH_HEADER:
+        headers["Authorization"] = AUTH_HEADER
     if body is not None:
         if isinstance(body, str):
             data = body.encode("utf-8")
@@ -134,8 +148,11 @@ def es_request(base_url, method, path, body=None, timeout=30):
         else:
             data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    kwargs = {"timeout": timeout}
+    if SSL_CONTEXT is not None:
+        kwargs["context"] = SSL_CONTEXT
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, **kwargs) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8", "replace")
@@ -235,6 +252,13 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--url", default=os.environ.get("ES_URL", "http://localhost:9200"))
     p.add_argument("--index", default=os.environ.get("ES_INDEX", "logs-demo"))
+    p.add_argument("--es-user", default=os.environ.get("ES_USER"))
+    p.add_argument("--es-password", default=os.environ.get("ES_PASSWORD"))
+    p.add_argument("--es-api-key", default=os.environ.get("ES_API_KEY"),
+                   help="the `encoded` value from POST /_security/api_key")
+    p.add_argument("--es-ca-cert", default=os.environ.get("ES_CA_CERT"))
+    p.add_argument("--es-insecure", action="store_true",
+                   default=os.environ.get("ES_INSECURE", "") not in ("", "0", "false"))
     p.add_argument("--docs", type=int, default=int(os.environ.get("SEED_DOCS", "300000")))
     p.add_argument("--batch-size", type=int, default=2000)
     p.add_argument("--workers", type=int, default=4)
@@ -244,6 +268,24 @@ def main():
     args = p.parse_args()
 
     random.seed(args.seed)
+
+    global AUTH_HEADER, SSL_CONTEXT
+    if args.es_api_key and (args.es_user or args.es_password):
+        print("give either an API key or a user/password, not both", file=sys.stderr)
+        sys.exit(1)
+    if args.es_api_key:
+        AUTH_HEADER = "ApiKey " + args.es_api_key
+    elif args.es_user:
+        token = base64.b64encode(f"{args.es_user}:{args.es_password or ''}".encode()).decode()
+        AUTH_HEADER = "Basic " + token
+    if args.url.startswith("https://"):
+        if args.es_insecure:
+            SSL_CONTEXT = ssl.create_default_context()
+            SSL_CONTEXT.check_hostname = False
+            SSL_CONTEXT.verify_mode = ssl.CERT_NONE
+            print("WARNING: --es-insecure: certificates are not verified", file=sys.stderr)
+        elif args.es_ca_cert:
+            SSL_CONTEXT = ssl.create_default_context(cafile=args.es_ca_cert)
 
     if not wait_for_es(args.url, attempts=1):
         print(f"waiting for Elasticsearch at {args.url} ...")

@@ -121,6 +121,16 @@ Each of these has a failure attached. That is why it is a rule.
     state writes; the symptom, a row count that is too high, reads like a
     migration bug rather than an operator mistake.
 
+13. **Never make the source cluster less secure to get a tool to connect, and
+    never put a credential in a URL or a command line.** Security is on by
+    default in 8.x; the tools take `ES_USER`/`ES_PASSWORD` or `ES_API_KEY`
+    from the environment and refuse a URL that carries credentials. An API
+    key scoped to cluster `[monitor]` and index
+    `[read, view_index_metadata, monitor]` is enough to export, so there is
+    no reason to use an administrator's password -- and `--es-insecure`
+    exists for a self-signed certificate, not as a substitute for
+    `ES_CA_CERT`.
+
 ### When something fails
 
 | Symptom | What it means | What to do |
@@ -131,6 +141,9 @@ Each of these has a failure attached. That is why it is a rule.
 | `WARNING: slice(s) [n] exported 0 rows` | usually fewer live shards than slices; occasionally a real slicing bug | check the shard count. This is the silent-undercount case, so do not ignore it |
 | a dictionary will not load (`would use … GiB`) | the in-memory layout does not degrade, it declines | switch that map to `SSD_CACHE` / `COMPLEX_KEY_SSD_CACHE`, or use the `JOIN` strategy |
 | the `JOIN` strategy is killed for memory | `grace_hash` grows its buckets *after* trying, and the first try is what dies | raise `grace_hash_join_initial_buckets` (32 turned 7.36 GiB into 657 MiB here) |
+| `401` from Elasticsearch | no credential, or the wrong one. Security is on by default in 8.x | set `ES_USER`/`ES_PASSWORD` or `ES_API_KEY`. Never disable security on the source to get past this |
+| `403` naming an action, not a privilege | the credential is too narrow | cluster `[monitor]` plus index `[read, view_index_metadata, monitor]`. The index-level `monitor` is the one usually missing |
+| `CERTIFICATE_VERIFY_FAILED` | 8.x uses its own CA, which your trust store does not have | copy `config/certs/http_ca.crt` out of the cluster and pass it as `ES_CA_CERT` |
 | rows in quarantine | ids the map does not cover, or values that are not ids | read `reason`. Fix the mapping table, reload the dictionary, re-run the translation: it rescues those rows and only those |
 | `preflight.sql` FAILs | the mapping table will produce plausible wrong answers | fix the map. Do not translate past a FAIL |
 | counts do not add up | `rows_in = translated + not_applicable + quarantined` is broken | stop. This is the check that catches silent loss when the output looks right |
@@ -285,6 +298,14 @@ Not a feeling. A list:
     교차합니다. 증상인 "너무 많은 행 수"는 운영자 실수가 아니라 마이그레이션
     버그처럼 읽힙니다.
 
+13. **도구가 연결되게 하려고 원본 클러스터의 보안을 낮추지 말고, 자격증명을 URL이나
+    명령행에 넣지 마세요.** 8.x는 보안이 기본 활성입니다. 도구들은
+    `ES_USER`/`ES_PASSWORD` 또는 `ES_API_KEY`를 환경에서 읽고, 자격증명이 들어 있는
+    URL은 거부합니다. 내보내기에는 클러스터 `[monitor]`와 인덱스
+    `[read, view_index_metadata, monitor]`로 좁힌 API key면 충분하므로 관리자
+    비밀번호를 쓸 이유가 없습니다. `--es-insecure`는 자체 서명 인증서를 위한 것이고
+    `ES_CA_CERT`의 대체물이 아닙니다.
+
 ### 무언가 실패했을 때
 
 | 증상 | 의미 | 할 일 |
@@ -295,6 +316,9 @@ Not a feeling. A list:
 | `WARNING: slice(s) [n] exported 0 rows` | 보통 살아 있는 샤드가 슬라이스보다 적음. 드물게 진짜 슬라이싱 버그 | 샤드 수를 확인하세요. 조용한 과소 집계 경로이므로 무시하지 마세요 |
 | 딕셔너리가 적재되지 않음(`would use … GiB`) | 메모리 레이아웃은 느려지지 않고 거부합니다 | 그 매핑을 `SSD_CACHE` / `COMPLEX_KEY_SSD_CACHE`로 바꾸거나 `JOIN` 전략을 쓰세요 |
 | `JOIN` 전략이 메모리로 종료됨 | `grace_hash`는 시도한 **뒤** 버킷을 늘리고, 죽는 것은 그 첫 시도 | `grace_hash_join_initial_buckets`를 올리세요(여기서 32가 7.36 GiB를 657 MiB로) |
+| Elasticsearch가 `401` | 자격증명이 없거나 틀림. 8.x는 보안이 기본 활성 | `ES_USER`/`ES_PASSWORD` 또는 `ES_API_KEY`를 설정하세요. 이걸 넘기려고 원본 보안을 끄지 마세요 |
+| 권한 이름이 아니라 액션 이름을 말하는 `403` | 자격증명 권한이 너무 좁음 | 클러스터 `[monitor]` + 인덱스 `[read, view_index_metadata, monitor]`. 보통 빠지는 것은 인덱스 레벨의 `monitor`입니다 |
+| `CERTIFICATE_VERIFY_FAILED` | 8.x가 자체 CA를 쓰고 로컬 트러스트 스토어에는 없음 | 클러스터에서 `config/certs/http_ca.crt`를 꺼내 `ES_CA_CERT`로 넘기세요 |
 | 격리에 행이 쌓임 | 매핑이 덮지 않는 id, 또는 id가 아닌 값 | `reason`을 읽으세요. 매핑 수정 → 딕셔너리 리로드 → 변환 재실행. 그 행들만 구제됩니다 |
 | `preflight.sql`이 FAIL | 이 매핑 테이블은 그럴듯한 오답을 만들어냅니다 | 매핑을 고치세요. FAIL을 지나쳐 변환하지 마세요 |
 | 개수가 맞지 않음 | `rows_in = translated + not_applicable + quarantined`가 깨짐 | 멈추세요. 출력이 맞아 보일 때 조용한 손실을 잡는 검사입니다 |

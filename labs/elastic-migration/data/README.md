@@ -58,6 +58,75 @@ Security is disabled on this Elasticsearch (`xpack.security.enabled=false`).
 That is only acceptable because it holds nothing but this synthetic seed
 data on localhost.
 
+### Connecting to a real cluster
+
+Security is **on by default** in Elasticsearch 8.x, so the throwaway cluster
+above -- `xpack.security.enabled=false` -- is the exception and not the rule.
+Every tool here takes credentials, and takes them from the environment:
+
+```bash
+export ES_URL=https://es.internal:9200
+export ES_USER=migration ES_PASSWORD=...        # or ES_API_KEY=...
+export ES_CA_CERT=./http_ca.crt                 # 8.x generates its own CA
+```
+
+| Variable | What |
+|---|---|
+| `ES_USER` / `ES_PASSWORD` | basic auth |
+| `ES_API_KEY` | the `encoded` value from `POST /_security/api_key` -- scopable and revocable, which a user's password is not |
+| `ES_CA_CERT` | PEM bundle. 8.x writes one to `config/certs/http_ca.crt` inside the container: `docker cp <container>:/usr/share/elasticsearch/config/certs/http_ca.crt .` |
+| `ES_INSECURE=1` | skip TLS verification. Warns on every call |
+
+Three deliberate refusals, each because the alternative is a worse habit:
+
+- **Both an API key and basic auth is an error**, not a precedence rule. A
+  tool that silently picks one gets debugged against the wrong identity.
+- **Credentials in the URL are refused.** `https://user:pass@host` ends up in
+  shell history, in `ps`, and in error messages.
+- **`run.py` passes credentials to the `export.py` it spawns through the
+  environment, never in `argv`**, for the same reason: an argument is visible
+  to every user on the machine.
+
+**The minimum privileges, found by narrowing an API key until each tool
+broke:**
+
+```json
+{"cluster": ["monitor"],
+ "index": [{"names": ["logs-*"],
+            "privileges": ["read", "view_index_metadata", "monitor"]}]}
+```
+
+The index-level `monitor` is the one that gets left out: `_cat/indices` needs
+*both* the cluster `monitor` privilege (`cluster:monitor/state`) and the index
+`monitor` privilege (`indices:monitor/stats`). Without it every tool fails at
+its first call with a 403 that names an action rather than a privilege, so the
+tools translate both 401 and 403 into the thing to change.
+
+To exercise this locally, `_base/` has the same Elasticsearch with security
+on, behind its own profile:
+
+```bash
+cd _base && docker compose --profile elastic-secure up -d    # port 9201
+ES_URL=http://localhost:9201 ES_USER=elastic ES_PASSWORD=elastic-local-only \
+    ./bin/seed_elasticsearch.py --recreate --docs 20000
+```
+
+**Verified on:** Elasticsearch 8.17.0 with `xpack.security.enabled=true`, and
+separately against a default-configuration 8.17.0 container over https with
+its own generated CA.
+
+| Checked | Result |
+|---|---|
+| whole pipeline with basic auth | seed → `plan.py` → `mapping_to_ddl.py` → `run.py` → `parity_checks.py`: 20,000 documents, 3 chunks, 3/3 verified |
+| whole pipeline with an API key scoped to exactly the privileges above | same, 20,000 rows and 20,000 distinct `_id` in ClickHouse 26.6.8.7 |
+| the privilege set itself | narrowed an API key until each tool broke. Dropping index `monitor` fails `_cat/indices` with `indices:monitor/stats`; dropping cluster `monitor` fails it with `cluster:monitor/state` |
+| https with `ES_CA_CERT` | connects and plans; the summary line names the CA it verified against |
+| https without it | `CERTIFICATE_VERIFY_FAILED`, one line of error and one line of what to do -- not a traceback |
+| `--es-insecure` | runs, and warns on every call |
+| an API key **and** basic auth together | refused |
+| credentials in the URL | refused, with the URL redacted in the message |
+| the unauthenticated `elastic` profile | still runs end to end: 300,000 documents, 4 chunks, parity passing -- adding auth did not cost the quick path |
+
 ### `plan.py`: how large is this, and in how many pieces
 
 Run this before exporting anything. It answers the question that comes
@@ -539,6 +608,73 @@ multi-field가 있는 `text` 필드, `nested` 필드, `flattened` 필드, `ip`�
 
 이 Elasticsearch는 보안이 꺼져 있습니다(`xpack.security.enabled=false`).
 localhost에 이 합성 시드 데이터만 있기 때문에만 괜찮은 설정입니다.
+
+### 실제 클러스터에 연결하기
+
+Elasticsearch 8.x는 보안이 **기본 활성**입니다. 위의 임시 클러스터
+(`xpack.security.enabled=false`)가 예외이고 규칙이 아닙니다. 여기의 모든 도구가
+자격증명을 받고, 환경 변수에서 받습니다.
+
+```bash
+export ES_URL=https://es.internal:9200
+export ES_USER=migration ES_PASSWORD=...        # 또는 ES_API_KEY=...
+export ES_CA_CERT=./http_ca.crt                 # 8.x는 자체 CA를 만듭니다
+```
+
+| 변수 | 용도 |
+|---|---|
+| `ES_USER` / `ES_PASSWORD` | basic auth |
+| `ES_API_KEY` | `POST /_security/api_key`의 `encoded` 값. 권한을 좁히고 폐기할 수 있습니다. 사용자 비밀번호는 그렇게 못 합니다 |
+| `ES_CA_CERT` | PEM 번들. 8.x가 컨테이너 안 `config/certs/http_ca.crt`에 만들어 둡니다: `docker cp <컨테이너>:/usr/share/elasticsearch/config/certs/http_ca.crt .` |
+| `ES_INSECURE=1` | TLS 검증 생략. 호출마다 경고합니다 |
+
+의도적으로 거부하는 세 가지입니다. 각각 대안이 더 나쁜 습관이기 때문입니다.
+
+- **API key와 basic auth를 같이 주면 오류입니다.** 우선순위 규칙이 아닙니다.
+  조용히 하나를 고르는 도구는 엉뚱한 신원으로 디버깅하게 만듭니다.
+- **URL 안의 자격증명은 거부합니다.** `https://user:pass@host`는 셸 히스토리,
+  `ps`, 오류 메시지에 남습니다.
+- **`run.py`는 자신이 띄우는 `export.py`에 자격증명을 환경 변수로 전달하고,
+  `argv`로는 절대 전달하지 않습니다.** 같은 이유입니다 -- 인자는 그 머신의 모든
+  사용자에게 보입니다.
+
+**최소 권한 -- API key 권한을 좁혀가며 각 도구가 깨지는 지점을 찾아 확정했습니다.**
+
+```json
+{"cluster": ["monitor"],
+ "index": [{"names": ["logs-*"],
+            "privileges": ["read", "view_index_metadata", "monitor"]}]}
+```
+
+빠뜨리기 쉬운 것은 **인덱스 레벨의 `monitor`** 입니다. `_cat/indices`는 클러스터
+`monitor`(`cluster:monitor/state`)와 인덱스 `monitor`(`indices:monitor/stats`)를
+**둘 다** 요구합니다. 이게 없으면 모든 도구가 첫 호출에서 403으로 죽는데, 오류는
+권한 이름이 아니라 액션 이름을 말합니다. 그래서 도구들이 401과 403을 "무엇을
+바꿔야 하는지"로 번역해 출력합니다.
+
+로컬에서 이 경로를 시험하려면, `_base/`에 보안을 켠 같은 Elasticsearch가 별도
+프로파일로 있습니다.
+
+```bash
+cd _base && docker compose --profile elastic-secure up -d    # 9201 포트
+ES_URL=http://localhost:9201 ES_USER=elastic ES_PASSWORD=elastic-local-only \
+    ./bin/seed_elasticsearch.py --recreate --docs 20000
+```
+
+**Verified on:** `xpack.security.enabled=true`로 띄운 Elasticsearch 8.17.0, 그리고
+기본 설정 8.17.0 컨테이너에 대해 https + 자체 생성 CA로 별도 검증.
+
+| 확인한 것 | 결과 |
+|---|---|
+| basic auth로 전체 파이프라인 | 시딩 → `plan.py` → `mapping_to_ddl.py` → `run.py` → `parity_checks.py`: 문서 20,000건, 청크 3개, 3/3 verified |
+| 위 최소 권한으로만 좁힌 API key로 전체 파이프라인 | 동일. ClickHouse 26.6.8.7에 20,000행, distinct `_id` 20,000 |
+| 최소 권한 집합 자체 | API key 권한을 좁혀가며 각 도구가 깨지는 지점 확인. 인덱스 `monitor`를 빼면 `_cat/indices`가 `indices:monitor/stats`로, 클러스터 `monitor`를 빼면 `cluster:monitor/state`로 실패 |
+| `ES_CA_CERT`와 함께 https | 연결·계획 성공. 요약 줄에 어떤 CA로 검증했는지 표시 |
+| CA 없이 https | `CERTIFICATE_VERIFY_FAILED`. 트레이스백이 아니라 오류 한 줄 + 조치 한 줄 |
+| `--es-insecure` | 동작하고, 호출마다 경고 |
+| API key와 basic auth를 함께 | 거부 |
+| URL 안의 자격증명 | 거부. 메시지에서 URL은 가려집니다 |
+| 인증 없는 `elastic` 프로파일 | 여전히 처음부터 끝까지 동작: 문서 300,000건, 청크 4개, 정합성 통과 -- 인증 추가가 빠른 경로를 해치지 않았습니다 |
 
 ### `plan.py`: 얼마나 큰가, 그리고 몇 조각인가
 
