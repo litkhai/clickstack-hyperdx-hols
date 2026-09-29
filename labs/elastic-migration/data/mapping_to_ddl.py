@@ -550,13 +550,30 @@ def main():
 
     mapping = es_get(args.url, f"/{args.index}/_mapping")
     if args.index not in mapping:
-        # data streams / aliases resolve to a different key than the request
-        keys = list(mapping.keys())
+        # A pattern, an alias or a data stream resolves to keys that are not
+        # what was asked for.
+        keys = sorted(mapping.keys())
         if len(keys) == 1:
             args.index = keys[0]
         else:
-            print(f"error: '{args.index}' not found in _mapping response (got keys: {keys})", file=sys.stderr)
-            sys.exit(1)
+            # Several indices. Identical mappings are one table and saying so
+            # is better than refusing; different mappings are two datasets in
+            # one pattern, and *that* is worth refusing -- one ClickHouse
+            # column cannot hold a field that is a keyword here and a long
+            # there. plan.py reports which fields disagree, from _field_caps.
+            shapes = {json.dumps(mapping[k]["mappings"], sort_keys=True) for k in keys}
+            if len(shapes) == 1:
+                print(f"note: {args.index!r} resolved to {len(keys)} indices with identical "
+                      f"mappings; reading {keys[0]}", file=sys.stderr)
+                args.index = keys[0]
+            else:
+                print(f"error: {args.index!r} resolved to {len(keys)} indices whose mappings "
+                      f"differ: {', '.join(keys[:8])}"
+                      + (" ..." if len(keys) > 8 else ""), file=sys.stderr)
+                print("       One table needs one shape. Run plan.py against the same "
+                      "pattern to see which fields disagree, then either narrow the "
+                      "pattern or convert one index at a time.", file=sys.stderr)
+                sys.exit(1)
     properties = mapping[args.index]["mappings"].get("properties", {})
 
     fields = [Field("_id", "String", "converted",
