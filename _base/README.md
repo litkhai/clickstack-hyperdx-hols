@@ -37,6 +37,7 @@ verification rather than for using the UI:
 | 8123 / 9000 | ClickHouse |
 | 8888 | collector internal telemetry, Prometheus format |
 | 13133 | collector `health_check` |
+| 8124 / 9001 | the pinned migration-target ClickHouse, `migration` profile only |
 
 The image tag is pinned to `2.39.1` rather than `latest`, so a lab's
 verification line means something. Its collector is built from components
@@ -55,24 +56,46 @@ Linux VM, not your machine's filesystem. The `linux-host` and `virt-kvm`
 profiles will collect the VM's metrics and logs, which is enough to exercise the
 config but is not your host. Run those on Linux to see real host data.
 
-### Optional: a throwaway Elasticsearch
+### Optional: a migration source and a migration target
 
-For `labs/elastic-migration/data/` only. Off by default -- it sits behind
-the `elastic` compose profile, so a plain `docker compose up -d` is
-unaffected:
+For `labs/elastic-migration/` only. Both are off by default, behind compose
+profiles, so a plain `docker compose up -d` is unaffected:
 
 ```bash
-docker compose --profile elastic up -d
-./bin/seed_elasticsearch.py    # 300,000 synthetic log documents
+docker compose --profile elastic up -d     # Elasticsearch 8.17.0 + the target
+docker compose --profile migration up -d   # the target on its own
+./bin/seed_elasticsearch.py                # 300,000 synthetic log documents
 ```
 
-Single node on port 9200, security disabled
+| Service | Port | What it is |
+|---|---|---|
+| `elasticsearch` | 9200 | the cluster to migrate **from** |
+| `clickhouse-target` | 8124 / 9001 | the ClickHouse to migrate **to** |
+
+**Elasticsearch 8.17.0**, single node, security disabled
 (`xpack.security.enabled=false`). That is only acceptable because it holds
 nothing but seeded synthetic data on localhost -- never do this against a
-cluster with anything real in it. The image tag (`8.15.3`) is pinned for the
-same reason as ClickStack's own: a lab's verification line should mean
-something. See `labs/elastic-migration/data/README.md` for what the seeded
-mapping is designed to exercise.
+cluster with anything real in it. See
+`labs/elastic-migration/data/README.md` for what the seeded mapping is
+designed to exercise.
+
+**Why a second ClickHouse rather than the one inside the all-in-one image.**
+A migration lands in ClickHouse Cloud, whose regular release channel is on
+the 26.6 line; the all-in-one 2.39.1 bundles 26.8.7.19. Verifying a
+migration against a *newer* ClickHouse than the destination can prove a
+feature the destination does not have yet, which is the one mistake a
+migration lab cannot afford. So the target is pinned to `26.6.8.7` -- the
+newest public patch of the line Cloud runs. Same minor, not the same build:
+Cloud's own builds are not published.
+
+The target accepts `default` with no password from the host
+(`CLICKHOUSE_SKIP_USER_SETUP`), unlike the all-in-one image. Recent server
+images otherwise mint a random password at first start, which no documented
+command could then use. Throwaway and localhost only, as above.
+
+Point the lab somewhere else -- your own Cloud service, for instance -- with
+the `CH_TARGET_*` variables in `.env.example`; they override `CH_*` for the
+migration path only.
 
 ### ClickHouse Cloud
 
@@ -195,23 +218,43 @@ Docker Desktop 내부 Linux VM의 루트를 마운트합니다. `linux-host`와 
 프로파일은 그 VM의 지표와 로그를 수집하므로 설정을 시험하기에는 충분하지만
 여러분의 호스트는 아닙니다. 실제 호스트 데이터를 보려면 Linux에서 실행하세요.
 
-### 선택: 임시 Elasticsearch
+### 선택: 마이그레이션 원본과 목적지
 
-`labs/elastic-migration/data/`에만 필요합니다. 기본적으로 꺼져 있습니다 --
-`elastic` compose 프로파일 뒤에 있어서, 평범한 `docker compose up -d`에는
-영향이 없습니다.
+`labs/elastic-migration/`에만 필요합니다. 둘 다 compose 프로파일 뒤에 있어
+기본적으로 꺼져 있고, 평범한 `docker compose up -d`에는 영향이 없습니다.
 
 ```bash
-docker compose --profile elastic up -d
-./bin/seed_elasticsearch.py    # 합성 로그 문서 300,000건
+docker compose --profile elastic up -d     # Elasticsearch 8.17.0 + 목적지
+docker compose --profile migration up -d   # 목적지만
+./bin/seed_elasticsearch.py                # 합성 로그 문서 300,000건
 ```
 
-포트 9200의 단일 노드, 보안 비활성(`xpack.security.enabled=false`)입니다.
-localhost에 시딩한 합성 데이터만 있기 때문에만 괜찮은 설정입니다 -- 실제
-데이터가 있는 클러스터에는 절대 이렇게 하지 마세요. 이미지 태그
-(`8.15.3`)를 고정한 이유는 ClickStack 자체와 같습니다: 실습의 검증 기록이
-의미를 가져야 하기 때문입니다. 시딩된 매핑이 무엇을 시험하도록 설계됐는지는
+| 서비스 | 포트 | 역할 |
+|---|---|---|
+| `elasticsearch` | 9200 | 마이그레이션 **원본** 클러스터 |
+| `clickhouse-target` | 8124 / 9001 | 마이그레이션 **목적지** ClickHouse |
+
+**Elasticsearch 8.17.0**, 단일 노드, 보안 비활성
+(`xpack.security.enabled=false`). localhost에 시딩한 합성 데이터만 있기
+때문에만 괜찮은 설정입니다 -- 실제 데이터가 있는 클러스터에는 절대 이렇게
+하지 마세요. 시딩된 매핑이 무엇을 시험하도록 설계됐는지는
 `labs/elastic-migration/data/README.md`를 보세요.
+
+**all-in-one 안의 ClickHouse를 쓰지 않고 두 번째를 두는 이유.**
+마이그레이션은 ClickHouse Cloud에 도착하고, Cloud의 regular release 채널은
+26.6 라인입니다. all-in-one 2.39.1은 26.8.7.19를 번들합니다. 목적지보다 **더
+새로운** ClickHouse에서 검증하면 목적지에 아직 없는 기능을 증명할 수 있고,
+그것이 마이그레이션 실습이 해서는 안 되는 유일한 실수입니다. 그래서 목적지를
+Cloud와 같은 라인의 최신 공개 패치인 `26.6.8.7`로 고정했습니다. 같은 minor지만
+같은 빌드는 아닙니다 -- Cloud 자체 빌드는 공개되지 않습니다.
+
+이 목적지는 all-in-one과 달리 호스트에서 `default`(비밀번호 없음)로 접속을
+허용합니다(`CLICKHOUSE_SKIP_USER_SETUP`). 그렇게 하지 않으면 최근 서버 이미지는
+첫 기동에 무작위 비밀번호를 만들고, 그러면 문서에 적을 수 있는 명령이 없어집니다.
+위와 같이 임시·localhost 전용 전제에서만 괜찮은 설정입니다.
+
+다른 곳 -- 예를 들어 여러분의 Cloud 서비스 -- 로 보내려면 `.env.example`의
+`CH_TARGET_*` 변수를 쓰세요. 마이그레이션 경로에 한해서만 `CH_*`를 덮어씁니다.
 
 ### ClickHouse Cloud
 

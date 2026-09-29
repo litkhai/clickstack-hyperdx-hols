@@ -10,6 +10,9 @@
 #   ./load.sh --out-dir out/logs-demo --table logs_demo
 #   ./load.sh --out-dir out/logs-demo --table logs_demo --env-file ../../../_base/.env
 #
+# Loads into CH_TARGET_URL when that is set (the pinned migration target in
+# _base/, port 8124), otherwise into CH_URL. The line it prints says which.
+#
 # One marker file per part (<part>.loaded) makes this resumable at the same
 # granularity as export.py's checkpoints: a part already loaded is skipped,
 # so re-running after a failure only retries what did not finish. This is
@@ -55,10 +58,24 @@ if [ -n "$env_file" ] && [ -f "$env_file" ]; then
     set +a
 fi
 
-: "${CH_URL:?set CH_URL, e.g. copy _base/.env.example to _base/.env}"
+# The migration *target* is not the ClickHouse the rest of the repository
+# checks: _base/ pins a separate one at the version line a Cloud migration
+# lands on (26.6), because the all-in-one image ships a newer ClickHouse than
+# the destination. When CH_TARGET_URL is set it wins outright rather than
+# field by field -- a half-inherited connection (this URL, that password) is
+# the kind of thing that silently loads into the wrong server.
+if [ -n "${CH_TARGET_URL:-}" ]; then
+    CH_URL="$CH_TARGET_URL"
+    CH_USER="${CH_TARGET_USER:-default}"
+    CH_PASSWORD="${CH_TARGET_PASSWORD:-}"
+    CH_DATABASE="${CH_TARGET_DATABASE:-default}"
+fi
+
+: "${CH_URL:?set CH_URL or CH_TARGET_URL, e.g. copy _base/.env.example to _base/.env}"
 : "${CH_USER:=default}"
 : "${CH_PASSWORD:=}"
 : "${CH_DATABASE:=default}"
+echo "target: $CH_URL (database $CH_DATABASE, user $CH_USER)"
 
 if [ ! -d "$out_dir" ]; then
     echo "FAIL  out-dir '$out_dir' does not exist -- run export.py first" >&2
