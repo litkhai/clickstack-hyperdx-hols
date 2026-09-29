@@ -16,6 +16,28 @@ exists because breaking it produces a migration that **looks finished**. That
 is the failure mode this lab is built against — not crashes, which you would
 notice.
 
+### What this lab does not do
+
+Read this before deciding it covers your migration. The whole lab is built on
+one rule -- never emit something plausible for a case that did not convert --
+and this section applies that rule to the documentation itself.
+
+| Not covered | What that means for you |
+|---|---|
+| **Schema design.** `mapping_to_ddl.py` emits `ORDER BY (<time field>)` and nothing else: no low-cardinality prefix, no TTL, no codecs, no skip indexes. | The table will be correct and may be far more expensive to query than it needed to be, and the sort key is the one decision that is expensive to change after the data lands. Decide it before the first chunk. [#39](https://github.com/litkhai/clickstack-hyperdx-hols/issues/39) |
+| **Scale.** Verified against 300,000 documents (2,000,000 rows for `idmap/`). The ceiling this lab exists to get past is ten million. | The mechanisms are built for scale and were measured below it. Expect to find things at your volume that a 300,000-row run cannot show: PIT keep-alive under load, shard-to-slice ratios, insert pressure. |
+| **ClickHouse Cloud specifics.** The `s3()` load, `SSD_CACHE(PATH …)` and the memory ceiling were all measured against a local single node. | The three claims you most want to rely on at real scale are the three never executed against the destination. [#41](https://github.com/litkhai/clickstack-hyperdx-hols/issues/41) |
+| **An index pattern whose indices have different mappings.** `plan.py` plans across a pattern; `mapping_to_ddl.py` reads one index and `run.py` loads into one table. | A rollover alias with months of backing indices that each grew their own fields is the normal Elastic case. Check the mappings agree before trusting one table. [#40](https://github.com/litkhai/clickstack-hyperdx-hols/issues/40) |
+| **Ingest.** Nothing converts Beats, Logstash or Elastic Agent configuration. | If your pipeline lives in Elastic rather than in front of it, that side is unbuilt. [#21](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21) |
+| **Dashboards and alerts.** Kibana saved objects are a separate problem. | [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5) |
+| **ID translation is not a tracked stage.** `run.py` tracks export/load/verify; `idmap/` is SQL you run. | The step most likely to need a re-run is the one with no record of what has been done. [#33](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33) |
+| **A live cutover.** The export's resume assumes a static source index. | Dual-write, and reading while writing, are out of scope -- a resumed slice opens a *new* point-in-time, so rows can be skipped or repeated if the index moved underneath. |
+| **The reverse direction.** ClickHouse → Elasticsearch is not supported anywhere here. | |
+| **Anything that needs the business.** Retention window, whether an unmapped id stops the migration, what `0` means. | See "Ask a human" below. These change the result, not the implementation. |
+
+Hitting one of these is not a bug in your run -- it is the edge of what has
+been built and verified. The issue number is where to say that you hit it.
+
 ### Where to look
 
 Read the one section you need. Do not read the whole lab first.
@@ -199,6 +221,28 @@ Not a feeling. A list:
 마이그레이션을 실행하는 경우: 여기 있는 것은 스타일 조언이 아닙니다. 아래 모든
 규칙은 어겼을 때 **완료된 것처럼 보이는** 마이그레이션이 나오기 때문에 존재합니다.
 이 랩이 대비하는 실패는 그것이고, 크래시가 아닙니다. 크래시는 알아챌 수 있습니다.
+
+### 이 랩이 하지 않는 것
+
+여러분의 마이그레이션을 이 랩이 덮는다고 판단하기 전에 읽으세요. 이 랩 전체가 하나의
+원칙 위에 있습니다 -- **변환되지 않은 것에 그럴듯한 결과를 내놓지 않는다** -- 그리고
+이 절은 그 원칙을 문서 자신에게 적용한 것입니다.
+
+| 다루지 않는 것 | 그것이 의미하는 바 |
+|---|---|
+| **스키마 설계.** `mapping_to_ddl.py`는 `ORDER BY (<시간 필드>)`만 넣습니다. 저카디널리티 접두 컬럼도, TTL도, 코덱도, skip index도 없습니다. | 테이블은 맞게 만들어지지만 필요 이상으로 비싼 쿼리가 될 수 있고, 정렬 키는 데이터가 들어간 뒤에 바꾸기 가장 비싼 결정입니다. 첫 청크 전에 정하세요. [#39](https://github.com/litkhai/clickstack-hyperdx-hols/issues/39) |
+| **규모.** 문서 300,000건(`idmap/`은 2,000,000행)으로 검증했습니다. 이 랩이 넘어서려는 천장은 1천만입니다. | 메커니즘은 대규모를 위해 만들었지만 측정은 그 아래에서 했습니다. 30만 행으로는 드러나지 않는 것들 -- 부하 상태의 PIT keep-alive, 샤드 대 슬라이스 비율, INSERT 부하 -- 이 여러분 볼륨에서 나올 수 있습니다. |
+| **ClickHouse Cloud 고유 부분.** `s3()` 적재, `SSD_CACHE(PATH …)`, 메모리 상한은 모두 로컬 단일 노드에서 측정했습니다. | 대규모에서 가장 의지하고 싶은 세 주장이 정작 목적지에서 실행되지 않은 셋입니다. [#41](https://github.com/litkhai/clickstack-hyperdx-hols/issues/41) |
+| **매핑이 서로 다른 인덱스 패턴.** `plan.py`는 패턴 전체를 계획하지만, `mapping_to_ddl.py`는 인덱스 하나를 읽고 `run.py`는 테이블 하나에 적재합니다. | 각자 필드를 키워온 백킹 인덱스가 몇 달치 쌓인 rollover 별칭은 Elastic에서 예외가 아니라 보통입니다. 테이블 하나를 믿기 전에 매핑이 같은지 확인하세요. [#40](https://github.com/litkhai/clickstack-hyperdx-hols/issues/40) |
+| **입수(ingest).** Beats·Logstash·Elastic Agent 설정을 변환하는 것은 없습니다. | 파이프라인이 Elastic 앞이 아니라 Elastic 안에 있다면 그쪽은 미작성입니다. [#21](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21) |
+| **대시보드와 알림.** Kibana saved object는 별도 문제입니다. | [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5) |
+| **ID 변환이 추적되는 단계가 아님.** `run.py`는 export/load/verify를 추적하고, `idmap/`은 실행하는 SQL입니다. | 재실행이 가장 필요한 단계가 무엇을 했는지 기록이 없는 단계입니다. [#33](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33) |
+| **무중단 전환.** 내보내기의 재개는 원본 인덱스가 정적임을 가정합니다. | 이중 기록과 "쓰면서 읽기"는 범위 밖입니다. 재개된 슬라이스는 **새** point-in-time을 열기 때문에, 인덱스가 그사이 움직였다면 행이 빠지거나 중복될 수 있습니다. |
+| **역방향.** ClickHouse → Elasticsearch는 어디에서도 지원하지 않습니다. | |
+| **업무 판단이 필요한 모든 것.** 보존 기간, 매핑에 없는 id가 중단 사유인지, `0`이 무슨 뜻인지. | 아래 "사람에게 물어야 하는 것"을 보세요. 구현이 아니라 결과를 바꾸는 것들입니다. |
+
+이 중 하나에 부딪히는 것은 여러분 실행의 버그가 아니라 **만들고 검증한 범위의 끝**
+입니다. 부딪혔다고 말할 곳이 그 이슈 번호입니다.
 
 ### 어디를 봐야 하는가
 
