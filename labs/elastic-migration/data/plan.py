@@ -132,6 +132,43 @@ def resolve_indices(base_url, pattern):
     return sorted(out, key=lambda i: i["index"])
 
 
+def check_mappings(base_url, pattern, indices):
+    """Do the indices behind a pattern agree about their fields?
+
+    plan.py plans across a pattern; mapping_to_ddl.py reads one index and
+    run.py loads into one table. So a pattern whose indices disagree lands
+    rows of two different shapes in one table, or fails on the first chunk
+    from the odd index out -- and a rollover alias with months of backing
+    indices that each grew their own fields is the normal Elastic case, not
+    the exotic one.
+
+    One _field_caps request over the pattern answers it: a field with two
+    types cannot be one ClickHouse column (a conflict, refused), and a field
+    only some indices have becomes a column that is empty for the rest (a
+    warning, because that is often fine and must still be visible).
+    """
+    if len(indices) < 2:
+        return [], []
+    caps = es_request(base_url, "GET",
+                      f"/{pattern}/_field_caps?fields=*&include_unmapped=true")["fields"]
+    conflicts, partial = [], []
+    for field, per_type in sorted(caps.items()):
+        if any(t.get("metadata_field") for t in per_type.values()):
+            continue
+        real = {t: spec for t, spec in per_type.items() if t != "unmapped"}
+        if len(real) > 1:
+            conflicts.append({
+                "field": field,
+                "types": {t: spec.get("indices", ["(all)"])[:4] for t, spec in real.items()},
+            })
+        elif "unmapped" in per_type and real:
+            missing = per_type["unmapped"].get("indices", [])
+            partial.append({"field": field, "type": next(iter(real)),
+                            "missing_from": missing[:4],
+                            "missing_count": len(missing)})
+    return conflicts, partial
+
+
 def count_docs(base_url, index, query):
     body = {"query": query} if query else None
     return es_request(base_url, "POST" if body else "GET", f"/{index}/_count", body)["count"]
@@ -339,6 +376,9 @@ def main():
                    help="how many times a too-large bucket may be re-probed finer")
     p.add_argument("--no-time-chunking", action="store_true",
                    help="one chunk per index, no time split (for an index with no date field)")
+    p.add_argument("--allow-mapping-conflicts", action="store_true",
+                   help="plan anyway when the pattern's indices disagree about a field's "
+                        "type. The conflicts stay in plan.json either way")
     p.add_argument("--no-calibrate", action="store_true", help="skip the timed read")
     p.add_argument("--calibrate-rounds", type=int, default=3)
     p.add_argument("--out", help="write plan.json here (default: stdout only as a report)")
@@ -351,6 +391,29 @@ def main():
     if not indices:
         print(f"no open index matches {args.index!r}", file=sys.stderr)
         sys.exit(1)
+
+    conflicts, partial = check_mappings(args.url, args.index, indices)
+    if partial:
+        shown = ", ".join(f"{p['field']} (missing from {p['missing_count']})"
+                          for p in partial[:5])
+        warn(f"{len(partial)} field(s) exist on some of the {len(indices)} indices and not "
+             f"others: {shown}. Those columns are empty for rows from the indices that "
+             "lack them -- usually a mapping that grew over time, occasionally the sign "
+             "that this pattern is really two datasets")
+    if conflicts:
+        for c in conflicts[:10]:
+            types = "; ".join(f"{t} on {', '.join(idx)}" for t, idx in c["types"].items())
+            warn(f"{c['field']} has more than one type across the pattern: {types}")
+        if not args.allow_mapping_conflicts:
+            print(f"\n{len(conflicts)} field(s) have conflicting types across the "
+                  f"{len(indices)} indices behind {args.index!r}.", file=sys.stderr)
+            print("One ClickHouse column cannot hold both, and mapping_to_ddl.py reads one "
+                  "index, so a plan across this pattern would land two shapes in one "
+                  "table.", file=sys.stderr)
+            print("Either narrow the pattern and run one plan per group of indices that "
+                  "agree, or pass --allow-mapping-conflicts if you have already decided "
+                  "what each column should be.", file=sys.stderr)
+            sys.exit(1)
 
     chunks = []
     per_index = []
@@ -450,6 +513,8 @@ def main():
 
     plan = {
         "oversized_buckets": oversized,
+        "mapping_conflicts": conflicts,
+        "mapping_partial_fields": partial,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "es_url": args.url,
         "index_pattern": args.index,

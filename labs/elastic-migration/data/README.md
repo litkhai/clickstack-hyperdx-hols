@@ -187,6 +187,25 @@ WARNING: logs-demo: _cat/indices reports 750255 docs but _count says 300000.
 _cat counts one Lucene doc per `nested` element; sizing uses _count (2.5x difference here)
 ```
 
+**An index pattern is checked for disagreement before anything is planned.**
+`plan.py` plans across a pattern, `mapping_to_ddl.py` reads one index and
+`run.py` loads into one table -- so a pattern whose indices disagree lands two
+shapes in one table, or fails on the first chunk from the odd index out. A
+rollover alias with months of backing indices that each grew their own fields
+is the normal Elastic case, not the exotic one. One `_field_caps` request
+answers it:
+
+| Finding | What happens |
+|---|---|
+| a field with **two types** across the pattern (`status` is a `long` here and a `keyword` there) | **refused.** One ClickHouse column cannot hold both. Narrow the pattern and plan each group separately, or pass `--allow-mapping-conflicts` once you have decided what the column should be |
+| a field **only some indices have** | a warning, and it is recorded in `plan.json`. That column is empty for rows from the indices that lack it -- usually a mapping that grew over time, occasionally the sign that this pattern is really two datasets |
+
+Both lists go into `plan.json` either way, so the decision is visible later
+rather than only in a terminal that has scrolled away. `mapping_to_ddl.py`
+makes the same distinction: a pattern whose indices have **identical**
+mappings is read as one shape with a note, and one whose mappings differ is
+refused with a pointer back here.
+
 **The rate is measured, not guessed.** Calibration times a few real PIT +
 `search_after` batches -- the same primitive `export.py` uses -- and
 multiplies by the recommended slice count. It is a floor and is labelled
@@ -792,6 +811,23 @@ Lucene 문서를 세고 `nested` 필드의 원소마다 하나씩 포함하므�
 WARNING: logs-demo: _cat/indices reports 750255 docs but _count says 300000.
 _cat counts one Lucene doc per `nested` element; sizing uses _count (2.5x difference here)
 ```
+
+**인덱스 패턴은 계획을 세우기 전에 불일치를 검사합니다.** `plan.py`는 패턴 전체를
+계획하고, `mapping_to_ddl.py`는 인덱스 하나를 읽고, `run.py`는 테이블 하나에
+적재합니다. 그래서 패턴 안의 인덱스들이 서로 다르면 한 테이블에 두 가지 모양이
+들어가거나, 다른 하나에서 온 첫 청크에서 실패합니다. 각자 필드를 키워온 백킹 인덱스가
+몇 달치 쌓인 rollover 별칭은 Elastic에서 예외가 아니라 보통입니다. `_field_caps`
+요청 한 번으로 답이 나옵니다.
+
+| 발견 | 동작 |
+|---|---|
+| 패턴 안에서 **타입이 둘인** 필드 (`status`가 한쪽은 `long`, 다른 쪽은 `keyword`) | **거부합니다.** ClickHouse 컬럼 하나가 둘을 담을 수 없습니다. 패턴을 좁혀 그룹별로 계획하거나, 컬럼을 무엇으로 할지 정한 뒤 `--allow-mapping-conflicts`를 주세요 |
+| **일부 인덱스에만 있는** 필드 | 경고하고 `plan.json`에 기록합니다. 그 컬럼은 해당 필드가 없는 인덱스에서 온 행에 대해 비어 있습니다 -- 대개 시간이 지나며 커진 매핑이고, 때로는 이 패턴이 실은 두 데이터셋이라는 신호입니다 |
+
+두 목록은 어느 경우든 `plan.json`에 들어갑니다. 스크롤이 지나간 터미널이 아니라
+나중에도 결정이 보이도록요. `mapping_to_ddl.py`도 같은 구분을 합니다: 인덱스들의
+매핑이 **동일한** 패턴은 한 모양으로 읽고 그 사실을 알리며, 서로 다른 패턴은 여기를
+가리키며 거부합니다.
 
 **속도는 추측이 아니라 측정입니다.** 캘리브레이션은 실제 PIT +
 `search_after` 배치 몇 개의 시간을 재고 -- `export.py`가 쓰는 것과 같은
