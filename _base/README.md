@@ -55,6 +55,25 @@ Linux VM, not your machine's filesystem. The `linux-host` and `virt-kvm`
 profiles will collect the VM's metrics and logs, which is enough to exercise the
 config but is not your host. Run those on Linux to see real host data.
 
+### Optional: a throwaway Elasticsearch
+
+For `labs/elastic-migration/data/` only. Off by default -- it sits behind
+the `elastic` compose profile, so a plain `docker compose up -d` is
+unaffected:
+
+```bash
+docker compose --profile elastic up -d
+./bin/seed_elasticsearch.py    # 300,000 synthetic log documents
+```
+
+Single node on port 9200, security disabled
+(`xpack.security.enabled=false`). That is only acceptable because it holds
+nothing but seeded synthetic data on localhost -- never do this against a
+cluster with anything real in it. The image tag (`8.15.3`) is pinned for the
+same reason as ClickStack's own: a lab's verification line should mean
+something. See `labs/elastic-migration/data/README.md` for what the seeded
+mapping is designed to exercise.
+
 ### ClickHouse Cloud
 
 Copy `.env.example` to `.env`, set `TARGET=cloud`, and fill in the HTTPS
@@ -175,6 +194,24 @@ HyperDX는 http://localhost:8080 에 올라옵니다. 나머지 공개 포트는
 Docker Desktop 내부 Linux VM의 루트를 마운트합니다. `linux-host`와 `virt-kvm`
 프로파일은 그 VM의 지표와 로그를 수집하므로 설정을 시험하기에는 충분하지만
 여러분의 호스트는 아닙니다. 실제 호스트 데이터를 보려면 Linux에서 실행하세요.
+
+### 선택: 임시 Elasticsearch
+
+`labs/elastic-migration/data/`에만 필요합니다. 기본적으로 꺼져 있습니다 --
+`elastic` compose 프로파일 뒤에 있어서, 평범한 `docker compose up -d`에는
+영향이 없습니다.
+
+```bash
+docker compose --profile elastic up -d
+./bin/seed_elasticsearch.py    # 합성 로그 문서 300,000건
+```
+
+포트 9200의 단일 노드, 보안 비활성(`xpack.security.enabled=false`)입니다.
+localhost에 시딩한 합성 데이터만 있기 때문에만 괜찮은 설정입니다 -- 실제
+데이터가 있는 클러스터에는 절대 이렇게 하지 마세요. 이미지 태그
+(`8.15.3`)를 고정한 이유는 ClickStack 자체와 같습니다: 실습의 검증 기록이
+의미를 가져야 하기 때문입니다. 시딩된 매핑이 무엇을 시험하도록 설계됐는지는
+`labs/elastic-migration/data/README.md`를 보세요.
 
 ### ClickHouse Cloud
 

@@ -1,0 +1,7 @@
+# export.py's own output: NDJSON parts, checkpoints and load markers.
+# Regenerate with export.py -- these are run artifacts, not lab source.
+/out/
+/out-*/
+*.ndjson
+*.ckpt.json
+*.loaded
