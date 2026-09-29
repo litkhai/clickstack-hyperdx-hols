@@ -8,6 +8,12 @@
 # The tag is pinned rather than `latest` so a lab's verification line means
 # something. 2.39.1 is the HyperDX version the otel-profiles/ docs were written
 # against; its collector is built from components 0.155.0.
+#
+# The `elasticsearch` service is optional and off by default (profile
+# `elastic`), for labs/elastic-migration/data/ only:
+#
+#   docker compose --profile elastic up -d
+#   ./bin/seed_elasticsearch.py
 
 services:
   clickstack:
@@ -36,6 +42,32 @@ services:
       # Uncomment together with CUSTOM_OTELCOL_CONFIG_FILE in .env:
       # - ../otel-profiles/custom.config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
 
+  # Throwaway source cluster for labs/elastic-migration/data/. Not started by
+  # a plain `docker compose up -d` -- it sits behind the `elastic` profile so
+  # the existing ClickStack-only workflow is unaffected:
+  #
+  #   docker compose --profile elastic up -d
+  #
+  # Single node, security disabled (xpack.security.enabled=false). That is
+  # only acceptable because this holds nothing but synthetic seed data on
+  # localhost -- never do this against a cluster with real data.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: elasticsearch-local
+    restart: unless-stopped
+    profiles: ["elastic"]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.license.self_generated.type: basic
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ports:
+      - "9200:9200"      # REST API
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
 volumes:
   clickstack-data:
   clickstack-logs:
+  elasticsearch-data:
