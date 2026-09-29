@@ -1,6 +1,10 @@
 *.DS_Store
 .DS_Store
 
+# Generated Pages site — built by .github/scripts/build_site.py and deployed
+# by .github/workflows/pages.yml on every push to main; not committed.
+/docs/
+
 # Secrets — commit only the .example / .template counterparts
 .env
 .env.local

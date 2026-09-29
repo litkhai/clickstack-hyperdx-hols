@@ -6,6 +6,8 @@
 
 Observability on ClickHouse: OpenTelemetry ingestion, the ClickStack/HyperDX UI, and ClickHouse watching itself. Growing — see the roadmap below.
 
+**[Browse the labs →](https://litkhai.github.io/clickstack-hyperdx-hols/)**
+
 > This repository was split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols) on the `pre-split-2026-10` tag, with history. The last version of these labs in the original repository: https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10
 
 ### 🔭 Labs (`labs/`)
@@ -77,6 +79,8 @@ python3 .github/scripts/check_links.py
 ## 한국어
 
 ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/HyperDX UI, 그리고 ClickHouse가 스스로를 관측하는 방법을 다룹니다. 계속 늘어날 예정이며 아래 로드맵을 참고하세요.
+
+**[실습 둘러보기 →](https://litkhai.github.io/clickstack-hyperdx-hols/)**
 
 > 이 저장소는 [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols)의 `pre-split-2026-10` 태그 시점에서 히스토리와 함께 분리했습니다. 원래 저장소에 있던 마지막 버전: https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10
 

@@ -5,6 +5,7 @@
 ## CI
 
 `checks` (on pull requests): `links`, `syntax`, `otel-profiles`, `secrets` (gitleaks), `hygiene` — green.
+`pages` (on push to `main`): builds the site with `.github/scripts/build_site.py` and deploys it.
 GitHub secret scanning and push protection are on.
 
 ## Inventory
