@@ -9,8 +9,10 @@
 # something. 2.39.1 is the HyperDX version the otel-profiles/ docs were written
 # against; its collector is built from components 0.155.0.
 #
-# The `elasticsearch` service is optional and off by default (profile
-# `elastic`), for labs/elastic-migration/data/ only:
+# Two more services are optional and off by default, for
+# labs/elastic-migration/data/ only -- the Elastic side to migrate *from*
+# (profile `elastic`) and a ClickHouse pinned to the version line a Cloud
+# migration lands *on* (profile `migration`, also started by `elastic`):
 #
 #   docker compose --profile elastic up -d
 #   ./bin/seed_elasticsearch.py
@@ -52,7 +54,7 @@ services:
   # only acceptable because this holds nothing but synthetic seed data on
   # localhost -- never do this against a cluster with real data.
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
     container_name: elasticsearch-local
     restart: unless-stopped
     profiles: ["elastic"]
@@ -67,7 +69,54 @@ services:
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
 
+  # The migration *destination* for labs/elastic-migration/, and deliberately
+  # not the ClickHouse inside the all-in-one image above.
+  #
+  #   docker compose --profile migration up -d     # target only
+  #   docker compose --profile elastic up -d       # source + target, one command
+  #
+  # Two reasons for a second ClickHouse rather than reusing port 8123:
+  #
+  #  1. Version. A migration lands in ClickHouse Cloud, whose regular release
+  #     channel is on the 26.6 line (a live Cloud service reports
+  #     26.6.1.2191); the all-in-one 2.39.1 bundles 26.8.7.19. Verifying a
+  #     migration against a *newer* ClickHouse than the destination can prove
+  #     a feature the destination does not have yet, which is the one thing a
+  #     migration lab must not do. 26.6.8.7 is the newest public patch of that
+  #     line -- the same minor as Cloud, not the same build, since Cloud's
+  #     builds are not published.
+  #  2. Shape. The destination of a migration is a plain ClickHouse endpoint,
+  #     not HyperDX's own instance, and the load path in
+  #     labs/elastic-migration/data/ touches ClickHouse only.
+  #
+  # `default` with no password, reachable from the host -- unlike the
+  # all-in-one image, the plain server image does not restrict `default` to
+  # its own localhost. Acceptable for the same reason as the Elasticsearch
+  # above: throwaway, synthetic, localhost. Never this shape anywhere real.
+  clickhouse-target:
+    image: clickhouse/clickhouse-server:26.6.8.7
+    container_name: clickhouse-target-local
+    restart: unless-stopped
+    profiles: ["elastic", "migration"]
+    environment:
+      # Recent server images refuse a passwordless `default` (REQUIRED_PASSWORD)
+      # and mint a random one at first start, which a lab cannot then put in a
+      # documented command. This skips that setup and leaves the built-in
+      # `default` user with no password -- the same throwaway-only trade-off as
+      # xpack.security.enabled=false above, and no credential to commit.
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    ports:
+      - "8124:8123"      # HTTP -- CH_TARGET_URL in .env.example
+      - "9001:9000"      # native
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse-target-data:/var/lib/clickhouse
+
 volumes:
   clickstack-data:
   clickstack-logs:
   elasticsearch-data:
+  clickhouse-target-data:

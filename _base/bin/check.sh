@@ -82,6 +82,30 @@ else
     fi
 fi
 
+# --- Migration target ClickHouse (optional) --------------------------------
+# labs/elastic-migration/ lands in a ClickHouse pinned to the version line a
+# Cloud migration lands on, which is not the one above. Nothing else needs it,
+# so unset is a SKIP.
+if [ -z "${CH_TARGET_URL:-}" ]; then
+    skip "migration target ClickHouse" "CH_TARGET_URL is not set -- only labs/elastic-migration/ uses it"
+else
+    if out=$(curl -sS --max-time 20 --fail-with-body \
+                --user "${CH_TARGET_USER:-default}:${CH_TARGET_PASSWORD:-}" \
+                "$CH_TARGET_URL/?default_format=TSV" \
+                --data-binary 'SELECT version()' 2>&1); then
+        pass "migration target ClickHouse reachable (version $out)"
+        case "$out" in
+            26.6.*) ;;
+            *) echo "      note: target is $out, but ClickHouse Cloud's regular release"
+               echo "      channel is on the 26.6 line -- a migration verified here could"
+               echo "      be relying on something the destination does not have yet" ;;
+        esac
+    else
+        fail "migration target ClickHouse reachable" "$out
+     start it with: docker compose --profile migration up -d"
+    fi
+fi
+
 # --- HyperDX external API --------------------------------------------------
 if [ -z "${HYPERDX_API_URL:-}" ]; then
     skip "HyperDX API reachable" "HYPERDX_API_URL is not set"

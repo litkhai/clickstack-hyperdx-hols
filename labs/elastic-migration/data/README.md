@@ -4,9 +4,9 @@
 
 ## English
 
-Three tools for the data part of #19: `_mapping` to ClickHouse DDL, a
-parallel export that resumes, and parity checks that are query pairs rather
-than a UI screenshot. The [official documentation for this
+Tools for the data part of #19: `_mapping` to ClickHouse DDL, a parallel
+export that resumes, and parity checks that are query pairs rather than a UI
+screenshot. The [official documentation for this
 migration](https://clickhouse.com/docs/clickstack/migration/elastic/migrating-data)
 already covers the JSON-over-HTTP path and states its own ceiling: below
 roughly ten million rows. What is here fills the gap above that ceiling, plus
@@ -18,11 +18,11 @@ Needs only Python 3's standard library, curl and Docker -- no `elasticsearch`
 client, no `requests`, nothing installed beyond what's already in this
 repository's other labs.
 
-### Prerequisite: a throwaway Elasticsearch
+### Prerequisite: a source to migrate from, and a target to migrate to
 
-`_base/` gained an optional `elasticsearch` service (profile `elastic`, off
-by default) and a seeding script, so this lab has something real to run
-against:
+`_base/` carries both behind compose profiles, off by default, plus a
+seeding script -- so this lab has something real to run against and
+somewhere real to land:
 
 ```bash
 cd _base
@@ -30,6 +30,20 @@ cp .env.example .env         # if you have not already
 docker compose --profile elastic up -d
 ./bin/seed_elasticsearch.py  # 300,000 documents by default
 ```
+
+| | Where | Version |
+|---|---|---|
+| source | `http://localhost:9200`, index `logs-demo` | Elasticsearch 8.17.0 |
+| target | `http://localhost:8124`, user `default`, no password | ClickHouse 26.6.8.7 |
+
+**The target is not the ClickHouse inside the ClickStack all-in-one image**
+(port 8123, 26.8.7.19), and that is deliberate: a migration lands in
+ClickHouse Cloud, whose regular release channel is on the 26.6 line, and
+verifying against a *newer* ClickHouse than the destination can prove a
+feature the destination does not have yet. `_base/.env.example` sets
+`CH_TARGET_URL` and friends; `load.sh` prefers them over `CH_*` and prints
+which server it is loading into. Point them at your own Cloud service for a
+real migration.
 
 The seeded mapping is deliberately not a flat shape -- it exists to give
 `mapping_to_ddl.py` every judgement call below to actually make: a `keyword`
@@ -95,12 +109,12 @@ and is linked from the script's own output rather than repeated here):
 Run against the seeded `logs-demo` index, the report reads:
 
 ```
-converted:    9
+converted:    10
 needs review: 5
 unsupported:  1
 ```
 
-(`_id` is added as a tenth `converted` column -- not part of `_mapping`,
+(One of those ten is `_id`, which is not part of `_mapping` at all -- it is
 synthesized so export/load/parity have a stable row key.)
 
 The optional `--manifest` output is the contract with `export.py`: it lists,
@@ -111,7 +125,7 @@ dot-flattened into scalar keys.
 ### `export.py`: parallel, resumable
 
 **Primitive: point-in-time (PIT) + `search_after`, sorted on `_shard_doc`,
-one stream per slice -- not scroll.** Checked against the pinned 8.15.3
+one stream per slice -- not scroll.** Checked against the pinned 8.17.0
 before writing anything: Elasticsearch's own docs now discourage scroll for
 deep pagination and describe PIT + `search_after` + `slice` as the
 replacement. `_shard_doc` is the cheapest sort available -- no business
@@ -156,6 +170,12 @@ storage):
 ./load.sh --out-dir out/logs-demo --table logs_demo
 ```
 
+It loads into `CH_TARGET_URL` when that is set and into `CH_URL` otherwise,
+and prints the server it chose on its first line. The choice is all-or-
+nothing rather than field by field: a connection assembled half from
+`CH_TARGET_*` and half from `CH_*` is how a migration ends up in the wrong
+server with a plausible-looking log.
+
 Resumable at the part level: a `part-<n>.ndjson.loaded` marker means that
 part is skipped on a re-run (`--force` reloads anyway). At real scale --
 past the ~10M row ceiling this lab exists to get past -- upload the NDJSON
@@ -168,7 +188,7 @@ the bottom of `load.sh`.
 
 ```bash
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
-    --ch-url http://localhost:8123 --ch-user api --ch-password api \
+    --ch-url http://localhost:8124 --ch-user default --ch-password '' \
     --ch-database default --out-dir out/logs-demo
 ```
 
@@ -190,25 +210,31 @@ named, not just "counts don't match" (see the PR that introduced this file).
 ### Try it end to end
 
 ```bash
-cd _base && docker compose --profile elastic up -d && docker compose up -d
+cd _base && docker compose --profile elastic up -d
 ./bin/seed_elasticsearch.py
 
 cd ../labs/elastic-migration/data
 ./mapping_to_ddl.py --index logs-demo --table logs_demo --manifest manifest.json > ddl.sql
-curl -sS --user api:api http://localhost:8123/ --data-binary @ddl.sql
+curl -sS http://localhost:8124/ --data-binary @ddl.sql
 
 ./export.py --index logs-demo --out-dir out/logs-demo --manifest manifest.json
 ./load.sh --out-dir out/logs-demo --table logs_demo
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
-    --ch-url http://localhost:8123 --ch-user api --ch-password api \
+    --ch-url http://localhost:8124 --ch-user default --ch-password '' \
     --ch-database default --out-dir out/logs-demo
 ```
 
-**Verified on:** Elasticsearch 8.15.3, ClickHouse 26.8.7.19, ClickStack/HyperDX
-2.39.1 (`clickstack-all-in-one`) -- 300,000 seeded documents, exported across
-4 slices, loaded, and all four parity checks passing (`total row count
-matches (300000)`, 251 hourly buckets matching, 50-document field sample
-matching, 4-slice coverage with none empty).
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7 (the pinned
+migration target), ClickStack/HyperDX 2.39.1 (`clickstack-all-in-one`, running
+but not on this path -- the data path touches ClickHouse only) -- 300,000
+seeded documents, 523 mapped fields, classified 10/5/1, exported across 4
+slices, loaded, and all four parity checks passing (`total row count matches
+(300000)`, 251 hourly buckets matching, 50-document field sample matching,
+4-slice coverage with none empty).
+
+26.6.8.7 is the newest public patch of the line ClickHouse Cloud's regular
+release channel runs; a live Cloud service reports `26.6.1.2191`, the same
+minor from a build that is not published.
 
 Not run: `_base/bin/verify.sh` (needs `HYPERDX_INGESTION_KEY` from the
 ClickStack UI, which is not obtainable non-interactively) -- not needed here,
@@ -218,7 +244,7 @@ since this lab's data path only touches ClickHouse, not HyperDX ingestion.
 
 ## 한국어
 
-#19의 데이터 부분을 위한 세 도구입니다: `_mapping`을 ClickHouse DDL로 바꾸는
+#19의 데이터 부분을 위한 도구들입니다: `_mapping`을 ClickHouse DDL로 바꾸는
 변환기, 재개 가능한 병렬 내보내기, 그리고 UI 스크린샷이 아니라 쿼리 쌍으로
 하는 정합성 검증. [이 마이그레이션의 공식
 문서](https://clickhouse.com/docs/clickstack/migration/elastic/migrating-data)가
@@ -231,10 +257,11 @@ Python 3 표준 라이브러리, curl, Docker만 필요합니다 -- `elasticsear
 클라이언트도, `requests`도, 이 저장소의 다른 실습에 없던 것은 아무것도
 설치하지 않습니다.
 
-### 사전 준비: 임시 Elasticsearch
+### 사전 준비: 옮겨올 원본과 도착할 목적지
 
-`_base/`에 선택적 `elasticsearch` 서비스(`elastic` 프로파일, 기본 비활성)와
-시딩 스크립트를 추가했습니다. 이 실습이 실제로 실행할 대상이 생겼습니다.
+`_base/`가 둘 다 compose 프로파일 뒤에 (기본 비활성) 들고 있고 시딩
+스크립트도 있습니다. 이 실습이 실제로 읽을 원본과 실제로 도착할 곳이
+생겼습니다.
 
 ```bash
 cd _base
@@ -242,6 +269,19 @@ cp .env.example .env         # 아직 안 했다면
 docker compose --profile elastic up -d
 ./bin/seed_elasticsearch.py  # 기본 300,000건
 ```
+
+| | 위치 | 버전 |
+|---|---|---|
+| 원본 | `http://localhost:9200`, 인덱스 `logs-demo` | Elasticsearch 8.17.0 |
+| 목적지 | `http://localhost:8124`, 유저 `default`, 비밀번호 없음 | ClickHouse 26.6.8.7 |
+
+**목적지는 ClickStack all-in-one 이미지 안의 ClickHouse(8123 포트,
+26.8.7.19)가 아닙니다.** 의도적입니다. 마이그레이션은 ClickHouse Cloud에
+도착하고 Cloud의 regular release 채널은 26.6 라인인데, 목적지보다 **더 새로운**
+ClickHouse에서 검증하면 목적지에 아직 없는 기능을 증명할 수 있습니다.
+`_base/.env.example`에 `CH_TARGET_URL` 등이 있고, `load.sh`는 `CH_*`보다 그쪽을
+우선하며 어느 서버에 적재하는지 첫 줄에 출력합니다. 실제 마이그레이션에서는
+여러분의 Cloud 서비스를 가리키게 하세요.
 
 시딩되는 매핑은 의도적으로 단순하지 않습니다 -- 아래 `mapping_to_ddl.py`의
 모든 판단 대상을 실제로 갖게 하기 위해서입니다: `keyword` 필드, `.keyword`
@@ -301,12 +341,12 @@ unsupported 처리됩니다. 조용히 버려지거나 조용히 추측되지 �
 시딩한 `logs-demo` 인덱스로 실행한 리포트:
 
 ```
-converted:    9
+converted:    10
 needs review: 5
 unsupported:  1
 ```
 
-(`_id`는 열 번째 converted 컬럼으로 추가됩니다 -- `_mapping`에는 없고,
+(이 열 개 중 하나는 `_id`입니다 -- `_mapping`에는 아예 없고,
 export·load·정합성 검증이 안정적인 행 키를 갖도록 합성한 것입니다.)
 
 선택적 `--manifest` 출력은 `export.py`와의 계약입니다: 각 필드가 원본
@@ -318,7 +358,7 @@ Elasticsearch 값을 점(dot)으로 평탄화된 스칼라 키가 아니라 중�
 
 **기본 도구: point-in-time(PIT) + `search_after`, `_shard_doc`로 정렬,
 슬라이스당 하나의 스트림 -- scroll이 아닙니다.** 코드를 쓰기 전에 고정한
-8.15.3에 대해 확인했습니다: Elasticsearch 공식 문서가 이제 deep pagination에
+8.17.0에 대해 확인했습니다: Elasticsearch 공식 문서가 이제 deep pagination에
 scroll을 권장하지 않고 PIT + `search_after` + `slice`를 대체재로 설명합니다.
 `_shard_doc`은 가장 저렴한 정렬입니다 -- 내보내기에는 업무적 순서가 필요
 없고, 완전하고 중복 없는 커버리지만 필요합니다.
@@ -360,6 +400,11 @@ Elasticsearch 테이블 엔진은 없습니다. `load.sh`는 로컬 경로를 �
 ./load.sh --out-dir out/logs-demo --table logs_demo
 ```
 
+`CH_TARGET_URL`이 설정돼 있으면 그쪽으로, 없으면 `CH_URL`로 적재하고, 고른
+서버를 첫 줄에 출력합니다. 필드별이 아니라 전부-아니면-전무로 고릅니다.
+`CH_TARGET_*`에서 절반, `CH_*`에서 절반을 가져온 접속 정보는 그럴듯한 로그를
+남기며 엉뚱한 서버에 적재되는 전형적인 경로입니다.
+
 part 단위로 재개 가능합니다: `part-<n>.ndjson.loaded` 마커가 있으면 재실행
 시 건너뜁니다(`--force`로 강제 재적재). 이 실습이 넘어서려는 ~1천만 행
 한계를 넘는 실제 규모에서는, NDJSON part를 오브젝트 스토리지에 올리고 한
@@ -371,7 +416,7 @@ part 단위로 재개 가능합니다: `part-<n>.ndjson.loaded` 마커가 있으
 
 ```bash
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
-    --ch-url http://localhost:8123 --ch-user api --ch-password api \
+    --ch-url http://localhost:8124 --ch-user default --ch-password '' \
     --ch-database default --out-dir out/logs-demo
 ```
 
@@ -393,25 +438,30 @@ part 단위로 재개 가능합니다: `part-<n>.ndjson.loaded` 마커가 있으
 ### 처음부터 끝까지 해보기
 
 ```bash
-cd _base && docker compose --profile elastic up -d && docker compose up -d
+cd _base && docker compose --profile elastic up -d
 ./bin/seed_elasticsearch.py
 
 cd ../labs/elastic-migration/data
 ./mapping_to_ddl.py --index logs-demo --table logs_demo --manifest manifest.json > ddl.sql
-curl -sS --user api:api http://localhost:8123/ --data-binary @ddl.sql
+curl -sS http://localhost:8124/ --data-binary @ddl.sql
 
 ./export.py --index logs-demo --out-dir out/logs-demo --manifest manifest.json
 ./load.sh --out-dir out/logs-demo --table logs_demo
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
-    --ch-url http://localhost:8123 --ch-user api --ch-password api \
+    --ch-url http://localhost:8124 --ch-user default --ch-password '' \
     --ch-database default --out-dir out/logs-demo
 ```
 
-**Verified on:** Elasticsearch 8.15.3, ClickHouse 26.8.7.19,
-ClickStack/HyperDX 2.39.1(`clickstack-all-in-one`) -- 시딩한 문서 300,000건을
-4개 슬라이스로 내보내고, 적재하고, 네 개 정합성 검사 모두 통과
-(`total row count matches (300000)`, 시간별 버킷 251개 일치, 문서 50개 필드
-샘플 일치, 4-슬라이스 커버리지에 빈 슬라이스 없음).
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7(고정된 마이그레이션
+목적지), ClickStack/HyperDX 2.39.1(`clickstack-all-in-one` -- 실행 중이지만 이
+경로에는 관여하지 않음. 데이터 경로는 ClickHouse만 다룹니다) -- 시딩한 문서
+300,000건, 매핑 필드 523개, 10/5/1로 분류, 4개 슬라이스로 내보내고, 적재하고,
+네 개 정합성 검사 모두 통과(`total row count matches (300000)`, 시간별 버킷
+251개 일치, 문서 50개 필드 샘플 일치, 4-슬라이스 커버리지에 빈 슬라이스 없음).
+
+26.6.8.7은 ClickHouse Cloud regular release 채널이 도는 라인의 최신 공개
+패치입니다. 실제 Cloud 서비스는 `26.6.1.2191`을 보고합니다 -- 같은 minor이고,
+공개되지 않는 빌드입니다.
 
 실행하지 않은 것: `_base/bin/verify.sh` (ClickStack UI에서 받는
 `HYPERDX_INGESTION_KEY`가 필요한데 비대화식으로 얻을 수 없음) -- 이 실습의
