@@ -4,9 +4,9 @@
 
 ## English
 
-Tools for the data part of #19: `_mapping` to ClickHouse DDL, a parallel
-export that resumes, and parity checks that are query pairs rather than a UI
-screenshot. The [official documentation for this
+Tools for the data part of #19: a sizing step that cuts the move into
+bounded chunks, `_mapping` to ClickHouse DDL, a parallel export that resumes,
+and parity checks that are query pairs rather than a UI screenshot. The [official documentation for this
 migration](https://clickhouse.com/docs/clickstack/migration/elastic/migrating-data)
 already covers the JSON-over-HTTP path and states its own ceiling: below
 roughly ten million rows. What is here fills the gap above that ceiling, plus
@@ -57,6 +57,107 @@ mapping.
 Security is disabled on this Elasticsearch (`xpack.security.enabled=false`).
 That is only acceptable because it holds nothing but this synthetic seed
 data on localhost.
+
+### `plan.py`: how large is this, and in how many pieces
+
+Run this before exporting anything. It answers the question that comes
+first -- *is this movable in one pass, and if not, what is the queue of
+passes* -- and writes the queue out as `plan.json`.
+
+```bash
+./plan.py --index 'logs-*' --target-rows 100000 --out plan.json
+```
+
+```
+logs-*  ->  4 chunk(s) of <= 100000 rows
+index                                docs       size  bytes/doc  shards   probe
+logs-demo                          300000    89.3MiB        312       3     15m
+TOTAL                              300000    89.3MiB
+
+chunk rows: min 384, median 99858, max 99900
+
+Calibration (3 timed batches of 5000, cold single stream):
+  66,607 rows/s per stream  x 3 slices = 199,821 rows/s
+  export of 300000 rows: ~2s (Elasticsearch read only -- excludes the load and the checks)
+```
+
+**Chunks are equal in rows, not in time width.** Equal-width time chunks are
+the obvious thing and the wrong thing: observability data is bursty, so one
+day can hold forty times another, and a fixed `1d` chunk is then either
+uselessly small or over the ceiling. So `plan.py` probes the real
+distribution with a `date_histogram`, packs consecutive buckets up to
+`--target-rows`, and re-probes at a finer interval any single bucket that
+exceeds the target on its own (`--refine-depth`, default 2).
+
+**A chunk is the unit that verifies and fails independently.** That is the
+whole reason to chunk rather than only to parallelise. One four-billion-row
+run that dies at 90% tells you nothing about the 90%; two thousand chunks
+tell you exactly which ones are done. It also bounds everything that can end
+a run -- PIT keep-alive, disk for the NDJSON parts, insert pressure -- to one
+chunk's worth. The ~10M row ceiling the [official data
+page](https://clickhouse.com/docs/clickstack/migration/elastic/migrating-data)
+states is a ceiling *per pass*: chunking is what turns a dataset above it
+into a queue of passes below it.
+
+**Chunk ranges tile the whole time span with no holes**, and the plan is
+checkable by adding up its own ranges. Packing leaves a gap wherever the
+probe found empty time; `plan.py` closes each gap by starting a chunk where
+the previous one ended, so a row landing there later is still inside some
+chunk's query. Boundaries are `gte`/`lt` on `epoch_millis`, not a date
+string: no format or timezone can be misread, and adjacent chunks are
+provably disjoint.
+
+**`_cat/indices` is not the row count, and the difference is not small.**
+`docs.count` counts Lucene documents, one per element of every `nested`
+field, so this repository's own seeded index reports 750,255 for 300,000
+documents. Sizing off `_cat` would overestimate the work by 2.5x, so
+`plan.py` uses `_count` and says so when the two disagree:
+
+```
+WARNING: logs-demo: _cat/indices reports 750255 docs but _count says 300000.
+_cat counts one Lucene doc per `nested` element; sizing uses _count (2.5x difference here)
+```
+
+**The rate is measured, not guessed.** Calibration times a few real PIT +
+`search_after` batches -- the same primitive `export.py` uses -- and
+multiplies by the recommended slice count. It is a floor and is labelled
+one: a cold single stream on one index, excluding the load and the checks,
+with no competing live indexing. An estimate nobody measured is exactly the
+kind of claim this lab does not make.
+
+Other things it will tell you rather than let you discover later: an index
+whose documents have no value for the time field (they are unreachable by a
+time-chunked export -- it prints the `must_not exists` query that catches
+them), a closed index, and buckets that no time predicate can split at all,
+summarised in one line rather than one per bucket.
+
+Slices default to the index's primary shard count, capped at 8:
+Elasticsearch documents slicing as most effective at `slices <= shards`, and
+`export.py` already warns about a slice that exported nothing.
+
+Then run one chunk with the query the plan emitted:
+
+```bash
+./export.py --index logs-demo --out-dir out/logs-demo/chunk-0000 \
+    --slices 3 --batch-size 5000 --manifest manifest.json \
+    --query '{"bool": {"filter": [{"range": {"@timestamp": {"gte": 1790655553740, "lt": 1790955000000, "format": "epoch_millis"}}}]}}'
+```
+
+No change to `export.py` was needed for any of this -- a chunk is
+expressible with the `--query` it already took.
+
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7 (the pinned
+migration target), ClickStack/HyperDX 2.39.1 (not on this path). Against the
+300,000-document seed:
+
+| What was checked | Result |
+|---|---|
+| chunk estimates sum to the index's `_count` | 300000 of 300000, and each chunk's estimate matched its actual export exactly (99816 / 99900 / 99900 / 384) |
+| ranges tile with no hole or overlap | 0 boundary mismatches |
+| every chunk exported and loaded | 300,000 rows in ClickHouse, `uniqExact(_id)` also 300,000 -- complete *and* disjoint, not just the right count |
+| parity after a chunked load | all applicable checks `PASS` (count, 251 hourly buckets, 50-document field sample) |
+| refinement of an oversized bucket | `--max-buckets 5` forces a `7d` probe whose buckets hold ~200,000 rows; with `--target-rows 50000` it refined down and produced 10 chunks, largest 45,984 |
+| a bucket that cannot be split | `--target-rows 100 --refine-depth 0` flagged 1,000 of them, in one summary warning, with the row total still exact |
 
 ### `mapping_to_ddl.py`: `_mapping` to DDL, with a paper trail
 
@@ -214,6 +315,7 @@ cd _base && docker compose --profile elastic up -d
 ./bin/seed_elasticsearch.py
 
 cd ../labs/elastic-migration/data
+./plan.py --index logs-demo --target-rows 100000 --out plan.json
 ./mapping_to_ddl.py --index logs-demo --table logs_demo --manifest manifest.json > ddl.sql
 curl -sS http://localhost:8124/ --data-binary @ddl.sql
 
@@ -244,9 +346,9 @@ since this lab's data path only touches ClickHouse, not HyperDX ingestion.
 
 ## 한국어
 
-#19의 데이터 부분을 위한 도구들입니다: `_mapping`을 ClickHouse DDL로 바꾸는
-변환기, 재개 가능한 병렬 내보내기, 그리고 UI 스크린샷이 아니라 쿼리 쌍으로
-하는 정합성 검증. [이 마이그레이션의 공식
+#19의 데이터 부분을 위한 도구들입니다: 이관을 크기가 제한된 청크로 자르는
+규모 산정, `_mapping`을 ClickHouse DDL로 바꾸는 변환기, 재개 가능한 병렬
+내보내기, 그리고 UI 스크린샷이 아니라 쿼리 쌍으로 하는 정합성 검증. [이 마이그레이션의 공식
 문서](https://clickhouse.com/docs/clickstack/migration/elastic/migrating-data)가
 JSON·HTTP 경로를 이미 다루며 스스로 한계를 명시합니다: 약 1천만 행 미만.
 여기 있는 것은 그 위쪽의 공백과, [type mapping
@@ -293,6 +395,103 @@ multi-field가 있는 `text` 필드, `nested` 필드, `flattened` 필드, `ip`�
 
 이 Elasticsearch는 보안이 꺼져 있습니다(`xpack.security.enabled=false`).
 localhost에 이 합성 시드 데이터만 있기 때문에만 괜찮은 설정입니다.
+
+### `plan.py`: 얼마나 큰가, 그리고 몇 조각인가
+
+무엇이든 내보내기 전에 먼저 실행하세요. 가장 먼저 와야 하는 질문 --
+*한 번에 옮길 수 있는가, 아니면 몇 번의 패스가 필요한가* -- 에 답하고, 그
+대기열을 `plan.json`으로 씁니다.
+
+```bash
+./plan.py --index 'logs-*' --target-rows 100000 --out plan.json
+```
+
+```
+logs-*  ->  4 chunk(s) of <= 100000 rows
+index                                docs       size  bytes/doc  shards   probe
+logs-demo                          300000    89.3MiB        312       3     15m
+TOTAL                              300000    89.3MiB
+
+chunk rows: min 384, median 99858, max 99900
+
+Calibration (3 timed batches of 5000, cold single stream):
+  66,607 rows/s per stream  x 3 slices = 199,821 rows/s
+  export of 300000 rows: ~2s (Elasticsearch read only -- excludes the load and the checks)
+```
+
+**청크는 시간 폭이 아니라 행 수로 균등합니다.** 같은 시간 폭으로 자르는 것은
+당연해 보이지만 틀린 방법입니다. 관측성 데이터는 몰려 있어서 어떤 하루가 다른
+하루의 40배일 수 있고, 그러면 고정 `1d` 청크는 쓸모없이 작거나 천장을
+넘습니다. 그래서 `plan.py`는 `date_histogram`으로 실제 분포를 조사하고,
+연속된 버킷을 `--target-rows`까지 묶고, 혼자서 목표를 넘는 버킷은 더 촘촘한
+간격으로 다시 조사합니다(`--refine-depth`, 기본 2).
+
+**청크는 독립적으로 검증되고 독립적으로 실패하는 단위입니다.** 병렬화만이
+아니라 청크로 나누는 진짜 이유입니다. 40억 행을 한 번에 돌려 90%에서 죽으면 그
+90%에 대해 아무것도 알 수 없지만, 2000개 청크는 어디까지 끝났는지 정확히
+알려줍니다. 또한 실행을 끝장낼 수 있는 모든 것 -- PIT keep-alive, NDJSON
+파트용 디스크, INSERT 부하 -- 을 청크 하나 분량으로 묶어둡니다.
+[공식 데이터 문서](https://clickhouse.com/docs/clickstack/migration/elastic/migrating-data)가
+말하는 약 1천만 행 천장은 **패스당** 천장입니다. 청크로 나누는 것은 그 위의
+데이터셋을 그 아래의 패스 대기열로 바꾸는 일입니다.
+
+**청크 범위는 전체 시간 구간을 빈틈 없이 덮습니다.** 그래서 계획 자체를 범위
+합으로 검산할 수 있습니다. 패킹은 조사에서 빈 시간이 나온 곳마다 틈을 남기는데,
+`plan.py`는 각 청크를 이전 청크가 끝난 지점에서 시작시켜 그 틈을 닫습니다.
+나중에 그 구간에 행이 들어와도 어느 청크의 쿼리 안에 있습니다. 경계는 날짜
+문자열이 아니라 `epoch_millis`의 `gte`/`lt`입니다 -- 포맷이나 타임존을
+잘못 읽을 여지가 없고, 인접 청크가 서로 겹치지 않음이 증명됩니다.
+
+**`_cat/indices`는 행 수가 아니고, 차이가 작지도 않습니다.** `docs.count`는
+Lucene 문서를 세고 `nested` 필드의 원소마다 하나씩 포함하므로, 이 저장소의
+시드 인덱스는 문서 300,000건에 750,255를 보고합니다. `_cat`으로 규모를 잡으면
+작업량을 2.5배 과대추정합니다. `plan.py`는 `_count`를 쓰고, 둘이 다르면
+말합니다.
+
+```
+WARNING: logs-demo: _cat/indices reports 750255 docs but _count says 300000.
+_cat counts one Lucene doc per `nested` element; sizing uses _count (2.5x difference here)
+```
+
+**속도는 추측이 아니라 측정입니다.** 캘리브레이션은 실제 PIT +
+`search_after` 배치 몇 개의 시간을 재고 -- `export.py`가 쓰는 것과 같은
+기본 도구입니다 -- 권장 슬라이스 수를 곱합니다. 이것은 하한이고 그렇게
+표시됩니다: 인덱스 하나에 대한 차가운 단일 스트림, 적재와 검증 제외, 경쟁하는
+실시간 인덱싱 없음. 아무도 측정하지 않은 추정치는 이 실습이 하지 않는
+종류의 주장입니다.
+
+나중에 발견하게 두지 않고 미리 알려주는 것들: 시간 필드에 값이 없는 문서가
+있는 인덱스(시간 청크 내보내기로는 도달할 수 없습니다 -- 그것들을 잡는
+`must_not exists` 쿼리를 출력합니다), 닫힌 인덱스, 그리고 어떤 시간 조건으로도
+쪼갤 수 없는 버킷(버킷마다 한 줄이 아니라 한 줄로 요약).
+
+슬라이스 기본값은 인덱스의 주 샤드 수이고 최대 8입니다. Elasticsearch가
+`slices <= shards`에서 가장 효과적이라고 문서화했고, 0건을 내보낸 슬라이스는
+`export.py`가 이미 경고합니다.
+
+그다음 계획이 만들어 준 쿼리로 청크 하나를 실행합니다.
+
+```bash
+./export.py --index logs-demo --out-dir out/logs-demo/chunk-0000 \
+    --slices 3 --batch-size 5000 --manifest manifest.json \
+    --query '{"bool": {"filter": [{"range": {"@timestamp": {"gte": 1790655553740, "lt": 1790955000000, "format": "epoch_millis"}}}]}}'
+```
+
+이 전부를 위해 `export.py`를 고치지 않았습니다 -- 청크는 이미 받고 있던
+`--query`로 표현됩니다.
+
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7(고정된 마이그레이션
+목적지), ClickStack/HyperDX 2.39.1(이 경로에는 관여하지 않음). 문서 300,000건
+시드 기준:
+
+| 확인한 것 | 결과 |
+|---|---|
+| 청크 추정 합 = 인덱스 `_count` | 300000 / 300000, 각 청크 추정값이 실제 내보낸 수와 정확히 일치(99816 / 99900 / 99900 / 384) |
+| 범위가 빈틈·겹침 없이 타일링 | 경계 불일치 0건 |
+| 모든 청크 내보내기+적재 | ClickHouse에 300,000행, `uniqExact(_id)`도 300,000 -- 개수만 맞는 게 아니라 **완전하고 겹치지 않음** |
+| 청크 적재 후 정합성 | 해당되는 검사 전부 `PASS`(개수, 시간별 버킷 251개, 문서 50개 필드 샘플) |
+| 큰 버킷 재조사 | `--max-buckets 5`로 `7d` 조사를 강제하면 버킷당 약 200,000행인데, `--target-rows 50000`에서 더 촘촘히 재조사해 10개 청크, 최대 45,984행 |
+| 쪼갤 수 없는 버킷 | `--target-rows 100 --refine-depth 0`에서 1,000개를 요약 경고 한 줄로 표시, 행 합계는 여전히 정확 |
 
 ### `mapping_to_ddl.py`: `_mapping` → DDL, 근거를 남기며
 
@@ -442,6 +641,7 @@ cd _base && docker compose --profile elastic up -d
 ./bin/seed_elasticsearch.py
 
 cd ../labs/elastic-migration/data
+./plan.py --index logs-demo --target-rows 100000 --out plan.json
 ./mapping_to_ddl.py --index logs-demo --table logs_demo --manifest manifest.json > ddl.sql
 curl -sS http://localhost:8124/ --data-binary @ddl.sql
 
