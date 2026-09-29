@@ -1,8 +1,8 @@
 name: checks
 
+# Solo repository: checks run on pull requests (and by hand), not again on the
+# push to main that merging a PR produces. The pre-commit hook covers direct pushes.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -25,19 +25,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Parse-check tracked files
         run: ./.github/scripts/check_syntax.sh
-
-  shellcheck:
-    name: shellcheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Lint shell scripts (advisory)
-        # Style and portability issues across 200+ scripts written over a long
-        # period: reported, but not a merge blocker. The `syntax` job is.
-        continue-on-error: true
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          git ls-files '*.sh' | xargs -r shellcheck -S error -f gcc || true
 
   otel-profiles:
     name: otel profile conventions

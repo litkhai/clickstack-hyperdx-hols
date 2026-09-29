@@ -4,7 +4,7 @@
 
 ## CI
 
-`checks`: `links`, `syntax`, `otel-profiles`, `shellcheck` (advisory), `secrets` (gitleaks), `hygiene` — green.
+`checks` (on pull requests): `links`, `syntax`, `otel-profiles`, `secrets` (gitleaks), `hygiene` — green.
 GitHub secret scanning and push protection are on.
 
 ## Inventory
