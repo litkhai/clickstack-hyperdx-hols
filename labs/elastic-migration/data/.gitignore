@@ -10,3 +10,7 @@
 /ddl.sql
 /manifest.json
 /plan.json
+
+# run.py state and its lock -- progress, not lab source.
+*.state.json
+*.state.json.lock
