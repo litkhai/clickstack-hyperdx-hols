@@ -51,7 +51,9 @@ lands through a **pull request** that references its issue (`Closes #N`).
 instead of keeping its own to-do list. When you find something to do that you
 are not doing now, open an issue rather than writing it into a README or
 `STATUS.md`. Labels: `re-verify` (changed but not re-run), `enhancement`,
-`docs`, `ops`, `security`.
+`docs`, `ops`, `security`, and `priority:high` -- which means *blocking someone
+outside this repository right now*, not "important". Nothing is `priority:high`
+by default, and a label nobody clears means nothing.
 
 한국어: 해야 할 일은 GitHub 이슈로, 변경은 이슈를 참조하는 PR로 관리합니다. `STATUS.md`는 열린 이슈를 링크합니다.
 
