@@ -123,6 +123,18 @@ DEFAULT_DATE_FORMAT_MARKERS = {"strict_date_optional_time", "epoch_millis",
 DYNAMIC_GROWTH_THRESHOLD = 20
 
 
+def es_get_post(base_url, path, body, timeout=120):
+    try:
+        _, raw = es_client.request(base_url, "POST", path, body, timeout)
+        return json.loads(raw.decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"error: {path} -> HTTP {e.code}: {e.read().decode('utf-8', 'replace')}",
+              file=sys.stderr)
+        if es_client.hint(e):
+            print(f"       {es_client.hint(e)}", file=sys.stderr)
+        sys.exit(1)
+
+
 def es_get(base_url, path, timeout=30):
     try:
         _, raw = es_client.request(base_url, "GET", path, None, timeout)
@@ -299,6 +311,115 @@ def quote(path):
     return "`" + path.replace("`", "``") + "`"
 
 
+# Types a sort-key prefix can plausibly be, and that Elasticsearch can run a
+# cardinality aggregation on. `text` is deliberately absent: it is analyzed,
+# aggregating on it needs fielddata, and a tokenized field is not a sort key.
+SORT_CANDIDATE_TYPES = {"keyword", "constant_keyword", "boolean", "ip",
+                        "byte", "short", "integer", "long"}
+
+# Above this, a column is a bad prefix whatever the query pattern: the sort
+# key stops compressing and the index granularity stops helping.
+HIGH_CARDINALITY = 100_000
+
+
+def sort_key_candidates(base_url, index, fields, time_col, shard_size, total_docs):
+    """Measure what a sort-key decision depends on, rather than guessing it.
+
+    Returns [(path, distinct, coverage_pct, capped)] ascending by distinct
+    count. ClickHouse wants the columns a query filters on first, in
+    ascending cardinality -- the first half of that is a business fact this
+    script cannot know, and the second half is a measurement it can make.
+
+    One aggregation request: a cardinality and a value_count per candidate.
+    With shard_size > 0 they run inside a `sampler` aggregation, which bounds
+    the cost on a large index at the price of *underestimating* distinct
+    counts -- so a count that reaches the sample size is reported as "at
+    least", never as a number.
+    """
+    candidates = [f for f in fields
+                  if f.es_type in SORT_CANDIDATE_TYPES
+                  and f.status != "unsupported"
+                  and f.path != time_col
+                  and not f.group_of]
+    if not candidates:
+        return []
+
+    aggs = {}
+    for i, f in enumerate(candidates):
+        aggs[f"c{i}"] = {"cardinality": {"field": f.path}}
+        aggs[f"v{i}"] = {"value_count": {"field": f.path}}
+    body = {"size": 0, "aggs": aggs}
+    if shard_size > 0:
+        body = {"size": 0, "aggs": {"sample": {"sampler": {"shard_size": shard_size},
+                                               "aggs": aggs}}}
+
+    resp = es_get_post(base_url, f"/{index}/_search", body)
+    got = resp["aggregations"]
+    sampled = 0
+    if shard_size > 0:
+        sampled = got["sample"]["doc_count"]
+        got = got["sample"]
+
+    out = []
+    for i, f in enumerate(candidates):
+        distinct = int(got[f"c{i}"]["value"])
+        present = int(got[f"v{i}"]["value"])
+        base = sampled if shard_size > 0 else total_docs
+        coverage = (present / base * 100) if base else 0.0
+        # A distinct count that reaches the sample is a floor, not a value.
+        capped = shard_size > 0 and distinct >= sampled * 0.95 and sampled > 0
+        out.append((f.path, distinct, coverage, capped))
+    return sorted(out, key=lambda r: r[1])
+
+
+def render_sort_key_report(candidates, chosen, time_col, sampled_note):
+    """The decision, its inputs, and what only a human can supply."""
+    out = ["-- sort key --"]
+    if not chosen:
+        # No date field and no --order-by: there is nothing to call a default.
+        out.append("  ORDER BY tuple()  <- nothing chosen, and no time column to fall "
+                   "back on")
+    elif len(chosen) > 1 or chosen[0] != time_col:
+        out.append(f"  ORDER BY ({', '.join(chosen)})  <- given with --order-by")
+    else:
+        out.append(f"  ORDER BY ({', '.join(chosen)})  <- DEFAULT, not a design")
+    if not candidates:
+        out.append("  no aggregatable keyword/numeric field to measure; nothing to rank")
+        return "\n".join(out)
+    out.append(f"  candidates by cardinality{sampled_note}:")
+    for path, distinct, coverage, capped in candidates[:12]:
+        flag = ""
+        if capped:
+            flag = "  (at least -- hit the sample size; re-run with --probe-shard-size 0)"
+        elif distinct > HIGH_CARDINALITY:
+            flag = "  (too high to lead a sort key)"
+        elif coverage < 95:
+            flag = "  (missing from some rows -- a poor prefix)"
+        out.append(f"    {distinct:>9} distinct  {coverage:5.1f}% present  {path}{flag}")
+    usable = [c for c in candidates if c[1] <= HIGH_CARDINALITY and c[2] >= 95 and not c[3]]
+    out.append("")
+    if usable:
+        cols = [quote(c[0]) for c in usable[:2]] + ([quote(time_col)] if time_col else [])
+        example = ", ".join(cols)
+        tail = ", then the time column" if time_col else ""
+        out.append("  The half this script cannot measure: which of these your queries")
+        out.append(f"  actually filter on. Put those first, in ascending cardinality{tail}")
+        out.append(f"  -- e.g. --order-by \"{example}\"")
+        out.append("  if that is what gets filtered. Do not take the example as advice.")
+        out.append("  A prefix is not free: it buys skipping for the queries that filter")
+        out.append("  on it and spends the time column's ordering, which is what makes")
+        out.append("  timestamps compress. A prefix nobody filters on pays that twice.")
+    elif time_col:
+        out.append("  Nothing measured here is a good prefix, so the time column alone is")
+        out.append("  a defensible default.")
+    else:
+        out.append("  Nothing measured here is a good prefix and there is no time column,")
+        out.append("  so this table needs a sort key chosen by hand before it is used.")
+    out.append("  This is the one decision that is expensive to change once data has")
+    out.append("  landed, so it belongs before the first chunk, not after.")
+    return "\n".join(out)
+
+
 def choose_time_column(fields):
     for f in fields:
         if f.path == "@timestamp" and f.ch_type and "DateTime" in f.ch_type:
@@ -309,7 +430,7 @@ def choose_time_column(fields):
     return None
 
 
-def render_ddl(table, fields, notes):
+def render_ddl(table, fields, notes, sort_key=None, candidates=None):
     by_path = {f.path: f for f in fields}
     time_col = choose_time_column(fields)
 
@@ -349,9 +470,36 @@ def render_ddl(table, fields, notes):
     lines.append("ENGINE = MergeTree")
     if time_col:
         lines.append(f"PARTITION BY toYYYYMM({quote(time_col)})")
-        lines.append(f"ORDER BY ({quote(time_col)})")
+    if sort_key:
+        lines.append("ORDER BY (%s)" % ", ".join(quote(c) for c in sort_key))
+    elif time_col:
+        # A default, and labelled as one in the same vocabulary as the
+        # columns: a sort key that nobody chose is the one thing here that
+        # runs, passes every check, and is quietly more expensive to query
+        # than it needed to be.
+        # None means "not measured" and [] means "measured, nothing usable" --
+        # saying the second when the first is true would be the exact kind of
+        # plausible-but-unfounded statement this script exists to refuse.
+        if candidates is None:
+            hint = " Candidates were not measured (--no-probe)."
+        else:
+            top = ", ".join(f"{p} ({d} distinct)" for p, d, cov, capped in candidates[:3]
+                            if d <= HIGH_CARDINALITY and cov >= 95 and not capped)
+            hint = (f" Measured low-cardinality candidates: {top}."
+                    if top else " Nothing measured here was a usable prefix.")
+        lines.append(f"ORDER BY ({quote(time_col)})"
+                     "  -- NEEDS REVIEW: a default, not a design. ClickHouse wants the"
+                     " columns your queries filter on first, in ascending cardinality,"
+                     f" then the time column.{hint}"
+                     " Set it with --order-by; it is expensive to change after the data"
+                     " has landed.")
     else:
-        lines.append("ORDER BY tuple()  -- no date/time field found; pick a real ORDER BY before using this in anger")
+        lines.append("ORDER BY tuple()  -- NEEDS REVIEW: no date/time field found and no"
+                     " --order-by given; pick a real ORDER BY before using this in anger")
+    lines.append("-- No TTL and no per-column codecs are emitted. A TTL deletes data, so"
+                 " it is not something this script guesses: it needs the retention answer")
+    lines.append("-- (see \"Questions that change the size of the work\" in"
+                 " labs/elastic-migration/README.md).")
     lines.append(";")
     return "\n".join(lines)
 
@@ -382,6 +530,17 @@ def main():
     p.add_argument("--index", required=True)
     p.add_argument("--table", help="defaults to the index name with '-' replaced by '_'")
     p.add_argument("--dynamic-threshold", type=int, default=20)
+    p.add_argument("--order-by", help="the sort key, as a comma-separated column list. "
+                   "Without it the DDL gets the time column alone, marked NEEDS REVIEW, "
+                   "and the report ranks the measured candidates")
+    p.add_argument("--probe-shard-size", type=int, default=0,
+                   help="measure sort-key candidates inside a `sampler` aggregation of "
+                        "this many documents per shard instead of over the whole index. "
+                        "0 (default) measures everything: accurate, and a full "
+                        "aggregation pass on a large index")
+    p.add_argument("--no-probe", action="store_true",
+                   help="skip measuring sort-key candidates entirely (one fewer "
+                        "aggregation request against the source)")
     p.add_argument("--manifest", help="also write a machine-readable field manifest here, "
                    "for export.py to know which fields must stay nested JSON rather than be flattened")
     args = p.parse_args()
@@ -410,11 +569,38 @@ def main():
     by_path = {f.path: f for f in fields}
     build_alias_fields(aliases, by_path, fields)
 
-    ddl = render_ddl(table, fields, notes)
+    time_col = choose_time_column(fields)
+    known = {f.path for f in fields if f.status != "unsupported"}
+
+    sort_key = None
+    if args.order_by:
+        sort_key = [c.strip().strip("`") for c in args.order_by.split(",") if c.strip()]
+        unknown = [c for c in sort_key if c not in known]
+        if unknown:
+            print(f"error: --order-by names column(s) this mapping has no usable column "
+                  f"for: {', '.join(unknown)}", file=sys.stderr)
+            print(f"       available: {', '.join(sorted(known))}", file=sys.stderr)
+            sys.exit(1)
+
+    candidates = None
+    sampled_note = ""
+    if not args.no_probe:
+        total = es_get(args.url, f"/{args.index}/_count").get("count", 0)
+        candidates = sort_key_candidates(args.url, args.index, fields, time_col,
+                                         args.probe_shard_size, total)
+        sampled_note = (f" (sampled: {args.probe_shard_size} docs per shard)"
+                        if args.probe_shard_size > 0 else f" (all {total} documents)")
+
+    ddl = render_ddl(table, fields, notes, sort_key, candidates)
     report = render_report(args.index, fields)
 
     print(ddl)
     print(report, file=sys.stderr)
+    if not args.no_probe or sort_key:
+        print("", file=sys.stderr)
+        print(render_sort_key_report(candidates or [],
+                                     sort_key or ([time_col] if time_col else []),
+                                     time_col, sampled_note), file=sys.stderr)
 
     if args.manifest:
         manifest = {

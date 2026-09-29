@@ -287,6 +287,66 @@ unsupported:  1
 (One of those ten is `_id`, which is not part of `_mapping` at all -- it is
 synthesized so export/load/parity have a stable row key.)
 
+#### The sort key is a decision, and the script makes you make it
+
+The DDL used to carry `ORDER BY (<time field>)` and say nothing about it. That
+runs, passes every check downstream, and is the one output here that can be
+*quietly wrong* -- the table works and is more expensive to query than it
+needed to be, and the sort key is the most expensive thing to change once the
+data has landed.
+
+So the script now measures what the decision depends on and refuses to make
+it for you:
+
+```
+-- sort key --
+  ORDER BY (@timestamp)  <- DEFAULT, not a design
+  candidates by cardinality (all 300000 documents):
+            4 distinct  100.0% present  log.level
+            6 distinct  100.0% present  service.name
+            7 distinct  100.0% present  http.response.status_code
+           45 distinct  100.0% present  service.version
+       296744 distinct  100.0% present  client.ip  (too high to lead a sort key)
+       299214 distinct  100.0% present  trace.id  (too high to lead a sort key)
+```
+
+One aggregation request gets cardinality and coverage for every keyword,
+boolean, `ip` and integer field -- not `text`, which is analyzed and is not a
+sort key. `--probe-shard-size N` measures inside a `sampler` aggregation
+instead of over the whole index, and a distinct count that reaches the sample
+is reported as *at least* rather than as a number. `--no-probe` skips it, and
+then the DDL says candidates were not measured rather than that none were
+usable.
+
+**The half it cannot measure is which of those your queries filter on**, and
+that is the half that decides. Give it with `--order-by`:
+
+```bash
+./mapping_to_ddl.py --index logs-demo --table logs_demo \
+    --order-by 'log.level, service.name, @timestamp' > ddl.sql
+```
+
+**A low-cardinality prefix is not a free win, and measuring it said so.** Same
+300,000 rows loaded twice into the pinned 26.6.8.7 target, `OPTIMIZE FINAL`
+both:
+
+| Sort key | On disk |
+|---|---|
+| `(@timestamp)` -- the default | **22.68 MiB** |
+| `(log.level, service.name, @timestamp)` -- the textbook-looking prefix | **23.37 MiB** |
+
+The prefix cost 3% *more*. This repository's seed is uniformly random, which
+is the worst case for a prefix: it destroys the time ordering that makes
+timestamps compress and creates no runs in exchange. Real observability data
+is correlated -- one service emits runs of one level -- so a prefix usually
+helps there. Both of those are reasons to decide it from the query pattern
+and the data rather than from a rule of thumb, which is exactly why the
+script prints numbers and an example it tells you not to take as advice.
+
+No `TTL` and no per-column codecs are emitted at all. A TTL deletes data, so
+it is not something to guess: it needs the retention answer from
+[the parent README](../README.md).
+
 The optional `--manifest` output is the contract with `export.py`: it lists,
 per field, whether the raw Elasticsearch value must reach ClickHouse as
 nested JSON (`JSON`, `Array(...)` and `Tuple(...)` columns) rather than being
@@ -827,6 +887,59 @@ unsupported:  1
 
 (이 열 개 중 하나는 `_id`입니다 -- `_mapping`에는 아예 없고,
 export·load·정합성 검증이 안정적인 행 키를 갖도록 합성한 것입니다.)
+
+#### 정렬 키는 결정이고, 이 스크립트는 그 결정을 하게 만듭니다
+
+전에는 DDL이 `ORDER BY (<시간 필드>)`를 넣고 그에 대해 아무 말도 하지 않았습니다.
+그래도 실행되고, 하위 검사도 모두 통과하며, 여기 있는 출력 중 **조용히 틀릴 수 있는**
+유일한 것입니다 -- 테이블은 동작하고 필요 이상으로 비싼 쿼리가 되며, 정렬 키는
+데이터가 들어간 뒤에 바꾸기 가장 비싼 것입니다.
+
+그래서 이제 결정에 필요한 것을 **측정**하고, 결정 자체는 대신 하지 않습니다.
+
+```
+-- sort key --
+  ORDER BY (@timestamp)  <- DEFAULT, not a design
+  candidates by cardinality (all 300000 documents):
+            4 distinct  100.0% present  log.level
+            6 distinct  100.0% present  service.name
+            7 distinct  100.0% present  http.response.status_code
+           45 distinct  100.0% present  service.version
+       296744 distinct  100.0% present  client.ip  (too high to lead a sort key)
+       299214 distinct  100.0% present  trace.id  (too high to lead a sort key)
+```
+
+집계 요청 한 번으로 keyword·boolean·`ip`·정수 필드의 카디널리티와 존재 비율을
+가져옵니다. `text`는 제외합니다 -- 분석되는 필드이고 정렬 키가 아닙니다.
+`--probe-shard-size N`은 인덱스 전체가 아니라 `sampler` 집계 안에서 측정하고, 표본
+크기에 도달한 distinct 값은 숫자가 아니라 **최소값**으로 보고합니다. `--no-probe`로
+건너뛰면 DDL은 "쓸만한 후보가 없었다"가 아니라 "측정하지 않았다"고 말합니다.
+
+**측정할 수 없는 절반은 그중 무엇을 여러분의 쿼리가 필터하는지**이고, 결정하는 쪽은
+그 절반입니다. `--order-by`로 알려주세요.
+
+```bash
+./mapping_to_ddl.py --index logs-demo --table logs_demo \
+    --order-by 'log.level, service.name, @timestamp' > ddl.sql
+```
+
+**저카디널리티 접두 컬럼은 공짜 이득이 아니고, 측정이 그렇게 말했습니다.** 같은
+300,000행을 고정된 26.6.8.7 목적지에 두 번 적재하고 양쪽 `OPTIMIZE FINAL`:
+
+| 정렬 키 | 디스크 |
+|---|---|
+| `(@timestamp)` -- 기본값 | **22.68 MiB** |
+| `(log.level, service.name, @timestamp)` -- 교과서적으로 좋아 보이는 접두 | **23.37 MiB** |
+
+접두를 넣은 쪽이 3% **더 큽니다**. 이 저장소의 시드는 균일 난수이고, 그것이 접두
+컬럼에 최악의 조건입니다 -- 타임스탬프를 압축하게 해주는 시간 순서를 깨뜨리면서 그
+대가로 얻는 연속 구간이 없습니다. 실제 관측성 데이터는 상관이 있어서(한 서비스가 같은
+레벨을 연달아 내보냄) 접두가 대개 도움이 됩니다. 이 둘 모두가 정렬 키를 경험 법칙이
+아니라 **쿼리 패턴과 데이터로** 결정해야 하는 이유이고, 그래서 스크립트가 숫자를
+출력하면서 예시는 조언으로 받지 말라고 말합니다.
+
+`TTL`과 컬럼별 코덱은 아예 생성하지 않습니다. TTL은 데이터를 지우므로 추측할 것이
+아니라 [상위 README](../README.md)의 보존 기간 답이 필요합니다.
 
 선택적 `--manifest` 출력은 `export.py`와의 계약입니다: 각 필드가 원본
 Elasticsearch 값을 점(dot)으로 평탄화된 스칼라 키가 아니라 중첩 JSON
