@@ -52,4 +52,9 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - Blocking a migration in progress, all `priority:high`:
   [size and chunk the move](https://github.com/litkhai/clickstack-hyperdx-hols/issues/24),
   [one run state for resume and progress](https://github.com/litkhai/clickstack-hyperdx-hols/issues/25),
-  [ID translation larger than memory](https://github.com/litkhai/clickstack-hyperdx-hols/issues/26)
+  [ID translation larger than memory](https://github.com/litkhai/clickstack-hyperdx-hols/issues/26),
+  [an AGENTS.md for the agent running it](https://github.com/litkhai/clickstack-hyperdx-hols/issues/35)
+- Found while building those, none of them blocking:
+  [parity check 4 assumes a single-pass export](https://github.com/litkhai/clickstack-hyperdx-hols/issues/32),
+  [translation is not a tracked run stage](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33),
+  [the DIRECT dictionary layout is unmeasured](https://github.com/litkhai/clickstack-hyperdx-hols/issues/34)
