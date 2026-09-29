@@ -44,16 +44,18 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import es_client
+
 
 def es_request(base_url, method, path, body=None, timeout=60):
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(f"{base_url}{path}", data=data,
-                                  headers={"Content-Type": "application/json"}, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        _, raw = es_client.request(base_url, method, path, body, timeout)
+        return json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"{method} {path} -> HTTP {e.code}: {e.read().decode('utf-8', 'replace')}")
+        # The hint is added once, at the top level, by es_client.cli_error --
+        # appending it here too printed it twice.
+        detail = e.read().decode("utf-8", "replace")
+        raise RuntimeError(f"{method} {path} -> HTTP {e.code}: {detail}") from e
 
 
 def load_checkpoint(path):
@@ -156,6 +158,7 @@ def export_slice(base_url, index, slice_id, num_slices, out_dir, batch_size,
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--url", default=os.environ.get("ES_URL", "http://localhost:9200"))
+    es_client.add_arguments(p)
     p.add_argument("--index", required=True)
     p.add_argument("--out-dir", required=True)
     p.add_argument("--manifest", help="from mapping_to_ddl.py --manifest; tells this script "
@@ -166,6 +169,7 @@ def main():
     p.add_argument("--query", help="JSON query object to restrict the export (default: match_all)")
     args = p.parse_args()
 
+    es_client.configure(args, args.url)
     os.makedirs(args.out_dir, exist_ok=True)
     passthrough_paths = load_passthrough_paths(args.manifest)
     query = json.loads(args.query) if args.query else None
@@ -212,4 +216,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (RuntimeError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+        print(es_client.cli_error(exc), file=sys.stderr)
+        sys.exit(1)

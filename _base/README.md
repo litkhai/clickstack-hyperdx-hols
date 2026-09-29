@@ -67,10 +67,28 @@ docker compose --profile migration up -d   # the target on its own
 ./bin/seed_elasticsearch.py                # 300,000 synthetic log documents
 ```
 
-| Service | Port | What it is |
-|---|---|---|
-| `elasticsearch` | 9200 | the cluster to migrate **from** |
-| `clickhouse-target` | 8124 / 9001 | the ClickHouse to migrate **to** |
+| Service | Port | Profile | What it is |
+|---|---|---|---|
+| `elasticsearch` | 9200 | `elastic` | the cluster to migrate **from** |
+| `clickhouse-target` | 8124 / 9001 | `elastic`, `migration` | the ClickHouse to migrate **to** |
+| `elasticsearch-secure` | 9201 | `elastic-secure` | the same Elasticsearch with **security on**, which is the 8.x default |
+
+**`elastic-secure` is the one that resembles a real source cluster.** The
+`elastic` profile has `xpack.security.enabled=false`, which is why every tool
+in `labs/elastic-migration/data/` worked for a while without being able to
+authenticate at all. Use it to exercise the authenticated path:
+
+```bash
+docker compose --profile elastic-secure up -d
+ES_URL=http://localhost:9201 ES_USER=elastic ES_PASSWORD=elastic-local-only \
+    ./bin/seed_elasticsearch.py --recreate --docs 20000
+```
+
+HTTP TLS is off on that profile on purpose: authentication is what the tools
+needed, and a self-signed CA on top would mean copying a certificate out of a
+container before anything works. The CA path is covered by `ES_CA_CERT` and
+verified against a default-configuration container instead -- see
+`labs/elastic-migration/data/README.md`.
 
 **Elasticsearch 8.17.0**, single node, security disabled
 (`xpack.security.enabled=false`). That is only acceptable because it holds
@@ -229,10 +247,27 @@ docker compose --profile migration up -d   # 목적지만
 ./bin/seed_elasticsearch.py                # 합성 로그 문서 300,000건
 ```
 
-| 서비스 | 포트 | 역할 |
-|---|---|---|
-| `elasticsearch` | 9200 | 마이그레이션 **원본** 클러스터 |
-| `clickhouse-target` | 8124 / 9001 | 마이그레이션 **목적지** ClickHouse |
+| 서비스 | 포트 | 프로파일 | 역할 |
+|---|---|---|---|
+| `elasticsearch` | 9200 | `elastic` | 마이그레이션 **원본** 클러스터 |
+| `clickhouse-target` | 8124 / 9001 | `elastic`, `migration` | 마이그레이션 **목적지** ClickHouse |
+| `elasticsearch-secure` | 9201 | `elastic-secure` | 보안을 **켠** 같은 Elasticsearch. 8.x 기본값입니다 |
+
+**실제 원본 클러스터에 가까운 것은 `elastic-secure`입니다.** `elastic`
+프로파일은 `xpack.security.enabled=false`이고, 그래서
+`labs/elastic-migration/data/`의 모든 도구가 한동안 **인증 자체가 없는 상태로**
+동작했습니다. 인증 경로를 시험하려면 이쪽을 쓰세요.
+
+```bash
+docker compose --profile elastic-secure up -d
+ES_URL=http://localhost:9201 ES_USER=elastic ES_PASSWORD=elastic-local-only \
+    ./bin/seed_elasticsearch.py --recreate --docs 20000
+```
+
+이 프로파일은 HTTP TLS를 의도적으로 끕니다. 도구에 필요했던 것은 인증이고,
+자체 서명 CA까지 얹으면 무엇을 하기 전에 컨테이너에서 인증서를 꺼내야 합니다.
+CA 경로는 `ES_CA_CERT`가 담당하며 기본 설정 컨테이너로 따로 검증했습니다 --
+`labs/elastic-migration/data/README.md`를 보세요.
 
 **Elasticsearch 8.17.0**, 단일 노드, 보안 비활성
 (`xpack.security.enabled=false`). localhost에 시딩한 합성 데이터만 있기

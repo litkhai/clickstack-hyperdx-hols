@@ -69,6 +69,41 @@ services:
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
 
+  # The same Elasticsearch with security ON, which is the default in 8.x and
+  # therefore what a real source cluster looks like. Its own profile, because
+  # the point of it is to exercise the authenticated path:
+  #
+  #   docker compose --profile elastic-secure up -d
+  #   ES_URL=http://localhost:9201 ES_USER=elastic ES_PASSWORD=... \
+  #       ./bin/seed_elasticsearch.py --recreate --docs 20000
+  #
+  # HTTP TLS is off here on purpose. Authentication is the thing every tool
+  # needed and did not have; a self-signed CA on top would mean copying a
+  # certificate out of the container before anything works, which makes the
+  # profile awkward enough that nobody would run it. The CA path is covered
+  # instead by ES_CA_CERT, verified by hand against a default-configuration
+  # container (see labs/elastic-migration/data/README.md).
+  #
+  # The password is a published local default, like the ClickHouse `api` user
+  # above: override it with ES_SECURE_PASSWORD in .env if you care, and never
+  # reuse this shape anywhere real.
+  elasticsearch-secure:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: elasticsearch-secure-local
+    restart: unless-stopped
+    profiles: ["elastic-secure"]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.license.self_generated.type: basic
+      ELASTIC_PASSWORD: ${ES_SECURE_PASSWORD:-elastic-local-only}
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ports:
+      - "9201:9200"      # REST API, authenticated
+    volumes:
+      - elasticsearch-secure-data:/usr/share/elasticsearch/data
+
   # The migration *destination* for labs/elastic-migration/, and deliberately
   # not the ClickHouse inside the all-in-one image above.
   #
@@ -119,4 +154,5 @@ volumes:
   clickstack-data:
   clickstack-logs:
   elasticsearch-data:
+  elasticsearch-secure-data:
   clickhouse-target-data:

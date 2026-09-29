@@ -27,6 +27,8 @@ import sys
 import urllib.error
 import urllib.request
 
+import es_client
+
 FIELDS_TO_SAMPLE = [
     ("service.name", ["service", "name"]),
     ("log.level", ["log", "level"]),
@@ -62,12 +64,9 @@ def skip(msg, detail=""):
 
 
 def es_get(base_url, path, body=None):
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(f"{base_url}{path}", data=data,
-                                  headers={"Content-Type": "application/json"},
-                                  method="GET" if data is None else "POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    method = "GET" if body is None else "POST"
+    _, raw = es_client.request(base_url, method, path, body, timeout=30)
+    return json.loads(raw.decode("utf-8"))
 
 
 def ch_query(base_url, user, password, sql, fmt="TSV"):
@@ -235,6 +234,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--es-url", default=os.environ.get("ES_URL", "http://localhost:9200"))
     p.add_argument("--es-index", required=True)
+    es_client.add_arguments(p)
     p.add_argument("--ch-url", default=os.environ.get("CH_URL", "http://localhost:8123"))
     p.add_argument("--ch-user", default=os.environ.get("CH_USER", "default"))
     p.add_argument("--ch-password", default=os.environ.get("CH_PASSWORD", ""))
@@ -245,6 +245,7 @@ def main():
     p.add_argument("--sample-size", type=int, default=50)
     p.add_argument("--seed", type=int, default=None)
     args = p.parse_args()
+    es_client.configure(args, args.es_url)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -267,4 +268,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (RuntimeError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+        print(es_client.cli_error(exc), file=sys.stderr)
+        sys.exit(1)

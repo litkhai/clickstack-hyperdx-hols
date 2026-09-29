@@ -25,11 +25,15 @@ dropped.
 """
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.error
 import urllib.request
+
 from collections import Counter, defaultdict
+
+import es_client
 
 TYPE_DOC = "https://clickhouse.com/docs/use-cases/observability/clickstack/migration/elastic/types"
 
@@ -120,15 +124,19 @@ DYNAMIC_GROWTH_THRESHOLD = 20
 
 
 def es_get(base_url, path, timeout=30):
-    req = urllib.request.Request(f"{base_url}{path}", method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        _, raw = es_client.request(base_url, "GET", path, None, timeout)
+        return json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as e:
-        print(f"error: {path} -> HTTP {e.code}: {e.read().decode('utf-8', 'replace')}", file=sys.stderr)
+        print(f"error: {path} -> HTTP {e.code}: {e.read().decode('utf-8', 'replace')}",
+              file=sys.stderr)
+        if es_client.hint(e):
+            print(f"       {es_client.hint(e)}", file=sys.stderr)
         sys.exit(1)
     except urllib.error.URLError as e:
-        print(f"error: could not reach {base_url}: {e}", file=sys.stderr)
+        print(f"error: could not reach {es_client.redact(base_url)}: {e}", file=sys.stderr)
+        if es_client.hint(e.reason):
+            print(f"       {es_client.hint(e.reason)}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -369,13 +377,15 @@ def render_report(index, fields):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--url", default="http://localhost:9200")
+    p.add_argument("--url", default=os.environ.get("ES_URL", "http://localhost:9200"))
+    es_client.add_arguments(p)
     p.add_argument("--index", required=True)
     p.add_argument("--table", help="defaults to the index name with '-' replaced by '_'")
     p.add_argument("--dynamic-threshold", type=int, default=20)
     p.add_argument("--manifest", help="also write a machine-readable field manifest here, "
                    "for export.py to know which fields must stay nested JSON rather than be flattened")
     args = p.parse_args()
+    es_client.configure(args, args.url)
 
     table = args.table or re.sub(r"[^a-zA-Z0-9_]", "_", args.index)
 
