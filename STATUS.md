@@ -24,6 +24,9 @@ it needs the ingestion API key, which is only obtainable from the ClickStack UI.
 `clickstack-config/` applies and destroys cleanly against the local OSS stack. **Not verified
 against Cloud** — that needs org credentials, so no `Verified on …` line.
 
+`labs/elastic-migration/` is a plan only: the README states the three parts and what the
+official docs already cover, and both converters are unwritten.
+
 ## Open work
 
 Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-hols/issues) · [needs a re-run](https://github.com/litkhai/clickstack-hyperdx-hols/issues?q=is%3Aopen+label%3Are-verify):
@@ -33,4 +36,4 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Turn on a Pages site](https://github.com/litkhai/clickstack-hyperdx-hols/issues/4)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
-- [verify/: staged end-to-end verification](https://github.com/litkhai/clickstack-hyperdx-hols/issues/13) — scope cut to `_base/bin/verify.sh`
+- [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — [data](https://github.com/litkhai/clickstack-hyperdx-hols/issues/20), [ingest](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21)

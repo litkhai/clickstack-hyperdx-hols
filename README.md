@@ -15,6 +15,7 @@ Observability on ClickHouse: OpenTelemetry ingestion, the ClickStack/HyperDX UI,
 | Lab | What it covers |
 |-----|----------------|
 | [labs/ch2otel](labs/ch2otel/) | ClickHouse system metrics to OpenTelemetry, viewed in HyperDX |
+| [labs/elastic-migration](labs/elastic-migration/) | Migrating from Elastic: ingest, data, dashboards |
 
 ### 🎓 Workshops (`workshops/`)
 
@@ -89,6 +90,7 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 | 실습 | 내용 |
 |-----|----------------|
 | [labs/ch2otel](labs/ch2otel/) | ClickHouse 시스템 지표를 OpenTelemetry로 변환해 HyperDX에서 조회 |
+| [labs/elastic-migration](labs/elastic-migration/) | Elastic에서 이전: 입수, 데이터, 대시보드 |
 
 ### 🎓 워크숍 (`workshops/`)
 
