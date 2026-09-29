@@ -308,6 +308,129 @@ than pretending to pass. It was exercised against a deliberately zeroed-out
 checkpoint during development and correctly failed with the slice number
 named, not just "counts don't match" (see the PR that introduced this file).
 
+### `run.py`: one state for the whole migration
+
+`export.py` checkpoints slices and `load.sh` skips parts it has loaded, so
+the mechanism to resume already existed. What did not exist was anything
+that knew the state of the migration *as a whole*: three steps with three
+unrelated notions of "done", spread across checkpoint files in per-chunk
+directories. For a run measured in hours, "rerun the command and it resumes"
+is necessary and not sufficient -- the question is *is it progressing, and
+what is stuck*, without reading four hundred checkpoint files.
+
+```bash
+./run.py --plan plan.json --table logs_demo --manifest manifest.json
+./run.py --plan plan.json --table logs_demo --status
+```
+
+```
+4 chunk(s) to do, into http://localhost:8124 (default.logs_demo)
+[1/4] chunk 0000 verified (99816 rows, 4.1s)
+[2/4] chunk 0001 verified (99900 rows, 3.6s)
+...
+chunks: 4/4 verified
+rows:   300000 of ~300000 loaded and verified (100.0%)
+rate:   25,424 rows/s over 12s of work  ->  ~0s remaining at that rate
+```
+
+It drives the existing tools as subprocesses rather than reimplementing
+them, and keeps one state file next to the plan:
+
+```
+pending -> exported -> loaded -> verified
+```
+
+**Progress and failure are two separate fields.** Overwriting a chunk's
+stage with `failed` would lose the step a retry should resume from, and the
+retry would then have nothing to resume. So a failed chunk still says
+`stopped at exported`, and retrying it loads rather than re-exports.
+
+**Every transition is written atomically** -- tmp, `fsync`, rename, the same
+discipline `export.py` uses for its checkpoints -- so a `kill -9` at any
+moment leaves a state file that describes reality rather than a half-written
+one.
+
+**Each chunk is verified as it lands**, not only at the end: its own row
+count on both sides, compared on `uniqExact(_id)` rather than `count()`. A
+chunk that silently exported nothing is the failure this path exists to
+catch, and finding it after two thousand chunks is finding it too late.
+Distinct `_id` is the number that must match because `export.py` is
+at-least-once by design: a resumed chunk can carry a few repeated rows
+without having lost or invented any, so duplicates are reported as a note
+and a wrong *distinct* count is a failure.
+
+**`--status` reads nothing but the state file.** No Elasticsearch, no
+ClickHouse, and non-zero exit if anything failed, so it works from cron or a
+dashboard and not only from the terminal that started the run. For anything
+failed it prints the exact command that retries just that:
+
+```
+chunks: 0/3 verified, 3 exported, 3 failed
+
+  chunk 0000  stopped at exported  attempts 2
+    load.sh exit 1: Code: 60. DB::Exception: Table default.logs_demo_fail does not exist. (UNKNOWN_TABLE)
+
+3 chunk(s) failed. Retry just those:
+  ./run.py --plan plan.json --table logs_demo_fail --only 0000,0001,0002
+```
+
+That error line is *chosen*, not truncated: a tail of the last few hundred
+characters of a failing tool starts mid-sentence, and three hundred of those
+are unreadable exactly when they matter.
+
+**Retries are cheap because export is resumable.** `--max-attempts` (3) with
+a doubling backoff; an attempt re-fetches one batch, not one chunk.
+`--stop-on-error` halts at the first chunk that exhausts its attempts;
+otherwise the run continues and the failures are collected.
+
+**Two ways to lose a run that are guarded rather than documented.** A second
+`run.py` on the same state file would double-load parts and interleave state
+writes, and the symptom -- a row count that is too high -- looks like a
+migration bug rather than an operator mistake, so the state file is locked.
+A run that was OOM-killed cannot release its lock, and surviving that is the
+whole point, so a lock whose process is provably gone *on this host* is
+reclaimed with a note; one held by a live process, or taken on another
+machine, is refused with `--force-unlock` named. And a plan regenerated
+mid-run renumbers chunks, so a state file from an older plan is refused
+rather than silently mixing two chunk sets.
+
+`SIGINT` and `SIGTERM` finish the chunk in flight, flush, and exit 130 with
+the resume command -- rather than leaving a state file that claims a run is
+still going.
+
+### Where memory goes, and the one dial
+
+Worth stating plainly, because "it died on OOM" is what starts this
+conversation:
+
+| Process | Holds | Bounded by |
+|---|---|---|
+| `run.py` | the state file | number of chunks |
+| `export.py` | one batch per slice | `--batch-size` x document size x `--slices` |
+| `load.sh` | nothing; curl streams a part | -- |
+| ClickHouse | the insert block | server-side settings |
+
+Nothing in the path accumulates the index or a result set, which is exactly
+what the `elasticdump`-style approach cannot say. So an OOM means
+`--batch-size` is wrong for the document size: a number to lower (`run.py`
+passes it through), not a redesign. `plan.py` reports bytes per document, so
+the batch's rough footprint is knowable before the first run rather than
+after the first kill.
+
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7 (the pinned
+migration target). Against the 300,000-document seed and a 4-chunk plan:
+
+| What was checked | Result |
+|---|---|
+| a clean run | 4/4 chunks verified, 300,000 rows, `uniqExact(_id)` 300,000 |
+| `kill -9` on the run **and** its `export.py` children, mid-chunk | state said `1/4 verified, 1 exported, 2 pending` and 99,816 rows; the lock was left behind |
+| resume after that kill | reclaimed the dead run's lock, did the remaining 3 chunks, resumed the killed chunk at its `load` step rather than re-exporting, final table 300,000 rows / 300,000 distinct `_id` |
+| a real failure (wrong table name) | 3 chunks `stopped at exported` after 2 attempts each, one-line cause per chunk, `--status` exit 1 |
+| retry after fixing the cause | `--only 0000,0001,0002` resumed at `load`, all verified, 300,000 rows |
+| duplicate detection | one chunk's parts deliberately re-loaded: 149,916 duplicates named in the note, still `verified` because distinct `_id` matched -- the documented at-least-once semantics, made visible |
+| state against a regenerated plan | refused, naming both `generated_at` timestamps |
+| lock held by a live process | refused, naming the pid, host and `--force-unlock` |
+
 ### Try it end to end
 
 ```bash
@@ -319,11 +442,17 @@ cd ../labs/elastic-migration/data
 ./mapping_to_ddl.py --index logs-demo --table logs_demo --manifest manifest.json > ddl.sql
 curl -sS http://localhost:8124/ --data-binary @ddl.sql
 
-./export.py --index logs-demo --out-dir out/logs-demo --manifest manifest.json
-./load.sh --out-dir out/logs-demo --table logs_demo
+# one chunk at a time, resumable, with progress -- or run the three tools by hand
+./run.py --plan plan.json --table logs_demo --manifest manifest.json
+./run.py --plan plan.json --table logs_demo --status
+
+# whole-table checks. No --out-dir here: check 4 compares one export's
+# checkpoints against the whole index, which only holds for a single-pass
+# export -- run.py already made the per-chunk version of that check, for
+# every chunk.
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
     --ch-url http://localhost:8124 --ch-user default --ch-password '' \
-    --ch-database default --out-dir out/logs-demo
+    --ch-database default
 ```
 
 **Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7 (the pinned
@@ -634,6 +763,120 @@ part 단위로 재개 가능합니다: `part-<n>.ndjson.loaded` 마커가 있으
 보았고, "개수가 안 맞음"이 아니라 슬라이스 번호를 짚어 정확히 실패했습니다
 (이 파일을 추가한 PR 참고).
 
+### `run.py`: 마이그레이션 전체를 위한 하나의 상태
+
+`export.py`는 슬라이스를 체크포인트하고 `load.sh`는 적재한 part를 건너뛰므로,
+재개할 **방법**은 이미 있었습니다. 없던 것은 마이그레이션 **전체**의 상태를 아는
+무엇입니다. 세 단계가 각자 다른 "완료" 개념을 갖고, 청크별 디렉터리의 체크포인트
+파일에 흩어져 있었습니다. 시간 단위로 도는 작업에서 "명령을 다시 실행하면 재개됨"은
+필요하지만 충분하지 않습니다. 질문은 *진행되고 있는가, 무엇이 막혀 있는가*이고,
+체크포인트 400개를 읽지 않고 답해야 합니다.
+
+```bash
+./run.py --plan plan.json --table logs_demo --manifest manifest.json
+./run.py --plan plan.json --table logs_demo --status
+```
+
+```
+4 chunk(s) to do, into http://localhost:8124 (default.logs_demo)
+[1/4] chunk 0000 verified (99816 rows, 4.1s)
+[2/4] chunk 0001 verified (99900 rows, 3.6s)
+...
+chunks: 4/4 verified
+rows:   300000 of ~300000 loaded and verified (100.0%)
+rate:   25,424 rows/s over 12s of work  ->  ~0s remaining at that rate
+```
+
+기존 도구들을 다시 구현하지 않고 서브프로세스로 구동하며, 계획 파일 옆에 상태
+파일 하나를 둡니다.
+
+```
+pending -> exported -> loaded -> verified
+```
+
+**진행 단계와 실패는 별개의 필드입니다.** 청크의 단계를 `failed`로 덮어쓰면 재시도가
+어느 단계에서 이어가야 하는지를 잃어버리고, 그러면 재시도할 것이 없어집니다. 그래서
+실패한 청크도 `stopped at exported`라고 말하고, 재시도는 다시 내보내지 않고 적재부터
+합니다.
+
+**모든 전이는 원자적으로 기록됩니다** -- tmp, `fsync`, rename. `export.py`가
+체크포인트에 쓰는 것과 같은 방식이므로, 어느 순간에 `kill -9`을 당해도 상태 파일은
+반쯤 쓰인 것이 아니라 실제를 기술합니다.
+
+**각 청크는 도착하는 즉시 검증됩니다.** 맨 끝이 아니라 그때그때, 양쪽의 행 수를
+`count()`가 아니라 `uniqExact(_id)`로 비교합니다. 조용히 0건을 내보낸 청크가 이
+경로가 존재하는 이유인데, 청크 2000개를 지나서 발견하는 것은 너무 늦게 발견하는
+것입니다. 일치해야 하는 값이 distinct `_id`인 이유는 `export.py`가 설계상 최소 한
+번이기 때문입니다. 재개된 청크는 잃거나 만들어내지 않고도 중복 행 몇 개를 가질 수
+있으므로, 중복은 메모로 보고하고 **distinct** 개수가 틀린 것을 실패로 봅니다.
+
+**`--status`는 상태 파일만 읽습니다.** Elasticsearch도 ClickHouse도 필요 없고,
+실패가 있으면 0이 아닌 코드로 끝나므로 실행한 터미널이 아니라 cron이나 대시보드에서도
+동작합니다. 실패한 것에 대해서는 그것만 재시도하는 정확한 명령을 출력합니다.
+
+```
+chunks: 0/3 verified, 3 exported, 3 failed
+
+  chunk 0000  stopped at exported  attempts 2
+    load.sh exit 1: Code: 60. DB::Exception: Table default.logs_demo_fail does not exist. (UNKNOWN_TABLE)
+
+3 chunk(s) failed. Retry just those:
+  ./run.py --plan plan.json --table logs_demo_fail --only 0000,0001,0002
+```
+
+이 오류 한 줄은 잘라낸 것이 아니라 **고른** 것입니다. 실패한 도구 출력의 마지막
+수백 자를 자르면 문장 중간에서 시작하고, 그런 것 300개는 정작 필요한 순간에 읽을 수
+없습니다.
+
+**재시도가 싼 이유는 내보내기가 재개 가능하기 때문입니다.** `--max-attempts`(기본 3)와
+2배씩 늘어나는 백오프. 한 번의 시도가 다시 가져오는 것은 배치 하나이고 청크 하나가
+아닙니다. `--stop-on-error`는 시도를 모두 소진한 첫 청크에서 멈추고, 기본값은 계속
+진행하며 실패를 모읍니다.
+
+**문서로 적는 대신 막아둔, 실행을 잃는 두 가지 방법.** 같은 상태 파일에 대해 `run.py`를
+두 번 돌리면 part를 이중 적재하고 상태 기록이 교차합니다. 증상 -- 너무 많은 행 수 -- 은
+운영자의 실수가 아니라 마이그레이션 버그처럼 보입니다. 그래서 상태 파일을 잠급니다.
+OOM으로 죽은 실행은 자기 잠금을 해제할 수 없고 바로 그것을 견디는 게 이 도구의
+목적이므로, **이 호스트에서** 프로세스가 확실히 사라진 잠금은 메모를 남기고 회수합니다.
+살아 있는 프로세스가 쥔 잠금이나 다른 머신에서 잡은 잠금은 `--force-unlock`을 알려주며
+거부합니다. 그리고 실행 중간에 계획을 다시 만들면 청크 번호가 바뀌므로, 이전 계획에서
+만든 상태 파일은 두 청크 집합을 조용히 섞지 않고 거부합니다.
+
+`SIGINT`·`SIGTERM`은 진행 중인 청크를 마치고 상태를 내린 뒤 재개 명령과 함께 130으로
+끝냅니다. 더 이상 돌지 않는 실행을 여전히 도는 것처럼 기술하는 상태 파일을 남기지
+않습니다.
+
+### 메모리는 어디로 가고, 조절 다이얼은 하나
+
+"OOM으로 죽었다"가 이 대화의 출발점이므로 분명히 적어둡니다.
+
+| 프로세스 | 무엇을 들고 있나 | 무엇으로 제한되나 |
+|---|---|---|
+| `run.py` | 상태 파일 | 청크 개수 |
+| `export.py` | 슬라이스당 배치 하나 | `--batch-size` x 문서 크기 x `--slices` |
+| `load.sh` | 없음. curl이 part를 스트리밍 | -- |
+| ClickHouse | INSERT 블록 | 서버 설정 |
+
+이 경로의 어디에서도 인덱스나 결과셋을 누적하지 않습니다. `elasticdump` 방식이
+말할 수 없는 부분이 정확히 이것입니다. 따라서 OOM은 문서 크기에 대해 `--batch-size`가
+잘못됐다는 뜻입니다 -- 재설계가 아니라 낮출 숫자 하나입니다(`run.py`가 그대로
+전달합니다). `plan.py`가 문서당 바이트를 보고하므로, 첫 kill 뒤가 아니라 첫 실행
+전에 배치의 대략적인 크기를 알 수 있습니다.
+
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7(고정된 마이그레이션
+목적지). 문서 300,000건 시드와 4개 청크 계획 기준:
+
+| 확인한 것 | 결과 |
+|---|---|
+| 정상 실행 | 4/4 청크 verified, 300,000행, `uniqExact(_id)` 300,000 |
+| 청크 중간에 실행과 그 `export.py` 자식들을 `kill -9` | 상태는 `1/4 verified, 1 exported, 2 pending`과 99,816행, 잠금 파일이 남음 |
+| 그 kill 이후 재개 | 죽은 실행의 잠금을 회수하고 남은 3개 청크를 처리, 죽은 청크는 다시 내보내지 않고 `load` 단계에서 이어감, 최종 테이블 300,000행 / distinct `_id` 300,000 |
+| 실제 실패(잘못된 테이블 이름) | 3개 청크가 2회 시도 후 `stopped at exported`, 청크별 원인 한 줄, `--status` 종료 코드 1 |
+| 원인 수정 후 재시도 | `--only 0000,0001,0002`이 `load`에서 이어가 전부 verified, 300,000행 |
+| 중복 감지 | 한 청크의 part를 의도적으로 재적재: 메모에 중복 149,916건을 명시하고, distinct `_id`가 맞으므로 여전히 `verified` -- 문서화된 최소 한 번 의미를 눈에 보이게 만든 것 |
+| 다시 만든 계획에 대한 상태 파일 | 양쪽 `generated_at`을 짚어 거부 |
+| 살아 있는 프로세스가 쥔 잠금 | pid·호스트와 `--force-unlock`을 알려주며 거부 |
+
 ### 처음부터 끝까지 해보기
 
 ```bash
@@ -645,11 +888,17 @@ cd ../labs/elastic-migration/data
 ./mapping_to_ddl.py --index logs-demo --table logs_demo --manifest manifest.json > ddl.sql
 curl -sS http://localhost:8124/ --data-binary @ddl.sql
 
-./export.py --index logs-demo --out-dir out/logs-demo --manifest manifest.json
-./load.sh --out-dir out/logs-demo --table logs_demo
+# one chunk at a time, resumable, with progress -- or run the three tools by hand
+./run.py --plan plan.json --table logs_demo --manifest manifest.json
+./run.py --plan plan.json --table logs_demo --status
+
+# whole-table checks. No --out-dir here: check 4 compares one export's
+# checkpoints against the whole index, which only holds for a single-pass
+# export -- run.py already made the per-chunk version of that check, for
+# every chunk.
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
     --ch-url http://localhost:8124 --ch-user default --ch-password '' \
-    --ch-database default --out-dir out/logs-demo
+    --ch-database default
 ```
 
 **Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7(고정된 마이그레이션
