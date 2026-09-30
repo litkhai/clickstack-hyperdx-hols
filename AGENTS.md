@@ -45,37 +45,6 @@ split. The original locations:
 | `workshop/o11y-vector-ai/` | `workshops/o11y-vector-ai/` |
 | `workshop/observability-waf/` | `workshops/observability-waf/` |
 
-## Tracking work
-
-Planned work, re-verification and follow-ups are **GitHub issues**; every change
-lands through a **pull request** that references its issue (`Closes #N`).
-`STATUS.md` is a snapshot of the current state and links to the open issues
-instead of keeping its own to-do list. When you find something to do that you
-are not doing now, open an issue rather than writing it into a README or
-`STATUS.md`. Labels: `re-verify` (changed but not re-run), `enhancement`,
-`docs`, `ops`, `security`, and `priority:high` -- which means *blocking someone
-outside this repository right now*, not "important". Nothing is `priority:high`
-by default, and a label nobody clears means nothing.
-
-한국어: 해야 할 일은 GitHub 이슈로, 변경은 이슈를 참조하는 PR로 관리합니다. `STATUS.md`는 열린 이슈를 링크합니다.
-
-## Model roles
-
-Work in this repository is split across Claude models:
-
-| Role | Model | Does |
-|------|-------|------|
-| Lead | **Opus** | Plans and designs the work, writes and updates documentation (READMEs, `AGENTS.md`, `STATUS.md`, issues, PR descriptions), splits the work into tasks and reviews what comes back |
-| Implementer | **Sonnet** | Writes the code, scripts and SQL for a task the lead hands over, runs the checks, opens the PR |
-| Status checker | **Haiku** | Read-only checks: CI and `smoke` results, open issues and PRs, link and syntax checks, what changed since the last look |
-
-The lead gives the implementer one issue at a time with the design and the files
-to touch; the implementer does not change the design or the docs' claims on its
-own. Verification claims still follow the rule above: only a real end-to-end run
-updates them, whichever model ran it.
-
-한국어: Opus는 리드(설계·문서·리뷰), Sonnet은 구현(코드·PR), Haiku는 현황 체크(읽기 전용)를 맡습니다.
-
 <!-- harness:core start — khai-harness core@4b0e565 · context public · 손으로 고치지 마세요 -->
 **Context: public.** Public sources only — nothing from company connectors, internal hosts, internal wikis or
 private repositories, and no link to them. gitleaks must pass before every commit. Claims name what was run.
