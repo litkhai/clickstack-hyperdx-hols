@@ -13,9 +13,14 @@ that tells you whether the one you picked is ready.
 | `cloud` | ClickStack in ClickHouse Cloud | Cloud runs ClickHouse and HyperDX; you run only a collector |
 
 Almost nothing else in the repository needs to care which one is in use.
-`otel-profiles/` fragments work in both, because ClickStack honours
-`CUSTOM_OTELCOL_CONFIG_FILE` in its standalone mode as well as under the OpAMP
-supervisor.
+`otel-profiles/` fragments are written to work in both. What was read from the
+pinned image: the all-in-one container always runs the collector under the
+OpAMP supervisor, which loads `CUSTOM_OTELCOL_CONFIG_FILE` after
+`/etc/otelcol-contrib/config.yaml`. `/otel-entrypoint.sh` also has a standalone
+branch that does the same without OpAMP, which the all-in-one never takes
+(`clickstack-all-in-one:2.39.1`, `otelcol-hyperdx` 0.155.0; see rule 1 in
+[`otel-profiles/CONVENTIONS.md`](../otel-profiles/CONVENTIONS.md)). The
+collector you run next to a Cloud service was not read.
 
 ### Local open-source stack
 
@@ -195,10 +200,14 @@ rotate it rather than assuming it stayed private.
 | `oss` | 여기의 로컬 `docker compose` 스택 | 전부 직접: ClickHouse, HyperDX, MongoDB, 컬렉터 |
 | `cloud` | ClickHouse Cloud의 ClickStack | Cloud가 ClickHouse·HyperDX, 사용자는 컬렉터만 |
 
-저장소의 나머지는 어느 쪽인지 거의 신경 쓰지 않아도 됩니다. ClickStack이
-OpAMP supervisor 모드뿐 아니라 standalone 모드에서도
-`CUSTOM_OTELCOL_CONFIG_FILE`을 적용하므로 `otel-profiles/` 조각은 양쪽에서
-그대로 동작합니다.
+저장소의 나머지는 어느 쪽인지 거의 신경 쓰지 않아도 됩니다. `otel-profiles/`
+조각은 양쪽에서 동작하도록 작성했습니다. 고정한 이미지에서 확인한 것: all-in-one
+컨테이너는 항상 OpAMP supervisor 아래에서 컬렉터를 실행하고, supervisor가
+`/etc/otelcol-contrib/config.yaml` 다음에 `CUSTOM_OTELCOL_CONFIG_FILE`을
+로드합니다. `/otel-entrypoint.sh`에는 OpAMP 없이 같은 일을 하는 standalone 분기도
+있지만 all-in-one은 이 분기를 타지 않습니다(`clickstack-all-in-one:2.39.1`,
+`otelcol-hyperdx` 0.155.0, [`otel-profiles/CONVENTIONS.md`](../otel-profiles/CONVENTIONS.md)
+1번 규칙 참고). Cloud 서비스 옆에서 실행하는 컬렉터는 확인하지 않았습니다.
 
 ### 로컬 오픈소스 스택
 
