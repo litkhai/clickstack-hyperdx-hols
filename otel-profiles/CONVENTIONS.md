@@ -42,10 +42,12 @@ profile may depend on it.
 A profile must never define a bare `metrics:`, `logs:` or `traces:` pipeline. ClickStack's own
 pipelines are the bare `traces` and `metrics`, plus the named `logs/in`, `logs/out-default` and
 `logs/out-rrweb` for logs. `receivers`, `processors` and `exporters` inside a pipeline are
-**lists**, so a bare `traces:` or `metrics:` key replaces ClickStack's list for that pipeline,
-which can take OTLP ingestion for that signal with it. There is no bare `logs` pipeline to
-replace, but the rule is the same: a bare name is not namespaced to the profile, so two profiles
-could collide on it.
+**lists**, so a bare `traces:` or `metrics:` key and ClickStack's own pipeline of that name
+cannot both keep their `receivers`: the last source wins. On the supervisor path that is the
+OpAMP remote config (rule 1), so the likelier loss is the profile's own receiver rather than
+OTLP ingestion — but that was read from the merge order, not tested, so treat either as
+possible. There is no bare `logs` pipeline to replace, but the rule is the same: a bare name is
+not namespaced to the profile, so two profiles could collide on it.
 
 *Pipeline names read in `clickhouse/clickstack-all-in-one:2.39.1` (`otelcol-hyperdx` 0.155.0):
 `/etc/otelcol-contrib/config.yaml` and `/app/packages/api/build/opamp/controllers/opampController.js`.*
@@ -245,8 +247,10 @@ README가 "기본값이 되지 **않는다**"고 명시하므로 프로파일이
 `metrics:`, `logs:`, `traces:`를 그대로 정의하면 안 됩니다. ClickStack 자체 파이프라인은 이름 없는
 `traces`와 `metrics`, 그리고 로그용으로 이름이 붙은 `logs/in`, `logs/out-default`,
 `logs/out-rrweb`입니다. 파이프라인 안의 `receivers`, `processors`, `exporters`는 **리스트**라서,
-이름 없는 `traces:`나 `metrics:` 키는 해당 파이프라인의 ClickStack 리스트를 교체하고, 그 신호의
-OTLP 수집까지 없앨 수 있습니다. 교체할 이름 없는 `logs` 파이프라인은 없지만 규칙은 같습니다.
+이름 없는 `traces:`나 `metrics:` 키와 같은 이름의 ClickStack 파이프라인은 `receivers`를 둘 다
+유지할 수 없고, 마지막 소스가 이깁니다. supervisor 경로에서는 그것이 OpAMP 원격 설정(1번 규칙)이므로
+OTLP 수집보다 프로파일 자체 receiver가 사라질 가능성이 큽니다. 다만 병합 순서에서 읽은 것이지 테스트한
+것이 아니므로 둘 다 가능하다고 보세요. 교체할 이름 없는 `logs` 파이프라인은 없지만 규칙은 같습니다.
 이름 없는 키는 프로파일 이름으로 구분되지 않아 두 프로파일이 충돌할 수 있습니다.
 
 *`clickhouse/clickstack-all-in-one:2.39.1`(`otelcol-hyperdx` 0.155.0)에서 확인한 파이프라인 이름:

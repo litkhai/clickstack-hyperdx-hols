@@ -23,8 +23,9 @@ ClickStack's collector is an OCB build whose receivers are only `nop`, `otlp`,
 `datadog`, `docker_stats`, `file_log`, `fluent_forward`, `host_metrics`,
 `k8s_cluster`, `kubelet_stats` and `prometheus` (read from
 `/otelcontribcol components` in `clickhouse/clickstack-all-in-one:2.39.1`,
-`otelcol-hyperdx` 0.155.0). `vcenter` is not among them, so it runs in a separate `otel/opentelemetry-collector-contrib` container
-that forwards OTLP to ClickStack's `otlp` receiver. The receiver *is* in the
+`otelcol-hyperdx` 0.155.0). `vcenter` is not among them, so it runs in a
+separate `otel/opentelemetry-collector-contrib` container that forwards OTLP to
+ClickStack's `otlp/hyperdx` receiver. The receiver *is* in the
 public contrib image (`distributions: [contrib]`), so no custom build is needed.
 
 ### Prerequisites
@@ -106,7 +107,7 @@ ClickStack 컬렉터는 OCB 빌드이고 리시버가 `nop`, `otlp`, `datadog`, 
 `file_log`, `fluent_forward`, `host_metrics`, `k8s_cluster`, `kubelet_stats`,
 `prometheus`뿐입니다(`clickhouse/clickstack-all-in-one:2.39.1`, `otelcol-hyperdx`
 0.155.0의 `/otelcontribcol components`에서 확인). `vcenter`가 없으므로 별도
-`otel/opentelemetry-collector-contrib` 컨테이너에서 실행해 ClickStack의 `otlp`
+`otel/opentelemetry-collector-contrib` 컨테이너에서 실행해 ClickStack의 `otlp/hyperdx`
 리시버로 OTLP 전달합니다. 이 리시버는 공개 contrib 이미지에 **있으므로**
 (`distributions: [contrib]`) 커스텀 빌드는 필요 없습니다.
 
