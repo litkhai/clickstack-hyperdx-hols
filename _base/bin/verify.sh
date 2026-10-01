@@ -80,14 +80,24 @@ print(next((s['id'] for s in d if s.get('kind')=='log'), ''))" 2>/dev/null)
     if [ -z "$sid" ]; then
         skip "searchable via HyperDX" "no log source found"
     else
-        hits=$(curl -sS --max-time 25 -X POST \
+        # The lucene field for a resource attribute is ResourceAttributes.<key>;
+        # a bare verify.run_id is UNKNOWN_IDENTIFIER on 2.39.1.
+        resp=$(curl -sS --max-time 25 -X POST \
                  -H "Authorization: Bearer $HYPERDX_API_KEY" -H 'Content-Type: application/json' \
                  "$HYPERDX_API_URL/api/v2/search" \
-                 -d "{\"sourceId\":\"$sid\",\"where\":\"verify.run_id:\\\"$RUN_ID\\\"\",\"whereLanguage\":\"lucene\",\"maxResults\":500}" 2>/dev/null \
-               | python3 -c "import sys,json
-d=json.load(sys.stdin); print(len(d.get('data',d) or []))" 2>/dev/null)
-        if [ "${hits:-0}" -gt 0 ]; then
+                 -d "{\"sourceId\":\"$sid\",\"where\":\"ResourceAttributes.verify.run_id:\\\"$RUN_ID\\\"\",\"whereLanguage\":\"lucene\",\"maxResults\":500}" 2>/dev/null)
+        # An error comes back as {"message": ...} with no `data` list. Counting
+        # the keys of that object once passed this layer as "1 rows", so only a
+        # `data` list counts, and anything else is -1.
+        hits=$(printf '%s' "$resp" | python3 -c "import sys,json
+d=json.load(sys.stdin); x=d.get('data') if isinstance(d,dict) else None
+print(len(x) if isinstance(x,list) else -1)" 2>/dev/null)
+        if [ "${hits:--1}" -gt 0 ]; then
             ok "searchable via HyperDX ($hits rows)"
+        elif [ "${hits:--1}" -lt 0 ]; then
+            msg=$(printf '%s' "$resp" | python3 -c "import sys,json
+print(str(json.load(sys.stdin).get('message',''))[:200])" 2>/dev/null)
+            bad "searchable via HyperDX" "no result list in the response (${msg:-not JSON}) -- the query or the source definition does not resolve, not the ingestion"
         else
             bad "searchable via HyperDX" "0 rows while SQL found $got -- the log source definition is wrong, not the ingestion"
         fi

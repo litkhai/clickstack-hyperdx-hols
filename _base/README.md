@@ -181,6 +181,13 @@ that just looks like an empty UI.
 Needs `HYPERDX_INGESTION_KEY` as well as `HYPERDX_API_KEY`; they are different
 keys and ClickStack's OTLP receiver rejects unauthenticated data.
 
+**Verified on:** ClickStack 2.39.1 (ClickHouse 26.8.7.19), telemetrygen v0.155.0,
+2026-10-01. `bin/verify.sh` ran against the local stack and all three layers
+passed (200 logs emitted, 200 rows in `otel_logs`, 200 rows through the HyperDX
+search); a negative control with a wrong `authorization` header was refused by
+the receiver (`Unauthenticated`) and left 0 rows under its `verify.run_id`.
+telemetrygen emits about one log per second, so a run takes around four minutes.
+
 ### Secrets
 
 `.env` is gitignored; `.env.example` carries placeholders and is not. Nothing
@@ -358,6 +365,13 @@ UI에서는 그냥 빈 화면으로만 보이는 실패입니다.
 
 `HYPERDX_API_KEY`와 함께 `HYPERDX_INGESTION_KEY`가 필요합니다. 서로 다른 키이고,
 ClickStack의 OTLP 리시버는 인증 없는 데이터를 거부합니다.
+
+**Verified on:** ClickStack 2.39.1 (ClickHouse 26.8.7.19), telemetrygen v0.155.0,
+2026-10-01. 로컬 스택에서 `bin/verify.sh`를 실행했고 세 단계가 모두 통과했습니다
+(로그 200건 전송, `otel_logs` 200행, HyperDX 검색 200행). 잘못된 `authorization`
+헤더로 보낸 네거티브 컨트롤은 리시버가 거부(`Unauthenticated`)했고, 해당
+`verify.run_id`의 행은 0건이었습니다. telemetrygen은 초당 로그 약 1건을 보내므로
+실행에는 4분 안팎이 걸립니다.
 
 ### 비밀값
 
