@@ -34,8 +34,12 @@ claim waits for an end-to-end run confirmed by SQL.
 
 ClickStack does not ship `otelcol-contrib`. It is an OCB build
 (`otelcol-hyperdx`) whose receivers are only `nop`, `otlp`, `datadog`,
-`dockerstats`, `filelog`, `fluentforward`, `hostmetrics`, `k8scluster`,
-`kubeletstats`, `prometheus` and `statsd`.
+`docker_stats`, `file_log`, `fluent_forward`, `host_metrics`, `k8s_cluster`,
+`kubelet_stats` and `prometheus` (the image also accepts `filelog`,
+`fluentforward`, `hostmetrics` and `kubeletstats` as aliases; there is no
+`statsd`). Read from `/otelcontribcol components` in
+`clickhouse/clickstack-all-in-one:2.39.1` (`otelcol-hyperdx` 0.155.0); see
+[CONVENTIONS.md](CONVENTIONS.md) rule 4.
 
 | Tier | Ships | Runs where |
 |---|---|---|
@@ -139,8 +143,12 @@ SQL로 확인한 end-to-end 실행 전에는 그 주장을 쓰지 않습니다.
 ### Tier A와 Tier B
 
 ClickStack은 `otelcol-contrib`를 쓰지 않습니다. OCB 빌드(`otelcol-hyperdx`)이고
-리시버가 `nop`, `otlp`, `datadog`, `dockerstats`, `filelog`, `fluentforward`,
-`hostmetrics`, `k8scluster`, `kubeletstats`, `prometheus`, `statsd`뿐입니다.
+리시버가 `nop`, `otlp`, `datadog`, `docker_stats`, `file_log`, `fluent_forward`,
+`host_metrics`, `k8s_cluster`, `kubelet_stats`, `prometheus`뿐입니다(이미지는
+`filelog`, `fluentforward`, `hostmetrics`, `kubeletstats`도 별칭으로 받아들이고,
+`statsd`는 없습니다). `clickhouse/clickstack-all-in-one:2.39.1`(`otelcol-hyperdx`
+0.155.0)의 `/otelcontribcol components`에서 확인했습니다.
+[CONVENTIONS.md](CONVENTIONS.md) 4번 규칙을 보세요.
 
 | Tier | 제공 파일 | 실행 위치 |
 |---|---|---|

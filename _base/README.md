@@ -13,9 +13,14 @@ that tells you whether the one you picked is ready.
 | `cloud` | ClickStack in ClickHouse Cloud | Cloud runs ClickHouse and HyperDX; you run only a collector |
 
 Almost nothing else in the repository needs to care which one is in use.
-`otel-profiles/` fragments work in both, because ClickStack honours
-`CUSTOM_OTELCOL_CONFIG_FILE` in its standalone mode as well as under the OpAMP
-supervisor.
+`otel-profiles/` fragments are written to work in both. What was read from the
+pinned image: the all-in-one container always runs the collector under the
+OpAMP supervisor, which loads `CUSTOM_OTELCOL_CONFIG_FILE` after
+`/etc/otelcol-contrib/config.yaml`. `/otel-entrypoint.sh` also has a standalone
+branch that does the same without OpAMP, which the all-in-one never takes
+(`clickstack-all-in-one:2.39.1`, `otelcol-hyperdx` 0.155.0; see rule 1 in
+[`otel-profiles/CONVENTIONS.md`](../otel-profiles/CONVENTIONS.md)). The
+collector you run next to a Cloud service was not read.
 
 ### Local open-source stack
 
@@ -176,6 +181,13 @@ that just looks like an empty UI.
 Needs `HYPERDX_INGESTION_KEY` as well as `HYPERDX_API_KEY`; they are different
 keys and ClickStack's OTLP receiver rejects unauthenticated data.
 
+**Verified on:** ClickStack 2.39.1 (ClickHouse 26.8.7.19), telemetrygen v0.155.0,
+2026-10-01. `bin/verify.sh` ran against the local stack and all three layers
+passed (200 logs emitted, 200 rows in `otel_logs`, 200 rows through the HyperDX
+search); a negative control with a wrong `authorization` header was refused by
+the receiver (`Unauthenticated`) and left 0 rows under its `verify.run_id`.
+telemetrygen emits about one log per second, so a run takes around four minutes.
+
 ### Secrets
 
 `.env` is gitignored; `.env.example` carries placeholders and is not. Nothing
@@ -195,10 +207,14 @@ rotate it rather than assuming it stayed private.
 | `oss` | 여기의 로컬 `docker compose` 스택 | 전부 직접: ClickHouse, HyperDX, MongoDB, 컬렉터 |
 | `cloud` | ClickHouse Cloud의 ClickStack | Cloud가 ClickHouse·HyperDX, 사용자는 컬렉터만 |
 
-저장소의 나머지는 어느 쪽인지 거의 신경 쓰지 않아도 됩니다. ClickStack이
-OpAMP supervisor 모드뿐 아니라 standalone 모드에서도
-`CUSTOM_OTELCOL_CONFIG_FILE`을 적용하므로 `otel-profiles/` 조각은 양쪽에서
-그대로 동작합니다.
+저장소의 나머지는 어느 쪽인지 거의 신경 쓰지 않아도 됩니다. `otel-profiles/`
+조각은 양쪽에서 동작하도록 작성했습니다. 고정한 이미지에서 확인한 것: all-in-one
+컨테이너는 항상 OpAMP supervisor 아래에서 컬렉터를 실행하고, supervisor가
+`/etc/otelcol-contrib/config.yaml` 다음에 `CUSTOM_OTELCOL_CONFIG_FILE`을
+로드합니다. `/otel-entrypoint.sh`에는 OpAMP 없이 같은 일을 하는 standalone 분기도
+있지만 all-in-one은 이 분기를 타지 않습니다(`clickstack-all-in-one:2.39.1`,
+`otelcol-hyperdx` 0.155.0, [`otel-profiles/CONVENTIONS.md`](../otel-profiles/CONVENTIONS.md)
+1번 규칙 참고). Cloud 서비스 옆에서 실행하는 컬렉터는 확인하지 않았습니다.
 
 ### 로컬 오픈소스 스택
 
@@ -349,6 +365,13 @@ UI에서는 그냥 빈 화면으로만 보이는 실패입니다.
 
 `HYPERDX_API_KEY`와 함께 `HYPERDX_INGESTION_KEY`가 필요합니다. 서로 다른 키이고,
 ClickStack의 OTLP 리시버는 인증 없는 데이터를 거부합니다.
+
+**Verified on:** ClickStack 2.39.1 (ClickHouse 26.8.7.19), telemetrygen v0.155.0,
+2026-10-01. 로컬 스택에서 `bin/verify.sh`를 실행했고 세 단계가 모두 통과했습니다
+(로그 200건 전송, `otel_logs` 200행, HyperDX 검색 200행). 잘못된 `authorization`
+헤더로 보낸 네거티브 컨트롤은 리시버가 거부(`Unauthenticated`)했고, 해당
+`verify.run_id`의 행은 0건이었습니다. telemetrygen은 초당 로그 약 1건을 보내므로
+실행에는 4분 안팎이 걸립니다.
 
 ### 비밀값
 
