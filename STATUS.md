@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-09-30** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-01** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -22,8 +22,10 @@ GitHub secret scanning and push protection are on.
 instance) to run against, so none carries a `Verified on …` line yet.
 
 `_base/` has the local OSS stack and the Cloud target shape, plus `bin/check.sh` (readiness)
-and `bin/verify.sh` (telemetry through to search). `verify.sh` has not been run end to end:
-it needs the ingestion API key, which is only obtainable from the ClickStack UI.
+and `bin/verify.sh` (telemetry through to search). `verify.sh` is verified end to end on
+ClickStack 2.39.1 (ClickHouse 26.8.7.19), with a negative control showing the OTLP receiver
+refuses a wrong key. Its first run found the search layer passing on an error response; that
+is fixed.
 
 Three services sit behind compose profiles, for `labs/elastic-migration/` only, so a plain
 `docker compose up -d` is unaffected:
