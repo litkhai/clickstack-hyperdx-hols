@@ -18,8 +18,11 @@ GitHub secret scanning and push protection are on.
 
 7 OTel profiles in `otel-profiles/` — `linux-host`, `gpu-nvidia`, `baremetal-node`, `virt-kvm`,
 `virt-vsphere`, `mysql`, `aws-rds-mysql`.
-**None verified**: each needs its own class of hardware (or, for `aws-rds-mysql`, a real RDS
-instance) to run against, so none carries a `Verified on …` line yet.
+**Two verified, in Docker only**: `linux-host` (Docker Desktop's VM as the host, syslog from
+Ubuntu 24.04 and 22.04 rsyslog fixtures) and `mysql` (MySQL 8.4.11 container, both tiers), via
+`_base/docker-compose.otel-verify.yml`. Neither has run on a physical or cloud Linux host. The
+other five each need their own class of hardware (or, for `aws-rds-mysql`, a real RDS instance),
+so they carry no `Verified on …` line.
 
 `_base/` has the local OSS stack and the Cloud target shape, plus `bin/check.sh` (readiness)
 and `bin/verify.sh` (telemetry through to search). `verify.sh` is verified end to end on
