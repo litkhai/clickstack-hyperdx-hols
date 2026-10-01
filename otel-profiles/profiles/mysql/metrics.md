@@ -33,12 +33,14 @@ profile). Full 0.155.0 list:
 Resource attributes: `mysql.instance.endpoint` (enabled by default). At this
 repo's pinned collector version (0.155.0) that is the receiver's **only**
 resource attribute — checked directly against the tagged `metadata.yaml`,
-not just the current upstream README, since `server.address`, `server.port`,
-`db.system.name` and `service.instance.id` were all added to the receiver in
-later releases and do not exist to enable at 0.155.0. `db.system.name=mysql`
-is set instead by the `resource/mysql` processor, in both `sidecar.config.yaml`
-(metrics) and `custom.config.yaml` (logs, where `filelog` has no comparable
-toggle regardless of version).
+not just the current upstream README, since `server.address`, `server.port`
+and `service.instance.id` appear nowhere in the 0.155.0 `metadata.yaml`, and
+`db.system.name` appears there only as an attribute of the two log events
+`db.server.query_sample` and `db.server.top_query` (both `enabled: false`, and
+not used by this profile) -- not on any metric and not as a resource attribute.
+`db.system.name=mysql` is set instead by the `resource/mysql` processor, in
+both `sidecar.config.yaml` (metrics) and `custom.config.yaml` (logs, where
+`filelog` has no comparable toggle regardless of version).
 
 ### Alternative: `prometheus` + `mysqld_exporter` (Tier A)
 
@@ -75,6 +77,11 @@ selected by the `log.file.name` attribute filelog attaches to every entry:
 The raw line (error log) or full multi-line entry including the SQL text
 (slow log) stays in the log body; the fields above are added as attributes
 without removing it.
+
+The three-line header mysqld writes at the top of the slow log at every start
+(`/usr/sbin/mysqld, Version: … started with:`) is dropped by a `filter` operator
+in `custom.config.yaml`, not parsed: it is not a query entry, and the restart is
+already recorded in `error.log`. Checked on `mysql:8.4.11`.
 
 ### 5.7 vs 8.x error log format
 

@@ -61,6 +61,67 @@ Linux VM, not your machine's filesystem. The `linux-host` and `virt-kvm`
 profiles will collect the VM's metrics and logs, which is enough to exercise the
 config but is not your host. Run those on Linux to see real host data.
 
+### Verifying the `otel-profiles` in Docker
+
+`docker-compose.otel-verify.yml` is an override that exists only to verify the
+`linux-host` and `mysql` profiles against this stack. A plain `docker compose
+up -d` does not use it. It is needed because on Docker Desktop (4.93.0) there is
+no host to read logs from:
+
+- `/hostfs` is Docker Desktop's own Linux VM (kernel `7.0.14-linuxkit`), so
+  `hostmetrics` reads real kernel counters, but the VM's `/var/log` holds only
+  `lastlog`: no `syslog`, no `messages`.
+- A named volume **can** be mounted at `/hostfs/var/log` (the directory exists in
+  the VM). It **cannot** be mounted at `/hostfs/var/log/mysql`: Docker answers
+  `read-only file system`.
+
+So the override mounts one volume, `otel-verify-logs`, at `/hostfs/var/log:ro` in
+ClickStack, and the things that write logs put their files in it. The profiles'
+configs and paths are not changed.
+
+| Service | Compose profile | What it writes |
+|---|---|---|
+| `syslog-noble` | `ubuntu-noble` | `/var/log/syslog` from rsyslog in `ubuntu:noble-20260911` (ISO 8601 lines) |
+| `syslog-jammy` | `ubuntu-jammy` | `/var/log/syslog` from rsyslog in `ubuntu:jammy-20260901.2` (RFC 3164 lines) |
+| `mysql` | `mysql` | `/var/log/mysql/error.log` and `mysql-slow.log` from `mysql:8.4.11`, plus the `otel_monitor` user |
+
+Both rsyslogs run the package's default configuration with only `imklog` off (a
+container has no kernel log). Run one at a time: the second one moves the first
+one's `syslog` aside, as logrotate would, because the two releases' `syslog`
+users have different uids. The `mysql` password is a published local default
+(`otel-local-only`), overridable with `MYSQL_MONITOR_PASSWORD` in `.env` --
+throwaway, localhost only, like `ES_SECURE_PASSWORD` above.
+
+```bash
+cd _base
+F="-f docker-compose.yml -f docker-compose.otel-verify.yml"
+
+# linux-host alone
+../otel-profiles/bin/build-config.sh linux-host > ../otel-profiles/custom.config.yaml
+docker compose $F --profile ubuntu-noble up -d --build
+EXPECT_RECEIVER=hostmetrics/linux-host ./bin/check.sh
+docker compose $F --profile ubuntu-noble rm -sf syslog-noble      # then the other release
+docker compose $F --profile ubuntu-jammy up -d --build
+CH_URL=http://localhost:8123 CH_USER=api CH_PASSWORD=api ../otel-profiles/bin/verify.sh linux-host
+
+# mysql: logs through ClickStack, metrics through the sidecar
+../otel-profiles/bin/build-config.sh mysql linux-host > ../otel-profiles/custom.config.yaml
+../otel-profiles/bin/build-config.sh --tier b mysql > ../otel-profiles/sidecar/sidecar.config.yaml
+docker compose $F up -d --force-recreate clickstack              # the config is a bind mount
+docker compose $F --profile mysql up -d mysql
+```
+
+`--force-recreate` is needed because Compose does not notice that the content of a
+bind-mounted file changed. The sidecar then runs from `otel-profiles/sidecar/`
+with `CLICKSTACK_OTLP_ENDPOINT=host.docker.internal:4317`,
+`CLICKSTACK_OTLP_INSECURE=true`, `MYSQL_ENDPOINT=host.docker.internal:3306`,
+`MYSQL_USERNAME=otel_monitor`, `MYSQL_PASSWORD=otel-local-only`,
+`MYSQL_TLS_INSECURE=true` and `SIDECAR_HEALTH_PORT=13134` in an env file, plus
+`--env-file ../../_base/.env`, so the ingestion key is read from `HYPERDX_INGESTION_KEY`
+there and not copied (see the [mysql profile](../otel-profiles/profiles/mysql/README.md)).
+If something else holds 8123 or 9000 on your machine, publish ClickHouse on other
+ports with a further `-f` override and point `CH_URL` there.
+
 ### Optional: a migration source and a migration target
 
 For `labs/elastic-migration/` only. Both are off by default, behind compose
@@ -251,6 +312,65 @@ HyperDX는 http://localhost:8080 에 올라옵니다. 나머지 공개 포트는
 Docker Desktop 내부 Linux VM의 루트를 마운트합니다. `linux-host`와 `virt-kvm`
 프로파일은 그 VM의 지표와 로그를 수집하므로 설정을 시험하기에는 충분하지만
 여러분의 호스트는 아닙니다. 실제 호스트 데이터를 보려면 Linux에서 실행하세요.
+
+### `otel-profiles`를 Docker에서 검증하기
+
+`docker-compose.otel-verify.yml`은 이 스택에 대해 `linux-host`와 `mysql` 프로파일을
+검증하기 위해서만 존재하는 오버라이드입니다. 평범한 `docker compose up -d`는 이
+파일을 쓰지 않습니다. Docker Desktop(4.93.0)에는 로그를 읽을 호스트가 없어서 필요합니다.
+
+- `/hostfs`는 Docker Desktop 자체의 Linux VM(kernel `7.0.14-linuxkit`)이라
+  `hostmetrics`는 실제 커널 카운터를 읽지만, VM의 `/var/log`에는 `lastlog`뿐입니다.
+  `syslog`도 `messages`도 없습니다.
+- 이름 있는 볼륨은 `/hostfs/var/log`에 마운트**할 수 있습니다**(VM에 그 디렉터리가
+  있습니다). `/hostfs/var/log/mysql`에는 마운트**할 수 없습니다**. Docker가
+  `read-only file system`으로 답합니다.
+
+그래서 오버라이드는 볼륨 하나, `otel-verify-logs`를 ClickStack의 `/hostfs/var/log:ro`에
+마운트하고, 로그를 쓰는 쪽이 그 안에 파일을 둡니다. 프로파일의 설정과 경로는 바꾸지
+않습니다.
+
+| 서비스 | Compose 프로파일 | 쓰는 것 |
+|---|---|---|
+| `syslog-noble` | `ubuntu-noble` | `ubuntu:noble-20260911`의 rsyslog가 쓰는 `/var/log/syslog` (ISO 8601 형식) |
+| `syslog-jammy` | `ubuntu-jammy` | `ubuntu:jammy-20260901.2`의 rsyslog가 쓰는 `/var/log/syslog` (RFC 3164 형식) |
+| `mysql` | `mysql` | `mysql:8.4.11`의 `/var/log/mysql/error.log`, `mysql-slow.log`와 `otel_monitor` 사용자 |
+
+두 rsyslog 모두 패키지 기본 설정에 `imklog`만 끈 상태입니다(컨테이너에는 읽을 커널
+로그가 없습니다). 한 번에 하나만 실행하세요. 두 릴리스의 `syslog` 사용자 uid가
+달라서, 나중에 뜬 쪽이 logrotate처럼 앞쪽의 `syslog`를 옆으로 옮깁니다. `mysql`
+비밀번호는 공개된 로컬 기본값(`otel-local-only`)이고 `.env`의 `MYSQL_MONITOR_PASSWORD`로
+바꿀 수 있습니다. 위의 `ES_SECURE_PASSWORD`처럼 임시·localhost 전용입니다.
+
+```bash
+cd _base
+F="-f docker-compose.yml -f docker-compose.otel-verify.yml"
+
+# linux-host 단독
+../otel-profiles/bin/build-config.sh linux-host > ../otel-profiles/custom.config.yaml
+docker compose $F --profile ubuntu-noble up -d --build
+EXPECT_RECEIVER=hostmetrics/linux-host ./bin/check.sh
+docker compose $F --profile ubuntu-noble rm -sf syslog-noble      # 그다음 다른 릴리스
+docker compose $F --profile ubuntu-jammy up -d --build
+CH_URL=http://localhost:8123 CH_USER=api CH_PASSWORD=api ../otel-profiles/bin/verify.sh linux-host
+
+# mysql: 로그는 ClickStack, 지표는 사이드카
+../otel-profiles/bin/build-config.sh mysql linux-host > ../otel-profiles/custom.config.yaml
+../otel-profiles/bin/build-config.sh --tier b mysql > ../otel-profiles/sidecar/sidecar.config.yaml
+docker compose $F up -d --force-recreate clickstack              # 설정은 bind mount
+docker compose $F --profile mysql up -d mysql
+```
+
+Compose는 bind mount한 파일의 내용이 바뀐 것을 알아차리지 못하므로
+`--force-recreate`가 필요합니다. 사이드카는 `otel-profiles/sidecar/`에서
+`CLICKSTACK_OTLP_ENDPOINT=host.docker.internal:4317`, `CLICKSTACK_OTLP_INSECURE=true`,
+`MYSQL_ENDPOINT=host.docker.internal:3306`, `MYSQL_USERNAME=otel_monitor`,
+`MYSQL_PASSWORD=otel-local-only`, `MYSQL_TLS_INSECURE=true`,
+`SIDECAR_HEALTH_PORT=13134`를 담은 env 파일과 `--env-file ../../_base/.env`로
+실행합니다. 수집 키는 거기의 `HYPERDX_INGESTION_KEY`에서 읽으며 복사하지 않습니다
+([mysql 프로파일](../otel-profiles/profiles/mysql/README.md) 참고). 이 머신에서 다른 것이
+8123이나 9000을 쓰고 있다면 `-f` 오버라이드를 하나 더 두어 ClickHouse를 다른
+포트로 공개하고 `CH_URL`을 거기에 맞추세요.
 
 ### 선택: 마이그레이션 원본과 목적지
 

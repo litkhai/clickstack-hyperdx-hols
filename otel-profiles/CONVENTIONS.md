@@ -110,9 +110,16 @@ spellings `filelog`, `fluentforward`, `hostmetrics` and `kubeletstats` as aliase
 profiles keep working; `dockerstats` and `k8scluster` are **not** accepted (use `docker_stats`
 and `k8s_cluster`), and this build has no `statsd` receiver.
 
+Each alias is deprecated: when the collector starts with one, it logs a warning such as
+`"filelog" alias is deprecated; use "file_log" instead` (likewise `hostmetrics` →
+`host_metrics`, `fluentforward` → `fluent_forward`, `kubeletstats` → `kubelet_stats`).
+`validate` accepts the aliases and prints nothing about them, so the warning shows only in a
+running collector's log. The profiles in this repository still use the aliases.
+
 *Read in `clickhouse/clickstack-all-in-one:2.39.1` (`otelcol-hyperdx` 0.155.0):
-`/otelcontribcol components`; the aliases with `/otelcontribcol validate --config "yaml:..."`
-on one receiver per run.*
+`/otelcontribcol components`; that the aliases are accepted with `/otelcontribcol validate
+--config "yaml:..."` on one receiver per run; the deprecation warnings by starting
+`/otelcontribcol --config` on one alias per run for a few seconds.*
 
 | Tier | File a profile ships | Runs where |
 |---|---|---|
@@ -313,8 +320,17 @@ ClickStack은 `otelcol-contrib`를 쓰지 않습니다. OCB 빌드(`otelcol-hype
 `dockerstats`와 `k8scluster`는 **받아들이지 않으며**(`docker_stats`, `k8s_cluster`를 쓰세요),
 이 빌드에는 `statsd` receiver가 없습니다.
 
+별칭은 모두 deprecated입니다. 별칭으로 컬렉터를 시작하면
+`"filelog" alias is deprecated; use "file_log" instead` 같은 경고를 로그로 남깁니다
+(`hostmetrics` → `host_metrics`, `fluentforward` → `fluent_forward`,
+`kubeletstats` → `kubelet_stats`도 마찬가지). `validate`는 별칭을 받아들이고 아무것도
+출력하지 않으므로, 경고는 실행 중인 컬렉터의 로그에서만 보입니다. 이 저장소의
+프로파일은 아직 별칭을 씁니다.
+
 *`clickhouse/clickstack-all-in-one:2.39.1`(`otelcol-hyperdx` 0.155.0)에서 확인:
-`/otelcontribcol components`, 별칭은 receiver 하나씩 `/otelcontribcol validate --config "yaml:..."`로.*
+`/otelcontribcol components`, 별칭이 받아들여지는지는 receiver 하나씩
+`/otelcontribcol validate --config "yaml:..."`로, deprecated 경고는 별칭 하나씩
+`/otelcontribcol --config`를 몇 초 실행해서.*
 
 | Tier | 프로파일이 제공하는 파일 | 실행 위치 |
 |---|---|---|

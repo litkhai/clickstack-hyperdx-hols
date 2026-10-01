@@ -40,12 +40,22 @@ monitoring user:
 
 ```sql
 CREATE USER 'otel_monitor'@'%' IDENTIFIED BY '<password>';
--- SHOW GLOBAL STATUS and SHOW REPLICA STATUS need no special grant for a
--- default install; performance_schema access is needed for the table IO/lock
--- wait and statement-event metrics -- see metrics.md.
+-- SHOW GLOBAL STATUS needs no special grant. SHOW REPLICA STATUS does: it
+-- needs REPLICATION CLIENT (or SUPER). Without it the receiver logs, on every
+-- scrape, "Error 1227 (42000): Access denied; you need (at least one of) the
+-- SUPER, REPLICATION CLIENT privilege(s)" and the rest of the metrics still
+-- arrive. Grant it on a replica you want replication lag from (the line below).
+-- performance_schema access is needed for the table IO/lock wait and
+-- statement-event metrics -- see metrics.md.
 GRANT SELECT ON performance_schema.* TO 'otel_monitor'@'%';
+-- GRANT REPLICATION CLIENT ON *.* TO 'otel_monitor'@'%';
 FLUSH PRIVILEGES;
 ```
+
+Observed on MySQL 8.4.11 with exactly the statements above (the `REPLICATION
+CLIENT` line left commented out): the sidecar logged `Failed to fetch replica
+status stats` with that error at info level on each 30 s scrape, and 20
+`mysql.*` metric names still arrived. A replica with the grant was not tested.
 
 For the logs half, the collector runs in a container and needs the host
 filesystem, same as [linux-host](../linux-host/):
@@ -81,6 +91,12 @@ cd sidecar
 docker compose --env-file .env up -d
 ```
 
+The sidecar publishes its `health_check` on host port 13133. If it runs on the
+same machine as the local stack in [`_base/`](../../../_base/README.md), which
+publishes 13133 for its own collector, set `SIDECAR_HEALTH_PORT` (for example
+`SIDECAR_HEALTH_PORT=13134`) first: without it `docker compose up` fails with
+`Bind for 0.0.0.0:13133 failed: port is already allocated`.
+
 ### Verify
 
 ```bash
@@ -92,10 +108,20 @@ sidecar, `db.system.name` populated, both logs arriving, and — query 4 — tha
 the slow log's multi-line entries actually got split and parsed rather than
 arriving as unparsed single lines.
 
-Not verified yet: no `Verified on …` line until this has run end to end
-against a real instance and the SQL confirmed it. Unlike
-[aws-rds-mysql](../aws-rds-mysql/), this one is verifiable against a local
-container, so it should not stay unverified long.
+**Verified on:** Docker only — MySQL 8.4.11 (`mysql:8.4.11`), ClickStack 2.39.1
+(ClickHouse 26.8.7.19), sidecar otel/opentelemetry-collector-contrib:0.155.0,
+Docker Desktop 4.93.0; logs through a volume mounted at /hostfs/var/log;
+2026-10-01 (UTC). The replica-status metrics (`mysql.replica.*`) need
+`REPLICATION CLIENT`, which this run did not grant (see Prerequisites).
+
+What that run showed: queries 1–4 of [verify.sql](verify.sql) returned rows,
+query 2 with `db.system.name = mysql`, query 3 with `error.log` and
+`mysql-slow.log`, and query 4 with `parsed_slow_entries = 3` and
+`unparsed_slow_lines = 0` after a `mysqld` restart while the collector was
+reading (the restart wrote a fourth `Version:` header to the slow log, and none
+reached `otel_logs`). Before the `filter` operator was added, the same query
+returned `unparsed_slow_lines = 5`, all of them that header. The fixture is in
+[`_base/`](../../../_base/README.md).
 
 ### Notes
 
@@ -141,12 +167,22 @@ Tier B 사이드카가 필요합니다. 에러 로그와 슬로우 쿼리 로그
 
 ```sql
 CREATE USER 'otel_monitor'@'%' IDENTIFIED BY '<password>';
--- 기본 설치에서는 SHOW GLOBAL STATUS와 SHOW REPLICA STATUS에 별도 권한이
--- 필요 없습니다. performance_schema 접근은 테이블 IO/락 대기, statement-event
+-- SHOW GLOBAL STATUS에는 별도 권한이 필요 없습니다. SHOW REPLICA STATUS에는
+-- 필요합니다: REPLICATION CLIENT(또는 SUPER). 없으면 리시버가 스크레이프마다
+-- "Error 1227 (42000): Access denied; you need (at least one of) the SUPER,
+-- REPLICATION CLIENT privilege(s)"를 로그로 남기고 나머지 지표는 계속
+-- 들어옵니다. 복제 지연이 필요한 레플리카에서는 아래 줄로 권한을 주세요.
+-- performance_schema 접근은 테이블 IO/락 대기, statement-event
 -- 지표에 필요합니다 -- metrics.md 참고.
 GRANT SELECT ON performance_schema.* TO 'otel_monitor'@'%';
+-- GRANT REPLICATION CLIENT ON *.* TO 'otel_monitor'@'%';
 FLUSH PRIVILEGES;
 ```
+
+위 구문 그대로(`REPLICATION CLIENT` 줄은 주석 상태로) MySQL 8.4.11에서 관찰한
+결과: 사이드카가 30초 스크레이프마다 info 레벨로 `Failed to fetch replica status
+stats`와 위 오류를 남겼고, `mysql.*` 지표 이름 20개는 계속 들어왔습니다. 권한을
+준 레플리카에서는 시험하지 않았습니다.
 
 로그 쪽은 컬렉터가 컨테이너에서 돌기 때문에 [linux-host](../linux-host/)와
 같은 호스트 파일시스템이 필요합니다.
@@ -182,6 +218,12 @@ cd sidecar
 docker compose --env-file .env up -d
 ```
 
+사이드카는 `health_check`를 호스트 포트 13133으로 공개합니다. [`_base/`](../../../_base/README.md)의
+로컬 스택은 자체 컬렉터를 위해 13133을 이미 공개하므로, 같은 머신에서 사이드카를
+실행한다면 먼저 `SIDECAR_HEALTH_PORT`(예: `SIDECAR_HEALTH_PORT=13134`)를 설정해야
+합니다. 그렇지 않으면 `docker compose up`이
+`Bind for 0.0.0.0:13133 failed: port is already allocated`로 실패합니다.
+
 ### 검증
 
 ```bash
@@ -193,10 +235,20 @@ CH_URL=http://localhost:8123 ../bin/verify.sh mysql
 로그의 멀티라인 엔트리가 실제로 분리·파싱됐는지(파싱되지 않은 한 줄짜리로
 도착하지 않았는지).
 
-아직 검증하지 않았습니다. 실제 인스턴스에서 end-to-end로 실행하고 SQL로
-확인하기 전에는 `Verified on …` 줄을 쓰지 않습니다.
-[aws-rds-mysql](../aws-rds-mysql/)과 달리 로컬 컨테이너로 검증 가능하므로 오래
-미검증 상태로 남지는 않아야 합니다.
+**Verified on:** Docker only — MySQL 8.4.11 (`mysql:8.4.11`), ClickStack 2.39.1
+(ClickHouse 26.8.7.19), sidecar otel/opentelemetry-collector-contrib:0.155.0,
+Docker Desktop 4.93.0; 로그는 /hostfs/var/log에 마운트한 볼륨을 통해;
+2026-10-01 (UTC). 복제 상태 지표(`mysql.replica.*`)에는 `REPLICATION CLIENT`가
+필요한데, 이 실행에서는 부여하지 않았습니다(전제조건 참고).
+
+이 실행에서 확인한 것: [verify.sql](verify.sql)의 1–4번 쿼리가 모두 행을
+반환했습니다. 2번은 `db.system.name = mysql`, 3번은 `error.log`와
+`mysql-slow.log`, 4번은 컬렉터가 읽는 중에 `mysqld`를 재시작한 뒤
+`parsed_slow_entries = 3`, `unparsed_slow_lines = 0`이었습니다(재시작으로 슬로우
+로그에 네 번째 `Version:` 헤더가 쓰였고 `otel_logs`에는 하나도 도달하지
+않았습니다). `filter` 연산자를 넣기 전에는 같은 쿼리가
+`unparsed_slow_lines = 5`였고 전부 그 헤더였습니다. fixture는
+[`_base/`](../../../_base/README.md)에 있습니다.
 
 ### 참고
 

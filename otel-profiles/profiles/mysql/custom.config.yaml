@@ -37,6 +37,18 @@ receivers:
     multiline:
       line_start_pattern: '^(?:\d{4}-\d{2}-\d{2}T|# Time: )'
     operators:
+      # mysqld writes a three-line header to the slow log every time it starts
+      # ("/usr/sbin/mysqld, Version: ... started with:", "Tcp port: ...",
+      # "Time  Id Command  Argument"). It is not a query entry: the multiline
+      # split makes it an entry of its own that has none of the fields below, and
+      # verify.sql would count it as an unparsed slow line. The restart itself is
+      # already recorded in error.log, so drop it. `filter` drops the entries its
+      # expression matches (drop_ratio defaults to 1); the expression is guarded
+      # by the file name so it never runs `matches` on an error.log line, and an
+      # entry whose expression errors would be dropped as well.
+      - type: filter
+        expr: 'attributes["log.file.name"] == "mysql-slow.log" and body matches "^\\S+, Version: "'
+
       # Slow query log: log.file.name is the basename filelog attaches to
       # every entry it reads from that file.
       - type: regex_parser
