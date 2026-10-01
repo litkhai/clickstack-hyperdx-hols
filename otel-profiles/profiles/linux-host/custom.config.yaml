@@ -27,6 +27,13 @@ receivers:
       processes:
       system:
 
+  # Two line formats are accepted, because rsyslog's default changed between
+  # Ubuntu LTS releases: 22.04 sets $ActionFileDefaultTemplate
+  # RSYSLOG_TraditionalFileFormat (RFC 3164: `Oct  1 04:14:15 host tag[pid]: msg`)
+  # and 24.04 dropped that line, so its default is rsyslog's high-precision
+  # format (ISO 8601: `2026-10-01T04:13:39.637057+00:00 host tag[pid]: msg`).
+  # The regex takes either timestamp as `ts`; the two time_parsers below each
+  # act only on their own form, selected by `if:`.
   filelog/linux-host:
     include:
       - /hostfs/var/log/syslog
@@ -37,15 +44,26 @@ receivers:
       enabled: true
     operators:
       - type: regex_parser
-        regex: '^(?P<ts>\w{3}\s+\d+\s\d{2}:\d{2}:\d{2}) (?P<host>\S+) (?P<unit>[^:\[]+)(?:\[(?P<pid>\d+)\])?: (?P<msg>.*)$'
+        regex: '^(?P<ts>\w{3}\s+\d+\s\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})) (?P<host>\S+) (?P<unit>[^:\[]+)(?:\[(?P<pid>\d+)\])?: (?P<msg>.*)$'
         parse_from: body
         parse_to: attributes
         on_error: send
+      # RFC 3164: no year, no zone. The year is inferred and the zone is the
+      # collector's own (`location` defaults to Local).
       - type: time_parser
         parse_from: attributes.ts
         layout_type: strptime
         layout: '%b %d %H:%M:%S'
-        if: 'attributes.ts != nil'
+        if: 'attributes.ts != nil and attributes.ts matches "^[A-Za-z]{3} "'
+      # ISO 8601 / RFC 3339: year and offset are in the line. Go's parser
+      # accepts a fractional second after the seconds field even though the
+      # layout does not show one, so one layout covers `:39+00:00`,
+      # `:39.637057+00:00` and `:39.637057Z`.
+      - type: time_parser
+        parse_from: attributes.ts
+        layout_type: gotime
+        layout: '2006-01-02T15:04:05Z07:00'
+        if: 'attributes.ts != nil and attributes.ts matches "^[0-9]{4}-"'
 
 processors:
   resource/linux-host:

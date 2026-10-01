@@ -35,9 +35,10 @@ processors:
         value: mysql
         action: upsert
       # The receiver has no db.system.name (or db.system) resource attribute
-      # to enable at the collector version this repo pins (0.155.0) -- that
-      # attribute was added to mysqlreceiver's metadata.yaml in a later
-      # release. Set it ourselves so it is there regardless; see metrics.md.
+      # to enable at the collector version this repo pins (0.155.0): in that
+      # tag's metadata.yaml db.system.name is only an attribute of two
+      # disabled log events, not of any metric. Set it ourselves so it is
+      # there regardless; see metrics.md.
       - key: db.system.name
         value: mysql
         action: upsert

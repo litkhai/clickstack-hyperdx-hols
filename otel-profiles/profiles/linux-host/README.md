@@ -46,7 +46,7 @@ docker run --name clickstack \
   -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
   -v "$(pwd)/custom.config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
   -v /:/hostfs:ro \
-  clickhouse/clickstack-all-in-one:latest
+  clickhouse/clickstack-all-in-one:2.39.1
 ```
 
 In HyperDX the metrics appear under `service.name = linux-host`. Logs need a Log
@@ -62,8 +62,20 @@ CH_URL=http://localhost:8123 ../bin/verify.sh linux-host
 profile's resource attributes, every enabled scraper reporting, and syslog lines
 arriving *parsed* rather than as raw bodies.
 
-Not verified yet — no `Verified on …` line until this has run end to end and the
-SQL confirmed it.
+**Verified on:** Docker only — ClickStack 2.39.1 (ClickHouse 26.8.7.19), collector
+components 0.155.0; host metrics from Docker Desktop 4.93.0's VM (kernel
+7.0.14-linuxkit) through /hostfs; syslog from rsyslog 8.2312.0-3ubuntu9.4 in
+`ubuntu:noble-20260911` (ISO 8601 lines) and from rsyslog 8.2112.0-2ubuntu2.5 in
+`ubuntu:jammy-20260901.2` (RFC 3164 lines), each the package's default
+configuration with only `imklog` off, mounted at /hostfs/var/log; 2026-10-01. Not
+run on a physical or cloud Linux host.
+
+What that run showed: queries 1–3 of [verify.sql](verify.sql) returned rows, query
+2 listed every scraper `custom.config.yaml` enables, and query 3 had a non-empty
+`unit` on every line from both fixtures (`LogAttributes['host']` told them apart).
+The host metrics are the VM's, but `host.name` on the rows is the collector
+container's own hostname, because `resourcedetection` runs inside the container.
+The fixture is in [`_base/`](../../../_base/README.md).
 
 ### Notes
 
@@ -116,7 +128,7 @@ docker run --name clickstack \
   -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
   -v "$(pwd)/custom.config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
   -v /:/hostfs:ro \
-  clickhouse/clickstack-all-in-one:latest
+  clickhouse/clickstack-all-in-one:2.39.1
 ```
 
 HyperDX에서는 `service.name = linux-host`로 나타납니다. 로그는 `otel_logs`를
@@ -132,8 +144,20 @@ CH_URL=http://localhost:8123 ../bin/verify.sh linux-host
 지표 수집, 활성화한 모든 scraper의 보고, 그리고 syslog가 원본 body가 아니라
 **파싱된 상태로** 들어오는지.
 
-아직 검증하지 않았습니다. end-to-end 실행과 SQL 확인 전에는 `Verified on …` 줄을
-쓰지 않습니다.
+**Verified on:** Docker only — ClickStack 2.39.1 (ClickHouse 26.8.7.19), collector
+components 0.155.0; 호스트 지표는 Docker Desktop 4.93.0의 VM(kernel
+7.0.14-linuxkit)에서 /hostfs를 통해, syslog는 `ubuntu:noble-20260911`의 rsyslog
+8.2312.0-3ubuntu9.4(ISO 8601 형식)와 `ubuntu:jammy-20260901.2`의 rsyslog
+8.2112.0-2ubuntu2.5(RFC 3164 형식)에서 가져왔습니다. 둘 다 패키지 기본 설정에
+`imklog`만 끈 것이고 /hostfs/var/log에 마운트했습니다; 2026-10-01. 물리 서버나
+클라우드 Linux 호스트에서는 실행하지 않았습니다.
+
+이 실행에서 확인한 것: [verify.sql](verify.sql)의 1–3번 쿼리가 모두 행을 반환했고,
+2번은 `custom.config.yaml`이 켠 모든 scraper를 나열했으며, 3번은 두 fixture의 모든
+줄에서 `unit`이 비어 있지 않았습니다(`LogAttributes['host']`로 둘을 구분). 호스트
+지표는 VM의 것이지만 행의 `host.name`은 `resourcedetection`이 컨테이너 안에서
+돌기 때문에 컬렉터 컨테이너 자신의 호스트명입니다. fixture는
+[`_base/`](../../../_base/README.md)에 있습니다.
 
 ### 참고
 

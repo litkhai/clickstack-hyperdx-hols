@@ -32,11 +32,23 @@ convention.
 ## Logs
 
 `filelog` reads `/var/log/syslog` and `/var/log/messages` through the `/hostfs`
-bind mount. The `regex_parser` uses `on_error: send`, so a line that does not
-match the RFC 3164 shape is still ingested with its raw body instead of being
-dropped — journald-only distributions will show mostly unparsed lines, which is
-the signal to reach for a journald sidecar instead (Tier B, no profile yet).
+bind mount. The `regex_parser` accepts two line shapes, because rsyslog's
+default file format differs between Ubuntu LTS releases:
 
-`time_parser` uses the `%b %d %H:%M:%S` layout, which carries no year. The
-collector assumes the current year; lines from a log rotated across New Year
-will be timestamped wrong.
+| Format | Example | Where it is the default |
+|---|---|---|
+| RFC 3164 | `Oct  1 04:14:15 host tag[pid]: msg` | Ubuntu 22.04 (`$ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat` in `/etc/rsyslog.conf`) |
+| ISO 8601 / RFC 3339 | `2026-10-01T04:13:39.637057+00:00 host tag[pid]: msg` | Ubuntu 24.04 (that line is gone, so rsyslog's high-precision default applies) |
+
+Both shapes fill the same attributes (`ts`, `host`, `unit`, `pid`, `msg`); one
+`time_parser` per shape, each selected by an `if:` on the form of `ts`. The
+`regex_parser` uses `on_error: send`, so a line that matches neither shape is
+still ingested with its raw body instead of being dropped — journald-only
+distributions will show mostly unparsed lines, which is the signal to reach for
+a journald sidecar instead (Tier B, no profile yet).
+
+The RFC 3164 `time_parser` uses the `%b %d %H:%M:%S` layout, which carries no
+year and no zone. The collector assumes the current year, so lines from a log
+rotated across New Year will be timestamped wrong, and it reads the time in its
+own local zone. The ISO 8601 form has both in the line, so neither caveat
+applies to it.

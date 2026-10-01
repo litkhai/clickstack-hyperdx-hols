@@ -21,7 +21,10 @@ services:
     environment:
       CLICKSTACK_OTLP_ENDPOINT: ${CLICKSTACK_OTLP_ENDPOINT}
       CLICKSTACK_OTLP_INSECURE: ${CLICKSTACK_OTLP_INSECURE}
-      CLICKSTACK_API_KEY: ${CLICKSTACK_API_KEY}
+      # Falls back to HYPERDX_INGESTION_KEY, the name _base/ uses for the same
+      # key, so `--env-file ../../_base/.env` is enough next to the local stack
+      # and the key is not copied into a second file.
+      CLICKSTACK_API_KEY: ${CLICKSTACK_API_KEY:-${HYPERDX_INGESTION_KEY:-}}
       VCENTER_ENDPOINT: ${VCENTER_ENDPOINT:-}
       VCENTER_USERNAME: ${VCENTER_USERNAME:-}
       VCENTER_PASSWORD: ${VCENTER_PASSWORD:-}
@@ -43,5 +46,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
     ports:
-      # health_check from base.yaml
-      - "13133:13133"
+      # health_check from base.yaml. _base/docker-compose.yml publishes 13133
+      # for its own collector; set SIDECAR_HEALTH_PORT (e.g. 13134) when both
+      # run on one machine, or the second `up` fails with "port is already
+      # allocated". The default is unchanged.
+      - "${SIDECAR_HEALTH_PORT:-13133}:13133"
