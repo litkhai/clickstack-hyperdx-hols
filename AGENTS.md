@@ -15,6 +15,10 @@ Differences from the core repository:
   README's area tables — a lab with no row there gets no page. `docs/` is
   **not committed** (see `.gitignore`); the `pages` workflow builds and
   deploys it on every push to `main` that touches markdown or the builder.
+  The one exception is `docs/labs.json` — the labs whose `lab.yaml` sets
+  `web: true`, fetched by the notes site from `main` (`tools/lab.schema.md`).
+  `build_site.py` rewrites it; commit it when it changes (README, Repository
+  checks). Never set `web` without the owner's choice for that lab.
   There is no `site` CI job here, since nothing is committed for it to check.
   Preview locally with `pip install markdown && python3
   .github/scripts/build_site.py`, then open `docs/index.html`.

@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-03** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-03** — `labs/apm-workflows/` split 1 (in-database generator, backfill, S1 verified on Managed ClickStack); `docs/labs.json` added (notes-site export, 0 labs published; the only committed file under `docs/`). As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
