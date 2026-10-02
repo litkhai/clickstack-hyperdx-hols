@@ -4,7 +4,8 @@
 # Enable once per clone:
 #     git config core.hooksPath .githooks
 #
-# Checks only what is staged, so it stays fast. CI re-runs the full set.
+# Checks only what is staged, so it stays fast. CI runs gitleaks and the hygiene
+# checks on pull requests; links, syntax, otel-profiles and terraform run only by hand.
 set -uo pipefail
 
 fail=0
