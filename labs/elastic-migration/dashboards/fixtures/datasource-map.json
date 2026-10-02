@@ -1,0 +1,8 @@
+{
+  "es": {
+    "uid": "ch",
+    "table": "default.logs_demo",
+    "time_column": "@timestamp",
+    "aliases": {"level": "log.level"}
+  }
+}

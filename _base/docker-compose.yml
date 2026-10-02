@@ -16,6 +16,11 @@
 #
 #   docker compose --profile elastic up -d
 #   ./bin/seed_elasticsearch.py
+#
+# A third, also off by default: Grafana with both of those wired in as data
+# sources (profile `grafana`), for labs/elastic-migration/dashboards/:
+#
+#   docker compose --profile elastic --profile grafana up -d
 
 services:
   clickstack:
@@ -150,9 +155,49 @@ services:
     volumes:
       - clickhouse-target-data:/var/lib/clickhouse
 
+  # Grafana for labs/elastic-migration/dashboards/: a dashboard written against
+  # the Elasticsearch data source above, converted to the ClickHouse data
+  # source on `clickhouse-target`, and both checked through Grafana's own
+  # /api/ds/query. Not started by a plain `docker compose up -d`:
+  #
+  #   docker compose --profile elastic --profile grafana up -d
+  #
+  # It has no depends_on on purpose: the two sources live in another profile,
+  # and a depends_on on a service whose profile is off is an error. Start both
+  # profiles together; the data sources are only contacted when queried.
+  #
+  # Both plugins are installed at startup by GF_PLUGINS_PREINSTALL_SYNC, which
+  # needs internet access. Since Grafana 13 the Elasticsearch data source is a
+  # separate plugin, and unpinned it floats: the versions are pinned so a
+  # verification line means something. Both data sources are provisioned from
+  # ./grafana/provisioning.
+  #
+  # admin / grafana-local-only is a published local default, like
+  # ES_SECURE_PASSWORD above: throwaway, localhost only, never this shape
+  # anywhere real. Override with GRAFANA_ADMIN_PASSWORD in .env.
+  grafana:
+    image: grafana/grafana:13.2.3
+    container_name: grafana-local
+    restart: unless-stopped
+    profiles: ["grafana"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana-local-only}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource@4.22.0,elasticsearch@12.9.1
+    ports:
+      - "3000:3000"      # Grafana UI and HTTP API
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+
 volumes:
   clickstack-data:
   clickstack-logs:
   elasticsearch-data:
   elasticsearch-secure-data:
   clickhouse-target-data:
+  grafana-data:

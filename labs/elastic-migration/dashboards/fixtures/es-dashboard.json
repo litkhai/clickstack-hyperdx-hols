@@ -1,0 +1,1318 @@
+{
+  "uid": "es-logs-demo",
+  "title": "logs-demo on Elasticsearch",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "",
+  "timezone": "utc",
+  "tags": ["elastic-migration"],
+  "time": {"from": "now-8h", "to": "now+3d"},
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "service",
+        "type": "custom",
+        "multi": true,
+        "includeAll": true,
+        "query": "checkout,cart,catalog,payments,shipping,search",
+        "current": {"selected": true, "text": ["checkout", "cart"], "value": ["checkout", "cart"]},
+        "options": [
+          {"selected": true, "text": "checkout", "value": "checkout"},
+          {"selected": true, "text": "cart", "value": "cart"},
+          {"selected": false, "text": "catalog", "value": "catalog"},
+          {"selected": false, "text": "payments", "value": "payments"},
+          {"selected": false, "text": "shipping", "value": "shipping"},
+          {"selected": false, "text": "search", "value": "search"}
+        ]
+      },
+      {
+        "name": "ds",
+        "label": "data source",
+        "type": "datasource",
+        "query": "elasticsearch",
+        "current": {"selected": true, "text": "Elasticsearch (logs-demo)", "value": "es"},
+        "options": []
+      }
+    ]
+  },
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Counts and groups",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "count over time (auto interval)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 1},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "count by service.name, top 5 by count (terms > date_histogram)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 1},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "service.name",
+              "settings": {"size": "5", "order": "desc", "orderBy": "_count", "min_doc_count": "1"}
+            },
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "terms with Grafana defaults (no orderBy, no size)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 8},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {"id": "3", "type": "terms", "field": "log.level", "settings": {}},
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "terms ordered by a metric (avg time_ms, ascending, top 3)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 8},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "avg", "field": "http.response.time_ms"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "service.name",
+              "settings": {"size": "3", "order": "asc", "orderBy": "1", "min_doc_count": "1"}
+            },
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "terms only (table): count and avg per service",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 15},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}, {"id": "2", "type": "avg", "field": "http.response.time_ms"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "service.name",
+              "settings": {"size": "10", "order": "desc", "orderBy": "_count", "min_doc_count": "1"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "terms on a numeric field (status code, top 4 by count)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 15},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "http.response.status_code",
+              "settings": {"size": 4, "order": "desc", "orderBy": "_count", "min_doc_count": "1"}
+            },
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "filters (error vs warn-or-error)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 22},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "filters",
+              "settings": {
+                "filters": [
+                  {"query": "log.level:error", "label": "errors"},
+                  {"query": "log.level:(warn OR error)", "label": "warn+error"}
+                ]
+              }
+            },
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "histogram on http.response.status_code (table)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 22},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "histogram",
+              "field": "http.response.status_code",
+              "settings": {"interval": "100", "min_doc_count": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Metrics",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 29}
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "avg / sum / min / max of http.response.time_ms",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 30},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [
+            {"id": "1", "type": "avg", "field": "http.response.time_ms"},
+            {"id": "2", "type": "sum", "field": "http.response.time_ms"},
+            {"id": "3", "type": "min", "field": "http.response.time_ms"},
+            {"id": "4", "type": "max", "field": "http.response.time_ms"}
+          ],
+          "bucketAggs": [
+            {
+              "id": "5",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "sum of status codes by log.level (integer sum)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 30},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "sum", "field": "http.response.status_code"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "log.level",
+              "settings": {"size": "5", "order": "desc", "orderBy": "_term", "min_doc_count": "1"}
+            },
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "cardinality of trace.id",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 37},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "cardinality", "field": "trace.id"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "percentiles of http.response.time_ms",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 37},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "percentiles",
+              "field": "http.response.time_ms",
+              "settings": {"percents": ["50", "95", "99"]}
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "extended_stats of http.response.time_ms",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 44},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "extended_stats",
+              "field": "http.response.time_ms",
+              "meta": {"avg": true, "std_deviation": true, "std_deviation_bounds_upper": true},
+              "settings": {"sigma": "2"}
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "fixed interval 1h",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 44},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "1h", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "fixed interval 5h (does not divide a day)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 51},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "5h", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "calendar interval 1w",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 51},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "1w", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "raw_data (table of documents)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 58},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "raw_data", "settings": {"size": "20"}}],
+          "bucketAggs": []
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "raw_document",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 58},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "raw_document", "settings": {"size": "5"}}],
+          "bucketAggs": []
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "logs",
+      "title": "logs",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 65},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "logs", "settings": {"limit": "20"}}],
+          "bucketAggs": []
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "Lucene",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 72}
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Lucene: the translatable forms",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 73},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:checkout",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "B",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:\"cart\"",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "C",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "http.response.status_code:[500 TO 599]",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "D",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "_exists_:trace.id",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "E",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:che*",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "F",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "NOT log.level:debug",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "G",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "log.level:error service.name:cart",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "H",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "(log.level:error OR log.level:warn) AND service.name:(cart OR search)",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "I",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "level:error AND http.response.status_code:>=500",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "J",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:c?rt",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "K",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "message:timeout",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "L",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "log.level:error AND service.name:checkout OR service.name:cart",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "M",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "message.keyword:\"request completed (cart)\"",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "N",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "client.ip:[1.0.0.0 TO 50.255.255.255]",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "with a dashboard variable ($service)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 73},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:$service",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "3",
+              "type": "terms",
+              "field": "log.level",
+              "settings": {"size": "5", "order": "desc", "orderBy": "_count", "min_doc_count": "1"}
+            },
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "data source chosen by a variable ($ds)",
+      "datasource": {"type": "elasticsearch", "uid": "${ds}"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 80},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "${ds}"},
+          "query": "log.level:error",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "Not translatable (each must come out empty and marked)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 87}
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "bare term",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 88},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "timeout",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "regex",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 88},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:/ch.*t/",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "fuzzy",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 95},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:chekout~",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "boost",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 95},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:cart^2",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "derivative",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 102},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [
+            {"id": "1", "type": "count"},
+            {"id": "3", "type": "derivative", "field": "1", "pipelineAgg": "1", "settings": {}}
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "top_metrics",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 102},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [
+            {
+              "id": "1",
+              "type": "top_metrics",
+              "settings": {"metrics": ["http.response.time_ms"], "order": "desc", "orderBy": "@timestamp"}
+            }
+          ],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "rate",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 109},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "rate", "field": "http.response.time_ms"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "table",
+      "title": "geohash_grid",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 109},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [{"id": "3", "type": "geohash_grid", "field": "client.geo", "settings": {"precision": "3"}}]
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "nested",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 116},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {"id": "3", "type": "nested", "field": "tags", "settings": {}},
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "queryType dsl",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 116},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "{\"query\": {\"match_all\": {}}}",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ],
+          "queryType": "dsl"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "type": "timeseries",
+      "title": "queryType esql",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 123},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "FROM logs-demo | STATS c = COUNT(*)",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [],
+          "queryType": "esql"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "timeseries",
+      "title": "one good target and one unsupported (the panel must be emptied)",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 123},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "service.name:cart",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        },
+        {
+          "refId": "B",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "timeout",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "type": "timeseries",
+      "title": "a field the manifest does not have",
+      "datasource": {"type": "elasticsearch", "uid": "es"},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 130},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "query": "no.such.field:1",
+          "alias": "",
+          "timeField": "@timestamp",
+          "metrics": [{"id": "1", "type": "count"}],
+          "bucketAggs": [
+            {
+              "id": "2",
+              "type": "date_histogram",
+              "field": "@timestamp",
+              "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "row",
+      "title": "Collapsed row",
+      "collapsed": true,
+      "panels": [
+        {
+          "id": 40,
+          "type": "timeseries",
+          "title": "inside a collapsed row: error count",
+          "datasource": {"type": "elasticsearch", "uid": "es"},
+          "gridPos": {"h": 7, "w": 12, "x": 12, "y": 130},
+          "fieldConfig": {"defaults": {}, "overrides": []},
+          "options": {},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "elasticsearch", "uid": "es"},
+              "query": "log.level:error",
+              "alias": "",
+              "timeField": "@timestamp",
+              "metrics": [{"id": "1", "type": "count"}],
+              "bucketAggs": [
+                {
+                  "id": "2",
+                  "type": "date_histogram",
+                  "field": "@timestamp",
+                  "settings": {"interval": "auto", "min_doc_count": "0", "trimEdges": "0"}
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 137}
+    }
+  ]
+}
