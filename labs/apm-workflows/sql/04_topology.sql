@@ -212,6 +212,7 @@ WITH
     (
         SELECT *, toUInt16(row_number() OVER (PARTITION BY endpoint ORDER BY ord) - 1) AS idx
         FROM values('endpoint String, ord UInt16, seg UInt8, depth UInt8, service String, shape String, p1 String, p2 String, med Float64, sig Float64, hook String, hlo Float64, hhi Float64, when_flag String, rep_var String, rep_k UInt16, fail_kind UInt8, cut_kinds Array(UInt8), err_code String',
+        ('GET /products/{sku}', 10, 0, 0, 'web-bff', 'srv', '/products/{sku}', 'GET', 0.8, 0.3, '', 0.0, 0.0, '', '', 0, 0, [], ''),
         ('GET /products/{sku}', 20, 0, 1, 'web-bff', 'cli', 'catalog', 'GET /api/products/{sku}', 0.0, 0.3, '', 0.0, 0.0, '', '', 0, 0, [], ''),
         ('GET /products/{sku}', 30, 0, 2, 'catalog', 'srv', '/api/products/{sku}', 'GET', 0.9, 0.3, '', 0.0, 0.0, '', '', 0, 0, [], ''),
         ('GET /products/{sku}', 40, 0, 3, 'catalog', 'redis', 'GET product:{sku}', 'GET', 0.45, 0.4, '', 0.0, 0.0, '', '', 0, 0, [], ''),
