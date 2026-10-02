@@ -1,0 +1,6 @@
+-- tile: S1 · asynchronous side: publish → consume delay per consumer
+-- display: table
+-- layout: 12 41 12 5
+-- from: sql/s1_diagnose.sql
+-- statement: 3
+-- service: web-bff

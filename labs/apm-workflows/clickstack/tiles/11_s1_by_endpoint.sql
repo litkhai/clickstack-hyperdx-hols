@@ -1,0 +1,6 @@
+-- tile: S1 · where the time goes, per user endpoint (SQL / connection wait / external / N+1)
+-- display: table
+-- layout: 0 18 24 6
+-- from: sql/s1_diagnose.sql
+-- statement: 1
+-- service: web-bff
