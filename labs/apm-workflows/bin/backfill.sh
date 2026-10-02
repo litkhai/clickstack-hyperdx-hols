@@ -55,8 +55,11 @@ d=0
 while [ "$d" -lt "$days" ]; do
   chunk_start=$(q "SELECT toString(toDateTime($install_ts) - toIntervalDay($days - $d))")
   s=$(date +%s)
-  "${CH[@]}" apply --param chunk_start="$chunk_start" --param chunk_minutes=1440 "$LAB/sql/backfill_chunk.sql" >/dev/null
-  counts=$(q --param chunk_start="$chunk_start" --param chunk_minutes=1440 --file "$LAB/sql/backfill_chunk_counts.sql" | tr '\n\t' ' ')
+  # select_sequential_consistency: the service has several replicas; the derived inserts must see the
+  # spans the previous statement just wrote, whichever replica serves them (without it a chunk's logs
+  # came out empty on some runs)
+  "${CH[@]}" apply --setting select_sequential_consistency=1 --param chunk_start="$chunk_start" --param chunk_minutes=1440 "$LAB/sql/backfill_chunk.sql" >/dev/null
+  counts=$(q --setting select_sequential_consistency=1 --param chunk_start="$chunk_start" --param chunk_minutes=1440 --file "$LAB/sql/backfill_chunk_counts.sql" | tr '\n\t' ' ')
   echo "chunk $((d + 1))/$days $chunk_start  $counts ($(( $(date +%s) - s )) s)"
   d=$((d + 1))
 done

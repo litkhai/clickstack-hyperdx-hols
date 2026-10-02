@@ -282,7 +282,7 @@ def main(argv=None):
         client = client_from_env(database=args.database, timeout=args.timeout)
         if args.cmd == "apply":
             for f in args.files:
-                print("-- apply %s" % f)
+                print("-- apply %s" % Path(f).name)
                 client.apply_script(Path(f).read_text(), params=params, settings=settings,
                                     log=lambda s: print("   ok: " + _first_line(s)))
         else:
