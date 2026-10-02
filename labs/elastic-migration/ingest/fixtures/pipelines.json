@@ -1,0 +1,497 @@
+{
+  "access-log": {
+    "description": "Apache combined access log: grok on a legacy pattern, date, convert, rename/set/remove/lowercase/append",
+    "processors": [
+      {
+        "grok": {
+          "field": "message",
+          "patterns": [
+            "%{COMBINEDAPACHELOG}"
+          ],
+          "tag": "access-grok"
+        }
+      },
+      {
+        "date": {
+          "field": "timestamp",
+          "formats": [
+            "dd/MMM/yyyy:HH:mm:ss Z"
+          ]
+        }
+      },
+      {
+        "convert": {
+          "field": "response",
+          "type": "integer",
+          "ignore_missing": true
+        }
+      },
+      {
+        "convert": {
+          "field": "bytes",
+          "type": "long",
+          "ignore_missing": true
+        }
+      },
+      {
+        "rename": {
+          "field": "clientip",
+          "target_field": "source.ip"
+        }
+      },
+      {
+        "lowercase": {
+          "field": "verb",
+          "ignore_missing": true
+        }
+      },
+      {
+        "set": {
+          "field": "event.dataset",
+          "value": "apache.access"
+        }
+      },
+      {
+        "append": {
+          "field": "tags",
+          "value": "access"
+        }
+      },
+      {
+        "remove": {
+          "field": "timestamp"
+        }
+      }
+    ]
+  },
+  "app-json-root": {
+    "description": "JSON application log, parsed into the document root",
+    "processors": [
+      {
+        "json": {
+          "field": "message",
+          "add_to_root": true
+        }
+      },
+      {
+        "set": {
+          "field": "event.dataset",
+          "value": "app.json"
+        }
+      },
+      {
+        "rename": {
+          "field": "request_id",
+          "target_field": "trace.id",
+          "ignore_missing": true
+        }
+      }
+    ]
+  },
+  "app-json-nested": {
+    "description": "JSON application log, parsed into app.*",
+    "processors": [
+      {
+        "json": {
+          "field": "message",
+          "target_field": "app"
+        }
+      },
+      {
+        "set": {
+          "field": "event.dataset",
+          "value": "app.json"
+        }
+      }
+    ]
+  },
+  "kv-log": {
+    "description": "key=value lines; the kv processor has an on_failure handler",
+    "processors": [
+      {
+        "kv": {
+          "field": "message",
+          "field_split": " ",
+          "value_split": "=",
+          "on_failure": [
+            {
+              "set": {
+                "field": "error.message",
+                "value": "kv failed"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "convert": {
+          "field": "status",
+          "type": "integer",
+          "ignore_missing": true
+        }
+      },
+      {
+        "uppercase": {
+          "field": "method",
+          "ignore_missing": true
+        }
+      }
+    ]
+  },
+  "dissect-app": {
+    "description": "dissect, a template set, and a date with a Java pattern",
+    "processors": [
+      {
+        "dissect": {
+          "field": "message",
+          "pattern": "%{d} %{t} [%{thread}] %{level} %{logger} - %{msg}"
+        }
+      },
+      {
+        "set": {
+          "field": "ts",
+          "value": "{{d}} {{t}}"
+        }
+      },
+      {
+        "date": {
+          "field": "ts",
+          "formats": [
+            "yyyy-MM-dd HH:mm:ss,SSS"
+          ]
+        }
+      },
+      {
+        "lowercase": {
+          "field": "level"
+        }
+      },
+      {
+        "remove": {
+          "field": [
+            "d",
+            "t",
+            "ts"
+          ]
+        }
+      }
+    ]
+  },
+  "date-iso": {
+    "description": "dissect, then a date with ISO8601",
+    "processors": [
+      {
+        "dissect": {
+          "field": "message",
+          "pattern": "%{ts} %{msg}"
+        }
+      },
+      {
+        "date": {
+          "field": "ts",
+          "formats": [
+            "ISO8601"
+          ]
+        }
+      },
+      {
+        "remove": {
+          "field": "ts"
+        }
+      }
+    ]
+  },
+  "field-ops": {
+    "description": "typed grok capture, then set/copy/rename/lowercase/split/sort/trim/gsub/append/remove",
+    "processors": [
+      {
+        "grok": {
+          "field": "message",
+          "patterns": [
+            "%{WORD:user} %{INT:count:int} %{NOTSPACE:csv} %{GREEDYDATA:rest}"
+          ]
+        }
+      },
+      {
+        "set": {
+          "field": "event.module",
+          "value": "ops"
+        }
+      },
+      {
+        "set": {
+          "field": "event.module",
+          "value": "other",
+          "override": false
+        }
+      },
+      {
+        "set": {
+          "field": "user_copy",
+          "copy_from": "user"
+        }
+      },
+      {
+        "rename": {
+          "field": "user",
+          "target_field": "person"
+        }
+      },
+      {
+        "lowercase": {
+          "field": "person"
+        }
+      },
+      {
+        "split": {
+          "field": "csv",
+          "separator": ",",
+          "target_field": "parts"
+        }
+      },
+      {
+        "sort": {
+          "field": "parts",
+          "order": "desc"
+        }
+      },
+      {
+        "trim": {
+          "field": "rest"
+        }
+      },
+      {
+        "gsub": {
+          "field": "rest",
+          "pattern": "o",
+          "replacement": "0"
+        }
+      },
+      {
+        "append": {
+          "field": "tags",
+          "value": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      {
+        "remove": {
+          "field": "csv"
+        }
+      }
+    ]
+  },
+  "conditional": {
+    "description": "if from the whitelist (contains, =~), one outside it (length()), and a conditional drop",
+    "processors": [
+      {
+        "set": {
+          "field": "level",
+          "value": "error",
+          "if": "ctx.message.contains('ERROR')"
+        }
+      },
+      {
+        "set": {
+          "field": "kind",
+          "value": "short",
+          "if": "ctx.message.length() < 12"
+        }
+      },
+      {
+        "set": {
+          "field": "flag",
+          "value": "warned",
+          "if": "ctx.message =~ /^WARN/ && ctx.level == null"
+        }
+      },
+      {
+        "drop": {
+          "if": "ctx.message.contains('healthcheck')"
+        }
+      }
+    ]
+  },
+  "nested-child": {
+    "description": "called by nested-parent",
+    "processors": [
+      {
+        "set": {
+          "field": "event.module",
+          "value": "child"
+        }
+      }
+    ]
+  },
+  "nested-parent": {
+    "description": "a nested pipeline processor with an if",
+    "processors": [
+      {
+        "set": {
+          "field": "event.parent",
+          "value": "yes"
+        }
+      },
+      {
+        "pipeline": {
+          "name": "nested-child",
+          "if": "ctx.message.contains('child')"
+        }
+      },
+      {
+        "set": {
+          "field": "event.after",
+          "value": "done"
+        }
+      }
+    ]
+  },
+  "unsupported-ops": {
+    "description": "script, geoip and urldecode: unsupported, handled loudly",
+    "processors": [
+      {
+        "set": {
+          "field": "ip",
+          "value": "203.0.113.9"
+        }
+      },
+      {
+        "script": {
+          "source": "ctx.message_length = ctx.message.length()"
+        }
+      },
+      {
+        "geoip": {
+          "field": "ip"
+        }
+      },
+      {
+        "urldecode": {
+          "field": "message",
+          "target_field": "decoded"
+        }
+      },
+      {
+        "set": {
+          "field": "event.dataset",
+          "value": "unsupported.demo"
+        }
+      }
+    ]
+  },
+  "uri": {
+    "description": "uri_parts on the message",
+    "processors": [
+      {
+        "uri_parts": {
+          "field": "message"
+        }
+      },
+      {
+        "set": {
+          "field": "event.kind",
+          "value": "url"
+        }
+      }
+    ]
+  },
+  "misc": {
+    "description": "csv, user_agent and html_strip",
+    "processors": [
+      {
+        "csv": {
+          "field": "message",
+          "target_fields": [
+            "id",
+            "name",
+            "agent",
+            "note"
+          ]
+        }
+      },
+      {
+        "user_agent": {
+          "field": "agent"
+        }
+      },
+      {
+        "html_strip": {
+          "field": "note"
+        }
+      }
+    ]
+  },
+  "access-log-ecs": {
+    "description": "the same combined log with ecs_compatibility v1: dotted ECS names and typed captures",
+    "processors": [
+      {
+        "grok": {
+          "field": "message",
+          "patterns": [
+            "%{COMBINEDAPACHELOG}"
+          ],
+          "ecs_compatibility": "v1"
+        }
+      },
+      {
+        "date": {
+          "field": "timestamp",
+          "formats": [
+            "dd/MMM/yyyy:HH:mm:ss Z"
+          ]
+        }
+      },
+      {
+        "remove": {
+          "field": "timestamp"
+        }
+      }
+    ]
+  },
+  "date-tz": {
+    "description": "a date with an explicit time zone (the stanza time_parser would use Local)",
+    "processors": [
+      {
+        "dissect": {
+          "field": "message",
+          "pattern": "%{ts} %{msg}"
+        }
+      },
+      {
+        "date": {
+          "field": "ts",
+          "formats": [
+            "yyyy-MM-dd_HH:mm:ss"
+          ],
+          "timezone": "Asia/Seoul"
+        }
+      },
+      {
+        "remove": {
+          "field": "ts"
+        }
+      }
+    ]
+  },
+  "grok-ecs": {
+    "description": "ecs_compatibility v1: dotted ECS capture names and typed captures",
+    "processors": [
+      {
+        "grok": {
+          "field": "message",
+          "ecs_compatibility": "v1",
+          "patterns": [
+            "%{IP:source.ip} %{WORD:http.request.method} %{INT:http.response.status_code:int} %{INT:http.response.body.bytes:long} %{NUMBER:event.duration:float}"
+          ]
+        }
+      },
+      {
+        "uppercase": {
+          "field": "http.request.method"
+        }
+      }
+    ]
+  }
+}

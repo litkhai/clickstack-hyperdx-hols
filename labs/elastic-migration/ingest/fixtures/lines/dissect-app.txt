@@ -1,0 +1,3 @@
+2026-10-02 10:11:12,345 [main] INFO com.example.App - started in 3.2s
+2026-10-02 23:59:59,001 [worker-1] ERROR com.example.Job - failed: timeout
+this line has no brackets

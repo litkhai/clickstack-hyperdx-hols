@@ -1,0 +1,5 @@
+ERROR disk full
+INFO ok
+WARN low memory warning
+GET /healthcheck
+short

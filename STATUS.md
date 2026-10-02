@@ -30,7 +30,7 @@ ClickStack 2.39.1 (ClickHouse 26.8.7.19), with a negative control showing the OT
 refuses a wrong key. Its first run found the search layer passing on an error response; that
 is fixed.
 
-Four services sit behind compose profiles, for `labs/elastic-migration/` only, so a plain
+Four services sit behind compose profiles (and one more override, `docker-compose.ingest-verify.yml`, for `ingest/check.py`), for `labs/elastic-migration/` only, so a plain
 `docker compose up -d` is unaffected:
 
 | Service | Port | Profile | What it is |
@@ -77,9 +77,17 @@ on the ClickHouse data source, classifying each one and emptying what it cannot 
 the 50-target fixture, 32 PASS, 4 PASS~ (inside a stated tolerance), 14 EMPTIED, 0 MISMATCH.
 The Lucene → SQL translator is shared with the HyperDX output still to come (#58).
 
+`labs/elastic-migration/ingest/` is written and verified end to end on Elasticsearch 8.17.0
+and ClickStack 2.39.1 (collector otelcol-hyperdx 0.155.0). `convert.py` turns an Elasticsearch
+ingest pipeline into an `otel-profiles`-shaped collector fragment, every processor classified
+and the unconvertible ones left as comments. `check.py` runs the same lines through
+`_simulate` and through ClickStack's collector into `otel_logs`, and compares by SQL: on 16
+fixture pipelines and 50 lines, 29 PASS, 14 REVIEW, 7 UNSUPPORTED, 0 MISMATCH.
+`otel-profiles/bin/lint.sh` now also takes a directory path. Filebeat and Logstash are still
+a plan only (#59).
+
 `labs/elastic-migration/AGENTS.md` is written for an agent **running** a migration rather
-than changing the lab, and opens with what the lab does not do. `ingest/` is still a plan
-only (#21, #59).
+than changing the lab, and opens with what the lab does not do.
 
 ## Open work
 
@@ -88,7 +96,7 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F1–F7: roadmap labs](https://github.com/litkhai/clickstack-hyperdx-hols/issues/2)
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
-- [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Elasticsearch ingest pipelines](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21) and from [Filebeat and Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59), and the [HyperDX dashboard output](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)
+- [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Filebeat and Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59) and the [HyperDX dashboard output](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)
 - Found while building the dashboards path: [Elasticsearch `float` values load one float32 ulp off](https://github.com/litkhai/clickstack-hyperdx-hols/issues/61) (`re-verify`), [the manifest records ClickHouse types only](https://github.com/litkhai/clickstack-hyperdx-hols/issues/62), [clickstack-config's Error count tile filter is probably dropped by the API](https://github.com/litkhai/clickstack-hyperdx-hols/issues/60) (`re-verify`)
 - Found while building the data path, none of them blocking:
   [parity check 4 assumes a single-pass export](https://github.com/litkhai/clickstack-hyperdx-hols/issues/32),

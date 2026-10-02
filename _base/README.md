@@ -151,6 +151,13 @@ The data sources are provisioned from `grafana/provisioning/` (uids `es` and
 `ch`). Log in as `admin` / `GRAFANA_ADMIN_PASSWORD` (a local default in
 `.env.example`).
 
+**`docker-compose.ingest-verify.yml`** is a further override, used only by
+`labs/elastic-migration/ingest/check.py`. It loads that lab's generated
+collector fragments into ClickStack's own collector (`CUSTOM_OTELCOL_CONFIG_FILE`)
+and mounts an input directory at `/ingest-verify/in`. `check.py` recreates
+`clickstack` with it, and `--restore` recreates it without it. Do not leave it
+on: it replaces whatever custom config you had.
+
 **`elastic-secure` is the one that resembles a real source cluster.** The
 `elastic` profile has `xpack.security.enabled=false`, which is why every tool
 in `labs/elastic-migration/data/` worked for a while without being able to
@@ -411,6 +418,12 @@ Compose가 오류를 내기 때문입니다. 두 플러그인은 시작할 때
 않으면 최신 릴리스로 바뀝니다. 데이터 소스는 `grafana/provisioning/`에서
 프로비저닝됩니다(uid `es`, `ch`). 로그인은 `admin` / `GRAFANA_ADMIN_PASSWORD`
 (`.env.example`의 로컬 기본값)입니다.
+
+**`docker-compose.ingest-verify.yml`**은 `labs/elastic-migration/ingest/check.py`만
+쓰는 추가 override입니다. 그 실습이 생성한 collector 조각을 ClickStack 자신의
+collector에 올리고(`CUSTOM_OTELCOL_CONFIG_FILE`), 입력 디렉터리를 `/ingest-verify/in`에
+마운트합니다. `check.py`가 이것으로 `clickstack`을 재생성하고, `--restore`가 이것 없이
+다시 재생성합니다. 켜 둔 채로 두지 마세요. 원래 쓰던 커스텀 설정을 대체합니다.
 
 **실제 원본 클러스터에 가까운 것은 `elastic-secure`입니다.** `elastic`
 프로파일은 `xpack.security.enabled=false`이고, 그래서

@@ -1,0 +1,3 @@
+2026-10-02_19:11:12 seoul time
+2026-01-15_00:30:00 new year
+bad-date line
