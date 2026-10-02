@@ -25,6 +25,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import ch  # noqa: E402
 
 FAULTS = ["slow-query", "n-plus-one", "pool-exhaustion", "downstream-latency", "exception-storm", "kafka-consumer-lag"]
+# the service whose pods a --target must name (the generator matches the target against that service's pod only)
+SERVICE_OF = {"slow-query": "order", "n-plus-one": "order", "pool-exhaustion": "inventory",
+              "downstream-latency": "payment", "exception-storm": "order", "kafka-consumer-lag": "notification"}
+
+
+def known_pods(client, service):
+    rows = client.rows(
+        "SELECT DISTINCT ResourceAttributes['k8s.pod.name'] AS pod FROM otel_traces "
+        "WHERE ServiceName = {svc:String} AND Timestamp >= now() - INTERVAL 1 DAY ORDER BY pod", params={"svc": service})
+    return [r["pod"] for r in rows]
 
 
 def first_ungenerated_minute(client):
@@ -47,6 +57,7 @@ def main(argv=None):
     ap.add_argument("--target", default="*", help="k8s.pod.name, or '*' for every pod (default)")
     ap.add_argument("--at", help="UTC timestamp 'YYYY-MM-DD HH:MM:SS[.mmm]' (default: now)")
     ap.add_argument("--run-id", default=None, help="label for the rows (default: manual-<utc time>)")
+    ap.add_argument("--force", action="store_true", help="accept a --target that is not a pod of the fault's service seen in the last day")
     args = ap.parse_args(argv)
 
     now = datetime.now(timezone.utc)
@@ -54,6 +65,12 @@ def main(argv=None):
     run_id = args.run_id or "manual-" + now.strftime("%Y%m%dT%H%M%SZ")
     try:
         client = ch.client_from_env()
+        if args.target not in ("*", "") and not args.force:
+            pods = known_pods(client, SERVICE_OF[args.fault])
+            if args.target not in pods:
+                print("fault.py: %s lives in %s, and %r is not one of its pods seen in the last day: %s (--force to record it anyway)"
+                      % (args.fault, SERVICE_OF[args.fault], args.target, ", ".join(pods) or "none"), file=sys.stderr)
+                return 1
         insert_event(client, ts, run_id, args.fault, args.target, 1 if args.state == "on" else 0)
         nxt = first_ungenerated_minute(client)
     except (ch.ChError, ch.ScopeError) as e:

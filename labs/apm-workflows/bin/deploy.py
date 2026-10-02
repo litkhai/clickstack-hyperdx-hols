@@ -28,6 +28,8 @@ def main(argv=None):
     ap.add_argument("--regression", action="store_true", help="only checkout has a regression: pricing called once per cart item, ~3%% errors")
     ap.add_argument("--at", help="UTC timestamp 'YYYY-MM-DD HH:MM:SS[.mmm]' (default: now)")
     args = ap.parse_args(argv)
+    if args.regression and args.service != "checkout":
+        ap.error("only checkout has a regression behaviour; --regression on %s would change nothing" % args.service)
     now = datetime.now(timezone.utc)
     ts = args.at or now.strftime("%Y-%m-%d %H:%M:%S.") + "%03d" % (now.microsecond // 1000)
     try:

@@ -215,7 +215,10 @@ class Client:
     def query(self, sql, params=None, fmt=None, settings=None, timeout=None):
         """Run one statement; return the response text."""
         check_write_scope(sql, self.database or LAB_DATABASE)
-        bootstrap = bool(re.match(r"^\s*CREATE\s+DATABASE\b", _blank_literals(sql), re.I))
+        # CREATE/DROP DATABASE run without the `database` parameter: the server refuses any request that names a
+        # database that does not exist (UNKNOWN_DATABASE), so naming it would break the first install and a repeated
+        # uninstall.
+        bootstrap = bool(re.match(r"^\s*(?:CREATE|DROP)\s+DATABASE\b", _blank_literals(sql), re.I))
         req = urllib.request.Request(
             self._url(params, settings, fmt, with_database=not bootstrap),
             data=sql.encode("utf-8"), method="POST")

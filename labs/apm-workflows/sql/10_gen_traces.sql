@@ -22,15 +22,15 @@
 CREATE OR REPLACE VIEW gen_cfg AS
 SELECT
     ifNull((SELECT argMax(value, ts) FROM lab_settings WHERE name = 'base_rpm'), 60) AS base_rpm,
-    (SELECT groupArray((fault, toUnixTimestamp64Milli(ts), target, enabled))
-       FROM (SELECT fault, ts, target, enabled FROM fault_events ORDER BY ts)) AS fe,
-    (SELECT groupArray((toUnixTimestamp64Milli(ts), service, version, regression))
-       FROM (SELECT ts, service, version, regression FROM deploy_events ORDER BY ts)) AS deps,
+    -- arraySort, not ORDER BY in a subquery: groupArray does not promise to keep the input order, and fault_on / dep_of
+    -- take the LAST matching element, so the order is part of the result
+    (SELECT arraySort(x -> x.2, groupArray((fault, toUnixTimestamp64Milli(ts), target, enabled))) FROM fault_events) AS fe,
+    (SELECT arraySort(x -> x.1, groupArray((toUnixTimestamp64Milli(ts), service, version, regression))) FROM deploy_events) AS deps,
     (SELECT mapFromArrays(groupArray(service), groupArray(base_version)) FROM topo_services) AS base_ver,
     (SELECT mapFromArrays(groupArray(service), groupArray(pods)) FROM topo_services) AS svc_pods,
     (SELECT mapFromArrays(groupArray(service), groupArray(namespace)) FROM topo_services) AS svc_ns,
-    (SELECT groupArray(endpoint) FROM (SELECT endpoint FROM topo_endpoints ORDER BY endpoint)) AS ep_names,
-    (SELECT arrayCumSum(groupArray(weight)) FROM (SELECT weight FROM topo_endpoints ORDER BY endpoint)) AS ep_cum;
+    (SELECT arrayMap(x -> x.1, arraySort(groupArray((endpoint, weight)))) FROM topo_endpoints) AS ep_names,
+    (SELECT arrayCumSum(arrayMap(x -> x.2, arraySort(groupArray((endpoint, weight))))) FROM topo_endpoints) AS ep_cum;
 
 CREATE OR REPLACE VIEW gen_traces AS
 WITH

@@ -8,8 +8,9 @@
     s1_check.py --live                  schedule the faults in the FUTURE and wait for the live views to generate them (~40 minutes)
 
 Replay, step by step (all inside database apm_workflows; nothing else is touched):
-  1. pick a block of 60 past minutes inside the backfill, by default starting 7.5 days ago (--at 'YYYY-MM-DD HH:MM' overrides);
-     7.5 days is far enough back that no 24 h / 7 d comparison made later lands on it;
+  1. pick a block of 60 past minutes inside the backfill, by default 7.5 days before the install minute (--at 'YYYY-MM-DD HH:MM'
+     overrides): a fixed place in the history, so the default works for as long as the backfill lives (TTL 30 days), and it is
+     restored afterwards anyway; refused if another run's fault events are still in that block (a kept run: --restore it first);
   2. snapshot the row count of every generated table for exactly those minutes;
   3. insert the run's fault_events rows at those past timestamps, under one run_id;
   4. delete the block's generated rows (lightweight DELETE) and regenerate the same minutes with the same generator and derived
@@ -100,10 +101,9 @@ def insert_events(client, run_id, windows, block=None, faults_on=True):
         rows += [(fmt_ts(s), name, target, 1), (fmt_ts(e), name, target, 0)]
     if block:
         rows += [(fmt_ts(block[0]), BLOCK, "*", 1), (fmt_ts(block[1]), BLOCK, "*", 0)]
-    for ts, name, target, enabled in rows:
-        client.query("INSERT INTO fault_events (ts, run_id, fault, target, enabled) VALUES "
-                     "({ts:DateTime64(3)}, {r:String}, {f:String}, {t:String}, {e:UInt8})",
-                     params={"ts": ts, "r": run_id, "f": name, "t": target, "e": enabled})
+    body = "\n".join(json.dumps({"ts": ts, "run_id": run_id, "fault": name, "target": target, "enabled": enabled})
+                     for ts, name, target, enabled in rows)
+    client.query("INSERT INTO fault_events (ts, run_id, fault, target, enabled) FORMAT JSONEachRow\n" + body)   # one insert, one part
 
 
 def windows_of_run(client, run_id):
@@ -147,15 +147,28 @@ def rewrite_block(client, s, e, log=print):
     log("  block %s -> %s rewritten (%d minutes)" % (fmt_ts(s), fmt_ts(e), BLOCK_MIN))
 
 
-def block_start_default(at):
+def install_minute(client):
+    rows = client.rows("SELECT toString(toDateTime(argMax(value, ts))) AS install FROM lab_settings WHERE name = 'install_minute'")
+    return parse_ts(rows[0]["install"])
+
+
+def block_start_default(at, install):
+    """--at, or 7.5 days before the install minute: a fixed place inside the backfill, valid as long as the backfill lives."""
     if at:
         return datetime.strptime(at, "%Y-%m-%d %H:%M").replace(second=0)
-    return (utcnow() - timedelta(days=7, hours=12)).replace(second=0, microsecond=0)
+    return (install - timedelta(days=7, hours=12)).replace(second=0, microsecond=0)
 
 
-def check_inside_backfill(client, s, e):
-    rows = client.rows("SELECT toString(toDateTime(argMax(value, ts))) AS install FROM lab_settings WHERE name = 'install_minute'")
-    install = parse_ts(rows[0]["install"])
+def check_block_free(client, s, e, run_id):
+    rows = client.rows("SELECT DISTINCT run_id FROM fault_events WHERE ts >= {s:DateTime} AND ts <= {e:DateTime} AND run_id != {r:String}",
+                       params={"s": fmt_ts(s), "e": fmt_ts(e), "r": run_id}, settings=SYNC)
+    if rows:
+        raise ch.ChError("block %s -> %s still holds fault events of run(s) %s: --restore them first, or pick another block with --at"
+                         % (fmt_ts(s), fmt_ts(e), ", ".join(r["run_id"] for r in rows)))
+
+
+def check_inside_backfill(client, s, e, install=None):
+    install = install or install_minute(client)
     first = install - timedelta(days=8)
     if s < first + timedelta(minutes=30) or e > install:
         raise ch.ChError("block %s -> %s is not inside the backfill [%s, %s)" % (fmt_ts(s), fmt_ts(e), fmt_ts(first), fmt_ts(install)))
@@ -331,10 +344,12 @@ def restore(client, run_id, out=print):
 
 
 def replay(client, args, out=print):
-    s = block_start_default(args.at)
+    install = install_minute(client)
+    s = block_start_default(args.at, install)
     e = s + timedelta(minutes=BLOCK_MIN)
-    check_inside_backfill(client, s, e)
+    check_inside_backfill(client, s, e, install)
     run_id = args.run_id or "s1-" + utcnow().strftime("%Y%m%dT%H%M%SZ")
+    check_block_free(client, s, e, run_id)
     pods = inventory_pods(client, s, e)
     if len(pods) < 2:
         raise ch.ChError("expected two inventory pods in the block %s -> %s, saw %r -- is the backfill there?" % (fmt_ts(s), fmt_ts(e), pods))
@@ -343,12 +358,22 @@ def replay(client, args, out=print):
     snapshot = counts(client, s, e)
     out("  snapshot before: " + ", ".join("%s=%d" % (k.replace("otel_", ""), v) for k, v in sorted(snapshot.items())))
     record_run(client, run_id, "started", "replay", s, e, snapshot)
-    insert_events(client, run_id, windows, block=(s, e))
-    out("  fault_events: %d rows written at past timestamps" % (2 * (len(windows) + 1)))
-    t = time.time()
-    rewrite_block(client, s, e, log=out)
-    out("  regenerated in %.0f s" % (time.time() - t))
-    passed, failed = evaluate(client, windows, out=out)
+    try:
+        insert_events(client, run_id, windows, block=(s, e))
+        out("  fault_events: %d rows written at past timestamps" % (2 * (len(windows) + 1)))
+        t = time.time()
+        rewrite_block(client, s, e, log=out)
+        out("  regenerated in %.0f s" % (time.time() - t))
+        passed, failed = evaluate(client, windows, out=out)
+    except Exception:
+        # never leave faulted minutes in the history: put the block back before reporting the error
+        out("")
+        out("replay %s failed; restoring the block before exiting" % run_id)
+        try:
+            restore(client, run_id, out=out)
+        except Exception as again:   # noqa: BLE001 -- report both, keep the first
+            out("restore failed as well (%s): run  s1_check.py --restore %s" % (again, run_id))
+        raise
     if args.keep:
         out("")
         out("--keep: the block is left rewritten. Evaluate again with --evaluate %s, restore with --restore %s" % (run_id, run_id))

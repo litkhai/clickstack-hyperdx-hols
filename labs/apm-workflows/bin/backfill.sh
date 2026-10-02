@@ -35,6 +35,8 @@ echo "window: [$start, $end) UTC  = $days days, $minutes minutes (the install mi
 
 echo "plan: spans and traces the generator will write over the window"
 read -r spans traces < <(q --param window_start="$start" --param window_minutes="$minutes" --file "$LAB/sql/backfill_plan.sql")
+# the plan comes through process substitution, whose failure `set -e` does not see: check the numbers instead
+case "${spans:-}${traces:-}" in ''|*[!0-9]*) echo "plan query failed (no span/trace count): not starting the backfill" >&2; exit 1 ;; esac
 echo "  spans=$spans traces=$traces  (logs and metrics are derived from these spans, per day below)"
 if [ "$spans" -gt 20000000 ] && [ "$force" -ne 1 ]; then
   echo "refusing: $spans spans is above 20,000,000 (use --force)" >&2; exit 1

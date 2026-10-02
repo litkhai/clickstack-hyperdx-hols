@@ -134,7 +134,7 @@ A server span is an error only for 5xx (OTel HTTP semantic conventions), so 4xx 
 (its Help menu shows the v2.39.0 release notes; the running build is not displayed), 2026-10-03:
 
 - `bin/s1_check.py`, replay mode: **44 of 44 assertions PASS**, twice (runs `s1-20261002T175916Z` and
-  `s1-20261002T185112Z`, a 60-minute block 7.5 days back; the first took 38 s end to end); the restore regenerated the block and the
+  `s1-20261002T185112Z`, a 60-minute block of the backfill; the first took 38 s end to end); the restore regenerated the block and the
   row counts of all five tables equalled the snapshot. Measured in the second run: slow-query sql_share 0.993 and
   18 slow-log entries (max `rows_examined` 1,168,553); n-plus-one 31.8 statements per request; pool-exhaustion
   conn_wait_share 0.904 on the target pod and 0.000 on the other; downstream-latency 0.930 of the purchase in the
@@ -156,7 +156,8 @@ A server span is an error only for 5xx (OTel HTTP semantic conventions), so 4xx 
 
 You need a ClickHouse Cloud service with Managed ClickStack and a credentials file that defines `CH_HOST`, `CH_USER`
 and `CH_PASSWORD` (HTTPS port 8443) — and, for the ClickStack step only, `CHC_ORG_ID`, `CHC_KEY_ID` and `CHC_KEY_SECRET`
-(a Cloud API key). The lab writes only into database `apm_workflows`, and `lib/ch.py` refuses a write anywhere else.
+(a Cloud API key). The lab writes only into database `apm_workflows`; `lib/ch.py` refuses the write statements the scripts
+use when they name another database — a guard against accidents, not a security boundary.
 
 ```bash
 cd labs/apm-workflows
@@ -225,7 +226,7 @@ Not run here: the in-database generator cannot stand in for a real JVM. What the
 labs/apm-workflows/
 ├── .env.example        the path of the credentials file — never the credentials
 ├── bin/                install.sh · backfill.sh · fault.py · deploy.py · s1_check.py · stop.sh · uninstall.sh
-├── lib/ch.py           HTTPS client; refuses to write outside apm_workflows
+├── lib/ch.py           HTTPS client; guards against writing outside apm_workflows
 ├── sql/                00–05 tables, switches, topology, S1 bookkeeping · 10–13 generator views and watermark ·
 │                       30 the live views · backfill_*.sql · s1_*.sql (S1 diagnosis and checks) · verify_*.sql
 ├── clickstack/         setup.py · tiles/*.sql (one dashboard tile per file)
@@ -365,7 +366,7 @@ agent 기본 설정에서 소비자의 `process` span은 생산자 `publish` spa
 (Help 메뉴에 v2.39.0 릴리스 안내가 나오고, 실행 중인 빌드는 표시되지 않음), 2026-10-03.
 
 - `bin/s1_check.py` 재생 모드: **판정 44개 중 44개 PASS**를 두 번 확인했습니다(실행 `s1-20261002T175916Z`, `s1-20261002T185112Z`).
-  7.5일 전의 60분 구간을 썼고, 첫 실행은 처음부터 끝까지 38초 걸렸습니다. 되돌리기는 그 구간을 다시 만들었고, 다섯 테이블의 행 수가
+  백필 안의 60분 구간을 썼고, 첫 실행은 처음부터 끝까지 38초 걸렸습니다. 되돌리기는 그 구간을 다시 만들었고, 다섯 테이블의 행 수가
   실행 전 기록과 모두 같았습니다. 두 번째 실행의 측정값은 이렇습니다.
   - 느린 쿼리: SQL 비중 0.993, slow log 18건(`rows_examined` 최대 1,168,553)
   - N+1: 요청당 31.8문장
@@ -390,7 +391,8 @@ agent 기본 설정에서 소비자의 `process` span은 생산자 `publish` spa
 
 Managed ClickStack이 있는 ClickHouse Cloud 서비스와, `CH_HOST`·`CH_USER`·`CH_PASSWORD`를 정의한 접속 파일이 필요합니다
 (HTTPS 8443). ClickStack 단계에는 `CHC_ORG_ID`·`CHC_KEY_ID`·`CHC_KEY_SECRET`(Cloud API 키)도 필요합니다. 랩은 데이터베이스
-`apm_workflows`에만 쓰고, `lib/ch.py`가 다른 곳에 쓰는 것을 거부합니다.
+`apm_workflows`에만 씁니다. `lib/ch.py`는 스크립트가 쓰는 형태의 쓰기 문장이 다른 데이터베이스를 가리키면 거부합니다.
+실수를 막는 장치이고, 보안 경계는 아닙니다.
 
 ```bash
 cd labs/apm-workflows
@@ -457,7 +459,7 @@ bin/uninstall.sh                # DROP DATABASE apm_workflows (먼저 확인)
 labs/apm-workflows/
 ├── .env.example        접속 파일 경로 — 자격 증명은 넣지 않음
 ├── bin/                install.sh · backfill.sh · fault.py · deploy.py · s1_check.py · stop.sh · uninstall.sh
-├── lib/ch.py           HTTPS 클라이언트. apm_workflows 밖에는 쓰지 않음
+├── lib/ch.py           HTTPS 클라이언트. apm_workflows 밖에 쓰는 실수를 막음
 ├── sql/                00–05 테이블·스위치·구성·S1 기록 · 10–13 생성기 view와 워터마크 ·
 │                       30 live view · backfill_*.sql · s1_*.sql (S1 진단과 검사) · verify_*.sql
 ├── clickstack/         setup.py · tiles/*.sql (대시보드 타일 하나당 파일 하나)

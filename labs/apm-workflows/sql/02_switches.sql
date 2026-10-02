@@ -1,6 +1,7 @@
 -- Switches are rows. The generator reads them; nothing here is "on" by default.
 
--- fault: slow-query | n-plus-one | pool-exhaustion | downstream-latency | exception-storm
+-- fault: slow-query | n-plus-one | pool-exhaustion | downstream-latency | exception-storm | kafka-consumer-lag
+-- (where each one lives: bin/fault.py; the S1 check also writes marker rows the generator ignores)
 -- target: '*' (or '') = every pod, otherwise a k8s.pod.name. A request is affected iff the
 -- latest event for its fault whose ts <= the request's timestamp (and whose target is '*',
 -- '' or the request's pod) has enabled = 1.
@@ -16,8 +17,8 @@ ENGINE = MergeTree
 ORDER BY (fault, ts)
 TTL toDateTime(ts) + toIntervalDay(30);
 
--- The version of a request is the latest deploy <= its timestamp (default 1.4.0, no regression).
--- regression = 1: un-indexed order_items lookup in checkout and ~3% errors. A new version also
+-- The version of a request, per service, is the latest deploy <= its timestamp (default: topo_services.base_version).
+-- regression = 1 (checkout only): checkout calls pricing once per cart item and ~3% errors. A new version also
 -- gives the service new pod names.
 CREATE TABLE IF NOT EXISTS deploy_events
 (

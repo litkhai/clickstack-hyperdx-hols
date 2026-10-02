@@ -83,7 +83,7 @@ def tiles():
         if "from" in head:  # derive from the lab's own SQL so the query exists once
             src = open(os.path.join(LAB, head["from"])).read()
             src = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("--")).strip()
-            statements = [st.strip() for st in re.split(r";\s*(?:\n|$)", src) if st.strip()]
+            statements = ch.split_statements(src)   # the lab's literal- and comment-aware splitter
             src = statements[int(head.get("statement", "1")) - 1]  # a tile runs one statement
             src = src.replace("{start:DateTime}", "fromUnixTimestamp64Milli({startDateMilliseconds:Int64})")
             src = src.replace("{end:DateTime}", "fromUnixTimestamp64Milli({endDateMilliseconds:Int64})")
