@@ -2,12 +2,13 @@
 """Switch a fault on or off: one row in apm_workflows.fault_events.
 
     fault.py on  slow-query
-    fault.py on  pool-exhaustion --target shop-7d9f8c6b5d-ab12c
-    fault.py off pool-exhaustion --target shop-7d9f8c6b5d-ab12c
+    fault.py on  pool-exhaustion --target inventory-7d9f8c6b5d-ab12c
+    fault.py off pool-exhaustion --target inventory-7d9f8c6b5d-ab12c
     fault.py on  n-plus-one --at '2026-10-03 10:00:00' --run-id my-run
 
-Faults: slow-query (DB-wide) | n-plus-one | pool-exhaustion | downstream-latency | exception-storm
-(per pod when --target names a k8s.pod.name; '*' = every pod, the default).
+Faults and where they live: slow-query (order: history query) | n-plus-one (order: history) |
+pool-exhaustion (inventory pod) | downstream-latency (payment -> external gateway) | exception-storm (order: detail) |
+kafka-consumer-lag (notification). --target is a k8s.pod.name of the service where the fault lives; '*' = every pod (default).
 
 A request is affected iff its timestamp falls in an on-interval. Minutes the live view has already
 generated are not revised, so an event only changes requests generated after it: the script prints the
@@ -23,13 +24,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import ch  # noqa: E402
 
-FAULTS = ["slow-query", "n-plus-one", "pool-exhaustion", "downstream-latency", "exception-storm"]
+FAULTS = ["slow-query", "n-plus-one", "pool-exhaustion", "downstream-latency", "exception-storm", "kafka-consumer-lag"]
 
 
 def first_ungenerated_minute(client):
     rows = client.rows(
-        "SELECT toString(toStartOfMinute(maxOrNull(Timestamp)) + 60) AS m FROM otel_traces "
-        "WHERE ServiceName = 'shop' AND SpanKind = 'Server' AND Timestamp >= now() - INTERVAL 10 DAY")
+        "SELECT toString(next_minute) AS m FROM traces_next_minute")
     return rows[0]["m"] if rows and rows[0]["m"] else None
 
 

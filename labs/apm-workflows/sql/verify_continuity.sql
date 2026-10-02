@@ -7,7 +7,7 @@ SELECT 'traces: max over minutes of (root spans - distinct root TraceIds)' AS ch
 FROM
 (
     SELECT toStartOfMinute(Timestamp) AS m, count() - uniqExact(TraceId) AS extra
-    FROM otel_traces WHERE ServiceName = 'shop' AND ParentSpanId = '' GROUP BY m
+    FROM otel_traces WHERE ServiceName = 'web-bff' AND ParentSpanId = '' GROUP BY m
 );
 
 SELECT 'spans: rows - distinct (TraceId, SpanId)' AS check, count() - uniqExact(TraceId, SpanId) AS value FROM otel_traces;
@@ -33,20 +33,20 @@ SELECT toString(toStartOfMinute(maxIf(Timestamp, ResourceAttributes['apm.backfil
        toString(toStartOfMinute(minIf(Timestamp, ResourceAttributes['apm.backfill'] != 'true'))) AS first_live_minute,
        dateDiff('second', toStartOfMinute(maxIf(Timestamp, ResourceAttributes['apm.backfill'] = 'true')),
                           toStartOfMinute(minIf(Timestamp, ResourceAttributes['apm.backfill'] != 'true'))) AS seconds_between
-FROM otel_traces WHERE ServiceName = 'shop' AND ParentSpanId = '';
+FROM otel_traces WHERE ServiceName = 'web-bff' AND ParentSpanId = '';
 
-SELECT 'minutes without shop requests between the first and the newest' AS check, count() AS value
+SELECT 'minutes without web-bff requests between the first and the newest' AS check, count() AS value
 FROM
 (
     SELECT arrayJoin(range(toUInt32(a), toUInt32(b) + 60, 60)) AS t
-    FROM (SELECT min(toStartOfMinute(Timestamp)) AS a, max(toStartOfMinute(Timestamp)) AS b FROM otel_traces WHERE ServiceName = 'shop' AND ParentSpanId = '')
+    FROM (SELECT min(toStartOfMinute(Timestamp)) AS a, max(toStartOfMinute(Timestamp)) AS b FROM otel_traces WHERE ServiceName = 'web-bff' AND ParentSpanId = '')
 )
-WHERE t NOT IN (SELECT toUInt32(toStartOfMinute(Timestamp)) FROM otel_traces WHERE ServiceName = 'shop' AND ParentSpanId = '');
+WHERE t NOT IN (SELECT toUInt32(toStartOfMinute(Timestamp)) FROM otel_traces WHERE ServiceName = 'web-bff' AND ParentSpanId = '');
 
-SELECT 'minutes without shop histogram points between the first and the newest' AS check, count() AS value
+SELECT 'minutes without web-bff histogram points between the first and the newest' AS check, count() AS value
 FROM
 (
     SELECT arrayJoin(range(toUInt32(a), toUInt32(b), 60)) AS t
-    FROM (SELECT min(toStartOfMinute(TimeUnix)) AS a, max(toStartOfMinute(TimeUnix)) AS b FROM otel_metrics_histogram WHERE ServiceName = 'shop')
+    FROM (SELECT min(toStartOfMinute(TimeUnix)) AS a, max(toStartOfMinute(TimeUnix)) AS b FROM otel_metrics_histogram WHERE ServiceName = 'web-bff')
 )
-WHERE t NOT IN (SELECT toUInt32(toStartOfMinute(TimeUnix)) FROM otel_metrics_histogram WHERE ServiceName = 'shop');
+WHERE t NOT IN (SELECT toUInt32(toStartOfMinute(TimeUnix)) FROM otel_metrics_histogram WHERE ServiceName = 'web-bff');
