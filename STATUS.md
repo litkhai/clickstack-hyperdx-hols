@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-02** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-03** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -15,7 +15,7 @@ GitHub secret scanning and push protection are on.
 
 ## Inventory
 
-6 pages across four areas of the README tables: two in `labs/`, two in `workshops/`, plus
+7 pages across four areas of the README tables: three in `labs/`, two in `workshops/`, plus
 `otel-profiles/` and `clickstack-config/`. The two workshops are still single-language (#3).
 
 7 OTel profiles in `otel-profiles/` — `linux-host`, `gpu-nvidia`, `baremetal-node`, `virt-kvm`,
@@ -91,6 +91,12 @@ a plan only (#59).
 `labs/elastic-migration/AGENTS.md` is written for an agent **running** a migration rather
 than changing the lab, and opens with what the lab does not do.
 
+`labs/apm-workflows/` runs entirely inside a ClickHouse Cloud service with Managed ClickStack: an eleven-service shop
+generated in SQL by refreshable materialized views (8-day backfill plus live, TTL 30 days), fault switches as rows, and
+a ClickStack dashboard created through the Cloud API. **S1 verified** on ClickHouse 26.6.1.2191 (Cloud, ap-northeast-2)
+with Managed ClickStack, 2026-10-03: the replayed S1 check passes 44 of 44 assertions and restores the block exactly.
+S2–S6 are designed in #66 and not built; S7 is documentation only.
+
 ## Open work
 
 Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-hols/issues) · [needs a re-run](https://github.com/litkhai/clickstack-hyperdx-hols/issues?q=is%3Aopen+label%3Are-verify):
@@ -98,6 +104,7 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F1–F7: roadmap labs](https://github.com/litkhai/clickstack-hyperdx-hols/issues/2)
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
+- [labs/apm-workflows/: S2–S6](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66) — split 1 (generator, backfill, S1) done; S2 alerts designed, webhook target open
 - [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Filebeat and Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59) and the [HyperDX dashboard output](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)
 - Found while building the dashboards path: [Elasticsearch `float` values load one float32 ulp off](https://github.com/litkhai/clickstack-hyperdx-hols/issues/61) (`re-verify`), [the manifest records ClickHouse types only](https://github.com/litkhai/clickstack-hyperdx-hols/issues/62), [clickstack-config's Error count tile filter is probably dropped by the API](https://github.com/litkhai/clickstack-hyperdx-hols/issues/60) (`re-verify`)
 - Found while building the data path, none of them blocking:
