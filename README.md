@@ -69,7 +69,13 @@ Current state and what still needs a re-run: [STATUS.md](STATUS.md).
 git config core.hooksPath .githooks
 python3 .github/scripts/check_links.py
 ./.github/scripts/check_syntax.sh
+pip install --quiet markdown && python3 .github/scripts/build_site.py && git diff --exit-code -- docs/labs.json
 ```
+
+`docs/labs.json` is the one committed file under `docs/`: the labs whose `lab.yaml` sets
+`web: true`, for the notes site, which fetches it from `main`. Keys and categories:
+[`tools/lab.schema.md`](tools/lab.schema.md). The last command fails if the committed file is
+out of date — commit what it wrote.
 
 ### 📝 License
 
@@ -144,7 +150,13 @@ source·대시보드·알림을 하나의 Terraform 설정으로 관리하며, s
 git config core.hooksPath .githooks
 python3 .github/scripts/check_links.py
 ./.github/scripts/check_syntax.sh
+pip install --quiet markdown && python3 .github/scripts/build_site.py && git diff --exit-code -- docs/labs.json
 ```
+
+`docs/labs.json`은 `docs/`에서 유일하게 커밋하는 파일입니다. `lab.yaml`에 `web: true`가 있는
+실습만 담기며, 노트 사이트가 `main`에서 가져갑니다. 키와 분류는
+[`tools/lab.schema.md`](tools/lab.schema.md). 마지막 명령은 커밋된 파일이 낡았으면 실패합니다 —
+새로 쓴 파일을 커밋하세요.
 
 ### 📝 라이선스
 
