@@ -54,7 +54,7 @@ N1_REPEATED = ("order_items", "order_id = ?")
 POOL_ON, POOL_OFF = 0.3, 0.05
 DOWN_ON, DOWN_OFF, GATEWAY = 0.5, 0.2, "pg.example.com"
 GATEWAY_P50_MS = 700
-LAG_ON_S, LAG_OFF_S, LAG_OTHER_S, PURCHASE_P95_TOL = 60.0, 5.0, 5.0, 0.20
+LAG_ON_S, LAG_OFF_S, LAG_OTHER_S, PURCHASE_P50_TOL = 60.0, 5.0, 5.0, 0.20
 
 EP_HISTORY, EP_PURCHASE = "GET /orders", "POST /checkout"
 EDGE = "web-bff"
@@ -246,9 +246,11 @@ def positive(fault, m, neg):
     elif fault == "kafka-consumer-lag":
         r.append(("notification delay p95 >= %d s" % LAG_ON_S, "%.1f s" % m["delay_not"][1], m["delay_not"][1] >= LAG_ON_S, True))
         r.append(("fulfillment delay p95 < %d s" % LAG_OTHER_S, "%.3f s" % m["delay_ful"][1], m["delay_ful"][1] < LAG_OTHER_S and m["delay_ful"][2] > 0, False))
-        ref = neg["pur_p95"]
-        r.append(("purchase p95 within %d%% of the negative window" % (PURCHASE_P95_TOL * 100), "%.1f ms vs %.1f ms" % (m["pur_p95"], ref),
-                  ref > 0 and abs(m["pur_p95"] - ref) <= PURCHASE_P95_TOL * ref, False))
+        # p50, not p95: with background noise ~6% of purchases are retried (a 1 s timeout) and a 4-minute window holds ~25 purchases,
+        # so the p95 is decided by whether two retries happen to fall in it. The median is what "the user-facing purchase is unaffected" means.
+        ref = neg["pur_p50"]
+        r.append(("purchase p50 within %d%% of the negative window" % (PURCHASE_P50_TOL * 100), "%.1f ms vs %.1f ms" % (m["pur_p50"], ref),
+                  ref > 0 and abs(m["pur_p50"] - ref) <= PURCHASE_P50_TOL * ref, False))
         r.append(("consumer-lag metric: notification rises, fulfillment stays 0", "%g / %g" % (m["lag_not"], m["lag_ful"]), m["lag_not"] > 0 and m["lag_ful"] == 0, True))
     return r
 

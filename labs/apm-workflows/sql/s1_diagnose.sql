@@ -1,5 +1,5 @@
 -- S1 -- slow transaction -> the SQL behind it, across services.
--- Three result sets over a time window; `service` is the edge service whose root spans are the transactions (web-bff).
+-- Three result sets over a time window (transactions that succeeded: a root span that ended with a 5xx is left out, see `roots`); `service` is the edge service whose root spans are the transactions (web-bff).
 -- Parameters: {start:DateTime} {end:DateTime} (UTC) and {service:String}; run each statement on its own (the SQL console
 -- and the ClickStack SQL editor take one query at a time; replace the three {...} placeholders with literals there).
 -- Attribute names are the agent's default (old) database semconv: db.system, db.statement, db.sql.table; with the stable
@@ -20,6 +20,7 @@ WITH
         SELECT TraceId, SpanName AS endpoint, Duration AS root_ns
         FROM otel_traces
         WHERE ServiceName = {service:String} AND SpanKind = 'Server' AND ParentSpanId = ''
+          AND StatusCode != 'Error'            -- transactions that failed at the edge (5xx) are an error-rate story; S1 explains the slow ones that succeeded
           AND Timestamp >= {start:DateTime} AND Timestamp < {end:DateTime}
     ),
     parts AS
@@ -111,6 +112,7 @@ WITH
         SELECT TraceId, SpanName AS endpoint, Duration AS root_ns
         FROM otel_traces
         WHERE ServiceName = {service:String} AND SpanKind = 'Server' AND ParentSpanId = ''
+          AND StatusCode != 'Error'
           AND Timestamp >= {start:DateTime} AND Timestamp < {end:DateTime}
     ),
     totals AS (SELECT endpoint, sum(root_ns) AS root_ns FROM roots GROUP BY endpoint)
