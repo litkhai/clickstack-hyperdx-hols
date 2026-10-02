@@ -212,30 +212,30 @@ def measure(client, start, end, target_pod):
 def positive(fault, m, neg):
     r = []
     if fault == "slow-query":
-        r.append(("top statement by total time is the customer_email one", m["top_statement"][:60], SLOW_STATEMENT in m["top_statement"]))
-        r.append(("... in service order, table orders", "%s / %s" % (m["top_service"], m["top_table"]), m["top_service"] == SLOW_SERVICE and m["top_table"] == SLOW_TABLE))
-        r.append(("order history sql_share >= %.1f" % SLOW_SQL_SHARE, "%.3f" % m["hist_sql_share"], m["hist_sql_share"] >= SLOW_SQL_SHARE))
-        r.append(("slow-log rows with rows_examined >= %d" % SLOW_MIN_ROWS, "%d (max %d)" % (m["slow_big"], m["slow_max_rows"]), m["slow_big"] > 0))
+        r.append(("top statement by total time is the customer_email one", m["top_statement"][:60], SLOW_STATEMENT in m["top_statement"], True))
+        r.append(("... in service order, table orders", "%s / %s" % (m["top_service"], m["top_table"]), m["top_service"] == SLOW_SERVICE and m["top_table"] == SLOW_TABLE, True))
+        r.append(("order history sql_share >= %.1f" % SLOW_SQL_SHARE, "%.3f" % m["hist_sql_share"], m["hist_sql_share"] >= SLOW_SQL_SHARE, True))
+        r.append(("slow-log rows with rows_examined >= %d" % SLOW_MIN_ROWS, "%d (max %d)" % (m["slow_big"], m["slow_max_rows"]), m["slow_big"] > 0, True))
     elif fault == "n-plus-one":
-        r.append(("order history db_spans_per_trace >= %d" % N1_MIN_SPANS, "%.1f" % m["hist_spans"], m["hist_spans"] >= N1_MIN_SPANS))
-        r.append(("most repeated statement is order_items ... order_id = ?", m["hist_repeated"][:60], all(x in m["hist_repeated"] for x in N1_REPEATED)))
+        r.append(("order history db_spans_per_trace >= %d" % N1_MIN_SPANS, "%.1f" % m["hist_spans"], m["hist_spans"] >= N1_MIN_SPANS, True))
+        r.append(("most repeated statement is order_items ... order_id = ?", m["hist_repeated"][:60], all(x in m["hist_repeated"] for x in N1_REPEATED), True))
     elif fault == "pool-exhaustion":
         r.append(("purchase conn_wait_share >= %.1f, attributed to inventory + target pod" % POOL_ON,
                   "%.3f (%s %s)" % (m["inv_target_conn"], m["pur_conn_service"], m["pur_conn_pod"][-5:]),
-                  m["inv_target_conn"] >= POOL_ON and m["pur_conn_service"] == "inventory"))
-        r.append(("the other inventory pod conn_wait_share < %.2f" % POOL_OFF, "%.3f" % m["inv_other_conn"], m["inv_other_conn"] < POOL_OFF))
-        r.append(("Hikari pending metric > 0 on the target pod", "%g" % m["pending_target"], m["pending_target"] > 0))
+                  m["inv_target_conn"] >= POOL_ON and m["pur_conn_service"] == "inventory", True))
+        r.append(("the other inventory pod conn_wait_share < %.2f" % POOL_OFF, "%.3f" % m["inv_other_conn"], m["inv_other_conn"] < POOL_OFF, False))
+        r.append(("Hikari pending metric > 0 on the target pod", "%g" % m["pending_target"], m["pending_target"] > 0, True))
     elif fault == "downstream-latency":
-        r.append(("purchase share in the external call >= %.1f" % DOWN_ON, "%.3f" % m["pur_ext_share"], m["pur_ext_share"] >= DOWN_ON))
-        r.append(("... and it is the payment gateway", m["pur_slowest"], m["pur_slowest"] == GATEWAY))
-        r.append(("gateway CLIENT span p50 >= %d ms; payment SERVER p50" % GATEWAY_P50_MS, "%.0f ms; %.0f ms" % (m["gateway_p50"], m["payment_p50"]), m["gateway_p50"] >= GATEWAY_P50_MS))
+        r.append(("purchase share in the external call >= %.1f" % DOWN_ON, "%.3f" % m["pur_ext_share"], m["pur_ext_share"] >= DOWN_ON, True))
+        r.append(("... and it is the payment gateway", m["pur_slowest"], m["pur_slowest"] == GATEWAY, False))
+        r.append(("gateway CLIENT span p50 >= %d ms; payment SERVER p50" % GATEWAY_P50_MS, "%.0f ms; %.0f ms" % (m["gateway_p50"], m["payment_p50"]), m["gateway_p50"] >= GATEWAY_P50_MS, True))
     elif fault == "kafka-consumer-lag":
-        r.append(("notification delay p95 >= %d s" % LAG_ON_S, "%.1f s" % m["delay_not"][1], m["delay_not"][1] >= LAG_ON_S))
-        r.append(("fulfillment delay p95 < %d s" % LAG_OTHER_S, "%.3f s" % m["delay_ful"][1], m["delay_ful"][1] < LAG_OTHER_S and m["delay_ful"][2] > 0))
+        r.append(("notification delay p95 >= %d s" % LAG_ON_S, "%.1f s" % m["delay_not"][1], m["delay_not"][1] >= LAG_ON_S, True))
+        r.append(("fulfillment delay p95 < %d s" % LAG_OTHER_S, "%.3f s" % m["delay_ful"][1], m["delay_ful"][1] < LAG_OTHER_S and m["delay_ful"][2] > 0, False))
         ref = neg["pur_p95"]
         r.append(("purchase p95 within %d%% of the negative window" % (PURCHASE_P95_TOL * 100), "%.1f ms vs %.1f ms" % (m["pur_p95"], ref),
-                  ref > 0 and abs(m["pur_p95"] - ref) <= PURCHASE_P95_TOL * ref))
-        r.append(("consumer-lag metric: notification rises, fulfillment stays 0", "%g / %g" % (m["lag_not"], m["lag_ful"]), m["lag_not"] > 0 and m["lag_ful"] == 0))
+                  ref > 0 and abs(m["pur_p95"] - ref) <= PURCHASE_P95_TOL * ref, False))
+        r.append(("consumer-lag metric: notification rises, fulfillment stays 0", "%g / %g" % (m["lag_not"], m["lag_ful"]), m["lag_not"] > 0 and m["lag_ful"] == 0, True))
     return r
 
 
@@ -277,8 +277,9 @@ def evaluate(client, windows, control=False, out=print):
     mneg = meas(NEGATIVE)
     if control:
         for fault in FAULTS:
-            for text, measured, ok in positive(fault, mneg, mneg):
-                results.append(("no-fault window vs %s" % fault, text, measured, not ok))
+            for text, measured, ok, cause in positive(fault, mneg, mneg):
+                if cause:      # the guards (the other pod stays quiet, the purchase is as fast) hold in any window
+                    results.append(("no-fault window vs %s" % fault, text, measured, not ok))
     else:
         for fault in FAULTS:
             for text, measured, ok in negative(fault, mneg):
@@ -286,7 +287,7 @@ def evaluate(client, windows, control=False, out=print):
         results.append(("negative", "all five indicators off in the no-fault window", ",".join(k for k, v in mneg["ind"].items() if v) or "none on", not any(mneg["ind"].values())))
         for fault in FAULTS:
             m = meas(fault)
-            for text, measured, ok in positive(fault, m, mneg):
+            for text, measured, ok, _cause in positive(fault, m, mneg):
                 results.append(("positive / %s" % fault, text, measured, ok))
             for other in FAULTS:
                 if other != fault:
@@ -297,11 +298,14 @@ def evaluate(client, windows, control=False, out=print):
     a = max(len(r[1]) for r in results)
     out("%-*s  %-*s  %-44s  %s" % (w, "window", a, "assertion", "measured", "result"))
     for win, text, measured, ok in results:
-        out("%-*s  %-*s  %-44s  %s" % (w, win, a, text, measured, "PASS" if ok else "FAIL"))
+        label = ("fails, as it must" if ok else "PASSES: the check cannot tell") if control else ("PASS" if ok else "FAIL")
+        out("%-*s  %-*s  %-44s  %s" % (w, win, a, text, measured, label))
     passed = sum(1 for r in results if r[3])
     out("")
-    out("%d assertions, %d PASS, %d FAIL%s" % (len(results), passed, len(results) - passed,
-        "   (control: each positive assertion must FAIL on the no-fault window; a FAIL of the assertion shows here as PASS)" if control else ""))
+    if control:
+        out("%d cause-detecting assertions run on the window without the fault: %d fail as they must, %d pass (the check would not notice the fault)" % (len(results), passed, len(results) - passed))
+    else:
+        out("%d assertions, %d PASS, %d FAIL" % (len(results), passed, len(results) - passed))
     return passed, len(results) - passed
 
 
