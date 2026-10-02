@@ -4,8 +4,10 @@
 
 ## CI
 
-`checks` (on pull requests): `links`, `syntax`, `otel-profiles`, `terraform`, `secrets`
-(gitleaks), `hygiene` — green.
+`checks` on pull requests: one job, `guard` — gitleaks and the three hygiene checks
+(tracked files shadowed by an ignore rule, Terraform state or archives, `/Users/` paths).
+`links`, `syntax`, `otel-profiles` and `terraform` run only by hand
+(`gh workflow run checks.yml --ref <branch>`), or locally with the same scripts (#67).
 `pages` (on push to `main`): builds the site with `.github/scripts/build_site.py` and deploys
 it to https://litkhai.github.io/clickstack-hyperdx-hols/. Each page sits at its own
 repository path — `/labs/elastic-migration/`, `/otel-profiles/` — so a URL mirrors the tree.

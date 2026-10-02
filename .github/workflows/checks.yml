@@ -2,76 +2,31 @@ name: checks
 
 # Solo repository: checks run on pull requests (and by hand), not again on the
 # push to main that merging a PR produces. The pre-commit hook covers direct pushes.
+#
+# What runs:
+#   - pull request: one job, `guard` (gitleaks and the three hygiene checks) --
+#     the mistakes that cannot be taken back once pushed.
+#   - by hand (workflow_dispatch): `guard` plus `links`, `syntax`,
+#     `otel-profiles` and `terraform`. Run them when a change touches what they
+#     check, or locally (each job's commands are plain scripts):
+#     gh workflow run checks.yml --ref <branch>
 on:
   pull_request:
   workflow_dispatch:
+
+# A newer push to the same ref makes the older run pointless.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  links:
-    name: markdown links
+  guard:
+    name: guard — secrets and hygiene
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Resolve every relative link
-        run: python3 .github/scripts/check_links.py
-
-  syntax:
-    name: shell / python / yaml syntax
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Parse-check tracked files
-        run: ./.github/scripts/check_syntax.sh
-
-  otel-profiles:
-    name: otel profile conventions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Lint profiles and check they merge
-        # A bare pipeline key or a redefined base component disables ClickStack's
-        # own ingestion with no error at startup, so this is checked here rather
-        # than left to review. See otel-profiles/CONVENTIONS.md.
-        run: |
-          if ! command -v yq >/dev/null; then
-            sudo curl -sSL -o /usr/local/bin/yq \
-              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-            sudo chmod +x /usr/local/bin/yq
-          fi
-          yq --version
-          ./otel-profiles/bin/lint.sh
-          ./otel-profiles/bin/build-config.sh linux-host gpu-nvidia baremetal-node virt-kvm mysql > /dev/null
-          ./otel-profiles/bin/build-config.sh --tier b virt-vsphere mysql aws-rds-mysql > /dev/null
-
-  terraform:
-    name: clickstack-config terraform
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.11"
-          terraform_wrapper: false
-      - name: fmt -check
-        run: terraform -chdir=clickstack-config/terraform fmt -check -diff
-      - name: init (no backend, provider only)
-        run: terraform -chdir=clickstack-config/terraform init -backend=false
-      # No `plan`/`apply` here: that needs a live ClickStack to validate
-      # dashboard_json and alert configuration against (the provider calls
-      # its API at plan time when reachable -- see docs/authoring.md #6),
-      # and standing one up per PR is not free. `validate` still catches
-      # type errors, missing required attributes and bad references; a real
-      # plan/apply is a documented local step against _base/ instead (see
-      # clickstack-config/README.md).
-      - name: validate
-        run: terraform -chdir=clickstack-config/terraform validate
-
-  secrets:
-    name: secret scan
-    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,12 +36,6 @@ jobs:
         env:
           GITLEAKS_CONFIG: .gitleaks.toml
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  hygiene:
-    name: repository hygiene
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - name: No tracked file may match an ignore rule
         # gitignore does not apply to already-tracked files, so a rule added
         # after the fact is silently inert. Catch that instead of trusting it.
@@ -140,3 +89,74 @@ jobs:
             exit 1
           fi
           echo "OK: no host home paths in code"
+
+  links:
+    # Runs only by hand: gh workflow run checks.yml --ref <branch>
+    if: github.event_name == 'workflow_dispatch'
+    name: markdown links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve every relative link
+        run: python3 .github/scripts/check_links.py
+
+  syntax:
+    # Runs only by hand: gh workflow run checks.yml --ref <branch>
+    if: github.event_name == 'workflow_dispatch'
+    name: shell / python / yaml syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse-check tracked files
+        run: ./.github/scripts/check_syntax.sh
+
+  otel-profiles:
+    # Runs only by hand: gh workflow run checks.yml --ref <branch>
+    if: github.event_name == 'workflow_dispatch'
+    name: otel profile conventions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint profiles and check they merge
+        # A bare pipeline key or a redefined base component disables ClickStack's
+        # own ingestion with no error at startup, so this is checked here rather
+        # than left to review. See otel-profiles/CONVENTIONS.md.
+        run: |
+          if ! command -v yq >/dev/null; then
+            sudo curl -sSL -o /usr/local/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+          yq --version
+          ./otel-profiles/bin/lint.sh
+          ./otel-profiles/bin/build-config.sh linux-host gpu-nvidia baremetal-node virt-kvm mysql > /dev/null
+          ./otel-profiles/bin/build-config.sh --tier b virt-vsphere mysql aws-rds-mysql > /dev/null
+
+  terraform:
+    # Runs only by hand: gh workflow run checks.yml --ref <branch>
+    if: github.event_name == 'workflow_dispatch'
+    name: clickstack-config terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11"
+          terraform_wrapper: false
+      - name: fmt -check
+        run: terraform -chdir=clickstack-config/terraform fmt -check -diff
+      - name: init (no backend, provider only)
+        run: terraform -chdir=clickstack-config/terraform init -backend=false
+      # No `plan`/`apply` here: that needs a live ClickStack to validate
+      # dashboard_json and alert configuration against (the provider calls
+      # its API at plan time when reachable -- see docs/authoring.md #6),
+      # and standing one up per PR is not free. `validate` still catches
+      # type errors, missing required attributes and bad references; a real
+      # plan/apply is a documented local step against _base/ instead (see
+      # clickstack-config/README.md).
+      - name: validate
+        run: terraform -chdir=clickstack-config/terraform validate

@@ -2,8 +2,9 @@
 # Check every profile against CONVENTIONS.md rules 2, 3 and 9.
 #
 # These are not style checks. A bare pipeline key or a redefined base component
-# disables ClickStack's own ingestion without any error at startup, so this runs
-# in CI rather than relying on review.
+# disables ClickStack's own ingestion without any error at startup, so run this
+# before every change to a profile rather than relying on review. CI runs it only
+# by hand (gh workflow run checks.yml --ref <branch>, job otel-profiles).
 #
 #   bin/lint.sh            all profiles
 #   bin/lint.sh gpu-nvidia one profile
