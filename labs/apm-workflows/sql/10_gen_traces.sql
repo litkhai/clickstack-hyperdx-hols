@@ -9,7 +9,8 @@
 --
 -- How a request becomes spans
 --   1. one row per request: when (cityHash64 of minute / index / salt, no rand()), which root endpoint, ids, which
---      switches are on for the pods it would hit (fault_events, deploy_events), whether it fails and where;
+--      switches are on for the pods it would hit (fault_events, deploy_events), whether it fails and where (the background
+--      failures of README "noise", scaled by lab_settings.noise_scale);
 --   2. joined to the endpoint's template arrays (topo_arrays); per span: is it present (optional / repeated / cut short
 --      by a failure), its gap before and its own time; the static event order of the template turns "sequential calls"
 --      into start and end offsets with one cumulative sum; async branches (Kafka consumers) start after their producer
@@ -22,6 +23,13 @@
 CREATE OR REPLACE VIEW gen_cfg AS
 SELECT
     ifNull((SELECT argMax(value, ts) FROM lab_settings WHERE name = 'base_rpm'), 60) AS base_rpm,
+    -- background failures: 1 = the default rates of the noise table in the README, 0 = off (incidents are separate: the fault_events rows)
+    ifNull((SELECT argMax(value, ts) FROM lab_settings WHERE name = 'noise_scale'), 1) AS noise_scale,
+    -- how a failing span looks, and which failure kind touches which spans (topo_errors, topo_failures)
+    (SELECT mapFromArrays(groupArray(code), groupArray((exc_type, exc_msg, exc_stack, http_code, status))) FROM topo_errors) AS err_specs,
+    (SELECT mapFromArrays(groupArray(fk), groupArray(specs)) FROM topo_failures) AS fk_specs,
+    (SELECT mapFromArrays(groupArray(fk), groupArray(dur_lo)) FROM topo_failures) AS fk_dlo,
+    (SELECT mapFromArrays(groupArray(fk), groupArray(dur_hi)) FROM topo_failures) AS fk_dhi,
     -- arraySort, not ORDER BY in a subquery: groupArray does not promise to keep the input order, and fault_on / dep_of
     -- take the LAST matching element, so the order is part of the result
     (SELECT arraySort(x -> x.2, groupArray((fault, toUnixTimestamp64Milli(ts), target, enabled))) FROM fault_events) AS fe,
@@ -41,7 +49,7 @@ WITH
     (_m, _i, _s, _lo, _hi) -> _lo + (_hi - _lo) * u(_m, _i, _s) AS unif,
     (_x) -> lower(leftPad(hex(_x), 16, '0')) AS hex16,
     (_ms) -> toUInt64(round(_ms * 1000000)) AS ns,                                                   -- milliseconds -> nanoseconds
-    -- ---- switches and topology come from the one-row view gen_cfg (columns fe, deps, base_ver, svc_pods, svc_ns, ep_names, ep_cum, base_rpm)
+    -- ---- switches and topology come from the one-row view gen_cfg (columns fe, deps, base_ver, svc_pods, svc_ns, ep_names, ep_cum, base_rpm, noise_scale, err_specs, fk_specs, fk_dlo, fk_dhi)
     -- a fault is on for (fault, time, pod): the latest matching event decides ('' and '*' match every pod)
     (_f, _t, _pod) -> arrayLast(e -> e.1 = _f AND e.2 <= _t AND (e.3 IN ('', '*') OR e.3 = _pod), fe).4 AS fault_on,
     -- deploys: the latest deploy of the service at or before the time decides the version (and whether it regresses)
@@ -85,15 +93,16 @@ SELECT
                     '{q}', q), '{part}', toString(oid % 3)), '{offset}', toString(intDiv(t0_ms, 6000) + oid % 3)), '{body}', toString(220 + oid % 41)))), attrs),
             map('thread.id', toString(40 + thr),
                 'thread.name', if(kind = 'Consumer', 'org.springframework.kafka.KafkaListenerEndpointContainer#0-0-C-1', concat('http-nio-8080-exec-', toString(thr))),
-                'http.response.status_code', if(shape IN ('srv', 'cli', 'ext'), if(on_path, if(fk = 2, '402', '500'), '200'), ''),
-                'error.type', if(shape = 'srv', if(on_path AND fk != 2, '500', ''), if(shape = 'cli', if(on_path, if(fk = 2, '402', '500'), ''), '')),
+                'http.response.status_code', if(shape IN ('srv', 'cli', 'ext'), if(sc != '', st_code, '200'), ''),
+                -- HttpCommonAttributesExtractor: the status code when it is an error status for the span kind (server >= 500, client >= 400),
+                -- else, with no response at all (a timeout), the class of the exception the client threw
+                'error.type', multiIf(shape = 'srv', if(toUInt16OrZero(st_code) >= 500, st_code, ''),
+                                      shape IN ('cli', 'ext') AND sc != '', if(toUInt16OrZero(st_code) >= 400, st_code, if(st_code = '', ev_type, '')),
+                                      ''),
                 'client.address', if(shape = 'srv', cip, ''), 'network.peer.address', if(shape = 'srv', cip, ''),
                 'network.peer.port', if(shape = 'srv', toString(32768 + cityHash64(mu, ridx, sidx, 'pp') % 28000), '')))) AS SpanAttributes,
     ns(dur_ms) AS Duration,
-    multiIf(on_path AND shape = 'srv' AND fk != 2, 'Error',
-            on_path AND shape IN ('cli', 'ext'), 'Error',
-            on_path AND shape = 'conn' AND fk = 1, 'Error',
-            'Unset') AS StatusCode,
+    if(sc != '', st_status, 'Unset') AS StatusCode,
     '' AS StatusMessage,
     CAST(if(ev_type != '', [fromUnixTimestamp64Nano(t0 + toInt64(ns(abs_ms + dur_ms)) - 150000, 'UTC')], []) AS Array(DateTime64(9))) AS `Events.Timestamp`,
     CAST(if(ev_type != '', ['exception'], []) AS Array(LowCardinality(String))) AS `Events.Name`,
@@ -106,36 +115,23 @@ FROM
 (
     -- ---- L6: the stack trace of the exception recorded on the span, if any ----------------------------
     SELECT *,
-        multiIf(ev_type = '', '',
-                ev_type = 'java.sql.SQLTransientConnectionException', concat(ev_type, ': ', ev_msg, '\n\tat com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:686)\n\tat com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:179)\n\tat com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:144)\n\tat com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:99)'),
-                ev_type = 'org.springframework.jdbc.CannotGetJdbcConnectionException', concat(ev_type, ': ', ev_msg, '\n\tat org.springframework.jdbc.datasource.DataSourceUtils.getConnection(DataSourceUtils.java:84)\n\tat org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:582)\n\tat com.example.inventory.repo.StockRepository.reserve(StockRepository.java:41)\n\tat com.example.inventory.web.ReservationController.reserve(ReservationController.java:37)\nCaused by: java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 2003ms (total=10, active=10, idle=0, waiting=7)\n\tat com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:686)'),
-                ev_type = 'java.lang.NullPointerException', concat(ev_type, ': ', ev_msg, '\n\tat com.example.checkout.CheckoutService.reserve(CheckoutService.java:96)\n\tat com.example.checkout.web.CheckoutController.checkout(CheckoutController.java:44)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)'),
-                ev_type IN ('com.example.order.error.OrderNotFoundException', 'java.lang.IllegalStateException', 'org.springframework.dao.CannotAcquireLockException'),
-                    concat(ev_type, ': ', ev_msg, ['\n\tat com.example.order.repo.OrderRepository.require(OrderRepository.java:77)', '\n\tat com.example.order.OrderMapper.toView(OrderMapper.java:52)', '\n\tat com.example.order.OrderLocks.acquire(OrderLocks.java:38)'][exc_ix],
-                           '\n\tat com.example.order.web.OrderController.get(OrderController.java:58)\n\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n\tat org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod.invokeAndHandle(ServletInvocableHandlerMethod.java:118)'),
-                concat(ev_type, ': ', ev_msg, '\n\tat org.springframework.web.client.DefaultRestClient$DefaultResponseSpec.lambda$createStatusHandler$1(DefaultRestClient.java:629)\n\tat org.springframework.web.client.DefaultRestClient$DefaultResponseSpec.retrieve(DefaultRestClient.java:590)\n\tat com.example.gateway.UpstreamClient.call(UpstreamClient.java:48)')) AS ev_stack
+        if(ev_type = '', '',
+           replaceAll(replaceAll(replaceAll(replaceAll(stack_t, '{type}', ev_type), '{msg}', ev_msg),
+                                 '{ms}', toString(toUInt32(dur_ms))), '{w}', toString(3 + cityHash64(mu, ridx, 'wt') % 8))) AS ev_stack
     FROM
     (
         -- ---- L5: the message of that exception -------------------------------------------------------
         SELECT *,
-            multiIf(ev_type = 'java.sql.SQLTransientConnectionException', concat('HikariPool-1 - Connection is not available, request timed out after ', toString(toUInt32(dur_ms)), 'ms (total=10, active=10, idle=0, waiting=', toString(3 + cityHash64(mu, ridx, 'wt') % 8), ')'),
-                    ev_type = 'org.springframework.jdbc.CannotGetJdbcConnectionException', 'Failed to obtain JDBC Connection',
-                    ev_type = 'java.lang.NullPointerException', 'Cannot invoke "com.example.checkout.Cart.items()" because "cart" is null',
-                    ev_type = 'com.example.order.error.OrderNotFoundException', concat('Order ', toString(oid), ' not found'),
-                    ev_type = 'java.lang.IllegalStateException', concat('Order ', toString(oid), ' has ', toString(1 + cityHash64(mu, ridx, 'ex1') % 6), ' items but its total expects ', toString(1 + cityHash64(mu, ridx, 'ex2') % 6)),
-                    ev_type = 'org.springframework.dao.CannotAcquireLockException', concat('could not obtain lock on order ', toString(oid), ' after ', toString(2 + cityHash64(mu, ridx, 'ex3') % 4), ' attempts'),
-                    ev_type != '', '500 Internal Server Error: "{\\"error\\":\\"internal\\"}"',
-                    '') AS ev_msg
+            replaceAll(replaceAll(replaceAll(replaceAll(replaceAll(replaceAll(msg_t,
+                '{ms}', toString(toUInt32(dur_ms))), '{w}', toString(3 + cityHash64(mu, ridx, 'wt') % 8)),
+                '{oid}', toString(oid)), '{n1}', toString(1 + cityHash64(mu, ridx, 'ex1') % 6)),
+                '{n2}', toString(1 + cityHash64(mu, ridx, 'ex2') % 6)), '{n3}', toString(2 + cityHash64(mu, ridx, 'ex3') % 4)) AS ev_msg
         FROM
         (
-            -- ---- L4: which exception (type) is recorded on the span, from its place on the failure path -------
+            -- ---- L4: what the span's error spec (topo_errors) says: exception type / message / stack templates, HTTP code, status ----
             SELECT *,
-                multiIf(on_path AND fk = 1 AND shape = 'conn', 'java.sql.SQLTransientConnectionException',
-                        on_path AND fk = 1 AND shape = 'srv' AND level = 1, 'org.springframework.jdbc.CannotGetJdbcConnectionException',
-                        on_path AND fk = 3 AND shape = 'srv' AND level = 0, 'java.lang.NullPointerException',
-                        on_path AND fk = 4 AND shape = 'srv' AND level = 0, ['com.example.order.error.OrderNotFoundException', 'java.lang.IllegalStateException', 'org.springframework.dao.CannotAcquireLockException'][exc_ix],
-                        on_path AND fk != 2 AND shape = 'srv', 'org.springframework.web.client.HttpServerErrorException$InternalServerError',
-                        '') AS ev_type
+                tupleElement(sp, 1) AS ev_type, tupleElement(sp, 2) AS msg_t, tupleElement(sp, 3) AS stack_t,
+                tupleElement(sp, 4) AS st_code, tupleElement(sp, 5) AS st_status
             FROM
             (
                 -- ---- L3: the span's identity (version, pod, node, thread) and its place on the failure path -------
@@ -147,7 +143,10 @@ FROM
                     concat('worker-', toString(1 + cityHash64('node', pod_s) % 4), '.example.com') AS node_s,
                     1 + cityHash64(mu, ridx, t.service, 'thr') % 10 AS thr,
                     (fk > 0 AND has(t.err_kinds, fk)) AS on_path,
-                    if(on_path, t.err_levels[indexOf(t.err_kinds, fk)], 99) AS level
+                    if(on_path, t.err_levels[indexOf(t.err_kinds, fk)], 99) AS level,
+                    -- the error spec this span shows: its place on the failure path of the request, else its own (a retried call)
+                    if(on_path, replaceAll(fk_specs[fk][level + 1], '{ix}', toString(exc_ix)), t.err_code) AS sc,
+                    err_specs[sc] AS sp
                 FROM
                 (
                     -- ---- L2: per request, arrays over the template: presence, times, the cumulative sum of events ----
@@ -163,7 +162,7 @@ FROM
                             arrayMap((p, g, sg, par, i) -> if(p = 0 OR (sg > 0 AND par = a.pub_idx), 0., lognorm(mu, ridx * 512 + i, 'gap', g, 0.35)),
                                      pres, a.t_gap, a.t_seg, a.t_parent, range(n)) AS inc_e,
                             arrayMap((p, lf, md, sgm, ha, hl, hh, fa, i) -> if(p = 0, 0.,
-                                        multiIf(lf = 1 AND fa = fk AND fk = 1, 2000 + 4 * u(mu, ridx, 'pto2'),
+                                        multiIf(fa > 0 AND fa = fk AND fk_dlo[fk] > 0, unif(mu, ridx * 512 + i, 'fdur', fk_dlo[fk], fk_dhi[fk]),
                                                 lf = 1 AND ha = 1, unif(mu, ridx * 512 + i, 'hook', hl, hh),
                                                 lognorm(mu, ridx * 512 + i, 'dur', md, if(lf = 1, sgm, 0.3)))),
                                      pres, a.t_leaf, a.t_med, a.t_sig, hact, a.t_hlo, a.t_hhi, a.t_fail, range(n)) AS inc_l,
@@ -180,14 +179,32 @@ FROM
                             -- ---- L1d: switches that change the shape of the request: optional / repeated spans, failure kind ----
                             SELECT *,
                                 map('slow-query', f_slow, 'downstream-latency', f_down, 'pool-exhaustion', f_pool) AS hook_on,
-                                arrayFilter(x -> x != '', [if(ep_name = 'GET /products/{sku}' AND u(mu, ridx, 'miss') < 0.2, 'cache_miss', '')]) AS flags,
+                                -- failure kind (topo_failures), one per request, first match wins. The background ones scale with
+                                -- noise_scale and the daily curve (nf); the incident ones need their fault on.
+                                multiIf(ep_name = 'POST /checkout',
+                                            multiIf(regr = 1 AND u(mu, ridx, 'rerr') < 0.03, 3,
+                                                    f_pool = 1 AND u(mu, ridx, 'pto') < 0.10, 1,
+                                                    u(mu, ridx, 'decl') < 0.005, 2,
+                                                    u(mu, ridx, 'gw') < 0.008 * nf, 5,
+                                                    u(mu, ridx, 'dup') < 0.005 * nf, 8,
+                                                    f_pri = 1 AND u(mu, ridx, 'pex') < 0.08, 9,
+                                                    f_dl = 1 AND u(mu, ridx, 'dlx') < 0.06, 10,
+                                                    u(mu, ridx, 'mail') < if(f_mail = 1, 0.8, 0.02 * nf), 6,
+                                                    0),
+                                        ep_name = 'GET /orders/{oid}', if(f_exc = 1 AND u(mu, ridx, 'exc') < 0.5, 4, 0),
+                                        ep_name = 'GET /search', if(npe, 7, 0),
+                                        ep_name = 'POST /cart/items', if(u(mu, ridx, 'cart') < 0.05 * nf, 11, 0),
+                                        0) AS fk,
+                                -- failed attempts (timeouts of the pricing call, deadlocks of the stock update) before the final one;
+                                -- 2 failed attempts then a failing third = failure kind 9 / 10
+                                multiIf(fk = 9, 2, u(mu, ridx, 'prr') < if(f_pri = 1, 0.15, 0.005 * nf), 2, u(mu, ridx, 'prr') < if(f_pri = 1, 0.60, 0.055 * nf), 1, 0) AS pr_fails,
+                                multiIf(fk = 10, 2, u(mu, ridx, 'dlr') < if(f_dl = 1, 0.08, 0.004 * nf), 2, u(mu, ridx, 'dlr') < if(f_dl = 1, 0.48, 0.064 * nf), 1, 0) AS dl_fails,
+                                arrayFilter(x -> x != '', [if(ep_name = 'GET /products/{sku}' AND u(mu, ridx, 'miss') < 0.2, 'cache_miss', ''),
+                                                           if(pr_fails >= 1, 'pr_retry', ''), if(pr_fails >= 2, 'pr_retry2', ''),
+                                                           if(dl_fails >= 1, 'dl_retry', ''), if(dl_fails >= 2, 'dl_retry2', ''),
+                                                           if(fk = 6, 'mail_fail', '')]) AS flags,
                                 map('order_items', toUInt16(if(f_n1 = 1, 15 + cityHash64(mu, ridx, 'no') % 26, 0)),
                                     'pricing_items', toUInt16(if(regr = 1, n_items, 1))) AS counts,
-                                -- failure kind: 1 inventory pool timeout, 2 payment declined, 3 checkout regression, 4 order detail exception storm
-                                multiIf(ep_name = 'POST /checkout',
-                                            multiIf(regr = 1 AND u(mu, ridx, 'rerr') < 0.03, 3, f_pool = 1 AND u(mu, ridx, 'pto') < 0.10, 1, u(mu, ridx, 'decl') < 0.005, 2, 0),
-                                        ep_name = 'GET /orders/{oid}', if(f_exc = 1 AND u(mu, ridx, 'exc') < 0.5, 4, 0),
-                                        0) AS fk,
                                 1 + cityHash64(mu, ridx, 'exct') % 3 AS exc_ix
                             FROM
                             (
@@ -198,6 +215,9 @@ FROM
                                     fault_on('n-plus-one', t0_ms, pod_ord) AS f_n1,
                                     fault_on('exception-storm', t0_ms, pod_ord) AS f_exc,
                                     fault_on('downstream-latency', t0_ms, pod_pay) AS f_down,
+                                    fault_on('mail-api-errors', t0_ms, pod_not) AS f_mail,
+                                    fault_on('pricing-timeouts', t0_ms, pod_pri) AS f_pri,
+                                    fault_on('stock-deadlocks', t0_ms, pod_inv) AS f_dl,
                                     lag_of(t0_ms, pod_not) AS lag_val,
                                     dep_of('checkout', t0_ms).4 AS regr
                                 FROM
@@ -207,7 +227,8 @@ FROM
                                         pod_name('inventory', ver_of('inventory', t0_ms), cityHash64(mu, ridx, 'inventory', 'pix') % svc_pods['inventory']) AS pod_inv,
                                         pod_name('order', ver_of('order', t0_ms), cityHash64(mu, ridx, 'order', 'pix') % svc_pods['order']) AS pod_ord,
                                         pod_name('payment', ver_of('payment', t0_ms), cityHash64(mu, ridx, 'payment', 'pix') % svc_pods['payment']) AS pod_pay,
-                                        pod_name('notification', ver_of('notification', t0_ms), cityHash64(mu, ridx, 'notification', 'pix') % svc_pods['notification']) AS pod_not
+                                        pod_name('notification', ver_of('notification', t0_ms), cityHash64(mu, ridx, 'notification', 'pix') % svc_pods['notification']) AS pod_not,
+                                        pod_name('pricing', ver_of('pricing', t0_ms), cityHash64(mu, ridx, 'pricing', 'pix') % svc_pods['pricing']) AS pod_pri
                                     FROM
                                     (
                                         -- ---- L1a: one row per request: when, which endpoint, ids ------------------------------
@@ -221,7 +242,12 @@ FROM
                                             concat('SKU-', leftPad(toString(1 + cityHash64(mu, ridx, 'sku') % 5000), 4, '0')) AS sku,
                                             concat('user', toString(cust), '@example.com') AS email,
                                             concat('user', toString(cust), '%40example.com') AS email_enc,
-                                            ['laptop', 'headphones', 'coffee', 'keyboard', 'backpack', 'monitor', 'desk', 'lamp'][1 + cityHash64(mu, ridx, 'q') % 8] AS q,
+                                            -- background failures scale with noise_scale and a little with the daily curve (0.8 .. 1.2 around 1, peak at 12:00 UTC)
+                                            noise_scale * (1 + 0.2 * sin(2 * pi() * (toHour(toDateTime(mu)) + toMinute(toDateTime(mu)) / 60.0 - 6) / 24)) AS nf,
+                                            -- a rare search query the catalog cannot parse (failure kind 7)
+                                            (ep_name = 'GET /search' AND u(mu, ridx, 'npe') < 0.005 * nf) AS npe,
+                                            if(npe, ['', '%20', '%00', '%25'][1 + cityHash64(mu, ridx, 'qodd') % 4],
+                                               ['laptop', 'headphones', 'coffee', 'keyboard', 'backpack', 'monitor', 'desk', 'lamp'][1 + cityHash64(mu, ridx, 'q') % 8]) AS q,
                                             2 + cityHash64(mu, ridx, 'items') % 5 AS n_items,
                                             concat('10.42.', toString(cityHash64(mu, ridx, 'ip1') % 250), '.', toString(1 + cityHash64(mu, ridx, 'ip2') % 250)) AS cip
                                         FROM
