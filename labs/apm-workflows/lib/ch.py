@@ -235,9 +235,9 @@ class Client:
         text = self.query(sql, params=params, fmt="JSON", settings=settings, timeout=timeout)
         return json.loads(text)["data"] if text.strip() else []
 
-    def apply_script(self, text, params=None, log=None):
+    def apply_script(self, text, params=None, log=None, settings=None):
         for stmt in split_statements(text):
-            self.query(stmt, params=params)
+            self.query(stmt, params=params, settings=settings)
             if log:
                 log(stmt)
 
@@ -267,30 +267,33 @@ def main(argv=None):
     p_apply = sub.add_parser("apply", help="run the statements of SQL files")
     p_apply.add_argument("files", nargs="+")
     p_apply.add_argument("--param", action="append", default=[], metavar="K=V")
+    p_apply.add_argument("--setting", action="append", default=[], metavar="K=V")
     p_query = sub.add_parser("query", help="run one statement or file, print the result")
     p_query.add_argument("sql", nargs="?")
     p_query.add_argument("--file")
     p_query.add_argument("--param", action="append", default=[], metavar="K=V")
+    p_query.add_argument("--setting", action="append", default=[], metavar="K=V")
     p_query.add_argument("--format", default="TSVWithNames")
     args = ap.parse_args(argv)
 
     params = dict(p.split("=", 1) for p in args.param)
+    settings = dict(p.split("=", 1) for p in args.setting)
     try:
         client = client_from_env(database=args.database, timeout=args.timeout)
         if args.cmd == "apply":
             for f in args.files:
                 print("-- apply %s" % f)
-                client.apply_script(Path(f).read_text(), params=params,
+                client.apply_script(Path(f).read_text(), params=params, settings=settings,
                                     log=lambda s: print("   ok: " + _first_line(s)))
         else:
             sql = Path(args.file).read_text() if args.file else args.sql
             if not sql:
                 ap.error("give SQL text or --file")
             for stmt in split_statements(sql):
-                out = client.query(stmt, params=params, fmt=args.format)
+                out = client.query(stmt, params=params, fmt=args.format, settings=settings)
                 if out:
                     sys.stdout.write(out if out.endswith("\n") else out + "\n")
-    except (ChError, ScopeError) as e:
+    except (ChError, ScopeError, OSError) as e:
         msg = str(e)
         print("ch.py: %s" % (msg if len(msg) <= 2000 else msg[:2000] + " ...[%d chars cut]" % (len(msg) - 2000)), file=sys.stderr)
         return 1

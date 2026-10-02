@@ -107,7 +107,7 @@ FROM
         -- pool state: HikariCP pool of 10; a wait over 400 ms means every connection is in use
         max_wait_ms >= 400 AS exhausted,
         if(exhausted, 10, least(10, ceil(db_s / 60 - 0.0001))) AS used,
-        toFloat64(greatest(0, ceil(wait_s / 60 - 0.01))) AS pending,
+        toFloat64(toUInt32(greatest(0, ceil(wait_s / 60 - 0.01)))) AS pending,
         -- JVM heap: a slow sawtooth per pod around 300 MB; metaspace creeps with the pod's age
         toFloat64(round((180 + 140 * (0.5 + 0.5 * sin(2 * pi() * toUnixTimestamp(minute) / 5400 + cityHash64(pod) % 100 / 10.0))
                          + (cityHash64(pod, toUnixTimestamp(minute)) % 1000) / 100.0) * 1048576)) AS heap_used,

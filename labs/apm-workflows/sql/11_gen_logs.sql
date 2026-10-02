@@ -2,8 +2,11 @@
 --
 --   SELECT * FROM gen_logs(start_minute = <DateTime>, n_minutes = <UInt32>)
 --
--- A request belongs to the window by the minute encoded in its TraceId (see gen_traces), so the
--- derived rows of a minute are written once, whenever that minute's spans are complete.
+-- A log row belongs to the window by its own Timestamp: rows with Timestamp in
+-- [start_minute, start_minute + n_minutes). A row that spills past the window end (a slow statement
+-- logged just after the minute turns) is produced by the next window, whose spans already exist; so
+-- consecutive windows neither repeat nor skip a row, and the live view can take its watermark from
+-- the newest Timestamp already in otel_logs.
 -- Resource attributes are copied from the span (apm.backfill rides along), so nothing here needs
 -- to know whether it runs live or in the backfill.
 --
@@ -22,11 +25,12 @@ WITH
     (_m, _i, _s) -> (cityHash64(_m, _i, _s) % 1000003 + 0.5) / 1000003.0 AS u,
     spans AS
     (
-        SELECT *, reinterpretAsUInt32(reverse(unhex(substring(TraceId, 1, 8)))) AS trace_minute
-        FROM otel_traces
-        WHERE Timestamp >= w0 AND Timestamp < w1 + 60
-          AND trace_minute >= toUInt32(w0) AND trace_minute < toUInt32(w1)
+        -- every log is stamped at or after its span's start, so spans from one minute before the window
+        -- up to its end are all it can need
+        SELECT * FROM otel_traces WHERE Timestamp >= w0 - 60 AND Timestamp < w1
     )
+SELECT * FROM
+(
 -- ---- ERROR: a failed shop request ----------------------------------------------------------------
 SELECT
     `Events.Timestamp`[1] + toIntervalMillisecond(1) AS Timestamp,
@@ -159,3 +163,5 @@ FROM
     FROM spans
     WHERE SpanKind = 'Client' AND SpanAttributes['db.system'] = 'mysql' AND Duration >= 200000000
 )
+)
+WHERE Timestamp >= w0 AND Timestamp < w1
