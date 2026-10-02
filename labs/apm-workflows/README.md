@@ -148,6 +148,9 @@ A server span is an error only for 5xx (OTel HTTP semantic conventions), so 4xx 
 - Service graph by SQL: exactly the 14 edges of the table above (`sql/verify_graph.sql`).
 - The ClickStack sources and dashboard were created through the Cloud API and read back. The dashboard rendering in
   the UI was looked at, which is not a verification claim.
+- **Not run:** an install on an empty service from the first step. Dropping the database was not permitted during the
+  run, so the tables were emptied instead; `bin/install.sh` was run twice on the existing database and was idempotent,
+  and the backfill and live generation then started from empty tables. `bin/uninstall.sh` has never been run.
 
 ### Running it
 
@@ -379,6 +382,9 @@ agent 기본 설정에서 소비자의 `process` span은 생산자 `publish` spa
 - 서비스 연결 그래프(SQL): 위 표의 연결 14개와 정확히 같습니다(`sql/verify_graph.sql`).
 - ClickStack 소스와 대시보드는 Cloud API로 만들고 다시 읽어 확인했습니다. UI에서 그려지는 것도 봤지만, 그건 검증 주장이
   아닙니다.
+- **실행하지 않은 것:** 빈 서비스에서 첫 단계부터 설치하는 과정입니다. 실행 중에 데이터베이스 삭제가 허용되지 않아 테이블을
+  비우는 것으로 대신했습니다. `bin/install.sh`는 기존 데이터베이스에서 두 번 실행해 결과가 같았고, 백필과 live 생성은 빈
+  테이블에서 시작했습니다. `bin/uninstall.sh`는 한 번도 실행하지 않았습니다.
 
 ### 실행
 
