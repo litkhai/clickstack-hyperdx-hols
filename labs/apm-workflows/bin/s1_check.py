@@ -5,7 +5,8 @@
     s1_check.py --keep                  replay, but leave the block in place (look at the windows in the UI), restore later with
     s1_check.py --restore RUN_ID        delete the run's fault events, regenerate the block clean, assert the row counts equal the snapshot
     s1_check.py --evaluate RUN_ID       evaluate a kept run again (--control: the no-fault window must FAIL every positive assertion)
-    s1_check.py --live                  schedule the faults in the FUTURE and wait for the live views to generate them (~40 minutes)
+    s1_check.py --live                  schedule the faults in the FUTURE and wait for the live views to generate them (~50 minutes);
+                                        skips ahead past any automatic incident (run_id 'auto-...') that would overlap (--no-wait: refuse)
 
 Replay, step by step (all inside database apm_workflows; nothing else is touched):
   1. pick a block of 60 past minutes inside the backfill, by default 7.5 days before the install minute (--at 'YYYY-MM-DD HH:MM'
@@ -383,9 +384,45 @@ def replay(client, args, out=print):
     return 0 if (failed == 0 and ok) else 1
 
 
+LIVE_SPAN_MIN = SCHEDULE[-1][1] + WINDOW_MIN + 12 + 2     # first window start offset .. last window end, the quiet tail for late consumers, a margin
+
+
+def auto_incidents(client):
+    """[(run_id, fault, on, off)] of the incidents rmv_incidents wrote ('auto-%'), oldest first."""
+    rows = client.rows(
+        "SELECT run_id, any(fault) AS fault, toString(minIf(ts, enabled = 1)) AS on_ts, toString(maxIf(ts, enabled = 0)) AS off_ts "
+        "FROM fault_events WHERE run_id LIKE 'auto-%' GROUP BY run_id ORDER BY on_ts", settings=SYNC)
+    return [(r["run_id"], r["fault"], parse_ts(r["on_ts"]), parse_ts(r["off_ts"])) for r in rows]
+
+
+def free_stretch(incidents, start, length):
+    """The first start >= `start` such that [start, start + length) overlaps no incident; also the incidents that forced a later start."""
+    skipped = []
+    moved = True
+    while moved:
+        moved = False
+        for inc in incidents:
+            _, _, a, b = inc
+            if a < start + length and b > start:
+                start = (b + timedelta(seconds=59)).replace(second=0, microsecond=0) + timedelta(minutes=1)
+                skipped.append(inc)
+                moved = True
+    return start, skipped
+
+
 def live(client, args, out=print):
     now = utcnow().replace(second=0, microsecond=0)
     start = now + timedelta(minutes=3)
+    # a small incident written by rmv_incidents (run_id 'auto-...') inside the windows would be mistaken for the fault under test:
+    # skip ahead to the first stretch that is free of them (--no-wait: refuse instead)
+    length = timedelta(minutes=LIVE_SPAN_MIN)
+    new_start, skipped = free_stretch(auto_incidents(client), start, length)
+    if skipped:
+        names = ", ".join("%s %s %s-%s" % (r, f, fmt_ts(a)[11:16], fmt_ts(b)[11:16]) for r, f, a, b in skipped)
+        if args.no_wait:
+            raise ch.ChError("an automatic incident overlaps the windows (%s); retry later, or without --no-wait to skip ahead" % names)
+        out("automatic incident(s) overlap the windows (%s): starting at %s UTC instead of %s UTC" % (names, fmt_ts(new_start)[11:16], fmt_ts(start)[11:16]))
+        start = new_start
     pods = [r["pod"] for r in client.rows(
         "SELECT DISTINCT ResourceAttributes['k8s.pod.name'] AS pod FROM otel_traces WHERE ServiceName = 'inventory' "
         "AND Timestamp >= now() - INTERVAL 15 MINUTE ORDER BY pod")]
@@ -426,6 +463,7 @@ def main(argv=None):
     ap.add_argument("--evaluate", metavar="RUN_ID", help="evaluate a kept run again")
     ap.add_argument("--control", action="store_true", help="with --evaluate: positive assertions on the no-fault window must all FAIL")
     ap.add_argument("--run-id", help="label for a new run")
+    ap.add_argument("--no-wait", action="store_true", help="--live: refuse to start when an automatic incident overlaps the windows, instead of skipping ahead to a free stretch")
     args = ap.parse_args(argv)
     try:
         client = ch.client_from_env(timeout=600)

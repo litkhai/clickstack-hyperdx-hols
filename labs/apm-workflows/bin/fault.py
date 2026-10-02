@@ -8,7 +8,10 @@
 
 Faults and where they live: slow-query (order: history query) | n-plus-one (order: history) |
 pool-exhaustion (inventory pod) | downstream-latency (payment -> external gateway) | exception-storm (order: detail) |
-kafka-consumer-lag (notification). --target is a k8s.pod.name of the service where the fault lives; '*' = every pod (default).
+kafka-consumer-lag (notification) | mail-api-errors (notification: most mail calls 503) |
+pricing-timeouts (pricing: many timeouts, retries, some purchases fail) | stock-deadlocks (inventory: many deadlocks, retries,
+some failures). --target is a k8s.pod.name of the service where the fault lives; '*' = every pod (default).
+rmv_incidents switches the same faults on and off by itself (rows with run_id 'auto-<slot>').
 
 A request is affected iff its timestamp falls in an on-interval. Minutes the live view has already
 generated are not revised, so an event only changes requests generated after it: the script prints the
@@ -24,10 +27,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 import ch  # noqa: E402
 
-FAULTS = ["slow-query", "n-plus-one", "pool-exhaustion", "downstream-latency", "exception-storm", "kafka-consumer-lag"]
+FAULTS = ["slow-query", "n-plus-one", "pool-exhaustion", "downstream-latency", "exception-storm", "kafka-consumer-lag",
+          "mail-api-errors", "pricing-timeouts", "stock-deadlocks"]
 # the service whose pods a --target must name (the generator matches the target against that service's pod only)
 SERVICE_OF = {"slow-query": "order", "n-plus-one": "order", "pool-exhaustion": "inventory",
-              "downstream-latency": "payment", "exception-storm": "order", "kafka-consumer-lag": "notification"}
+              "downstream-latency": "payment", "exception-storm": "order", "kafka-consumer-lag": "notification",
+              "mail-api-errors": "notification", "pricing-timeouts": "pricing", "stock-deadlocks": "inventory"}
 
 
 def known_pods(client, service):

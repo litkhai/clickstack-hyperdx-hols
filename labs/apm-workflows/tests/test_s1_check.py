@@ -46,5 +46,35 @@ class Schedule(unittest.TestCase):
         self.assertEqual({n for n, _ in s1.SCHEDULE}, set(s1.FAULTS) | {s1.NEGATIVE})
 
 
+class LiveSkipAhead(unittest.TestCase):
+    T = datetime(2026, 10, 3, 6, 0)
+
+    def inc(self, name, a_min, b_min):
+        return (name, "mail-api-errors", self.T + timedelta(minutes=a_min), self.T + timedelta(minutes=b_min))
+
+    def test_free_when_nothing_overlaps(self):
+        start, skipped = s1.free_stretch([self.inc("auto-1", 120, 126)], self.T, timedelta(minutes=50))
+        self.assertEqual(start, self.T)
+        self.assertEqual(skipped, [])
+
+    def test_skips_to_the_minute_after_an_overlapping_incident(self):
+        start, skipped = s1.free_stretch([self.inc("auto-1", 30, 36)], self.T, timedelta(minutes=50))
+        self.assertEqual(start, self.T + timedelta(minutes=37))
+        self.assertEqual([x[0] for x in skipped], ["auto-1"])
+
+    def test_skips_over_two_incidents_when_the_gap_is_too_short(self):
+        incs = [self.inc("auto-1", 10, 15), self.inc("auto-2", 60, 66)]
+        start, skipped = s1.free_stretch(incs, self.T, timedelta(minutes=50))
+        self.assertEqual(start, self.T + timedelta(minutes=67))
+        self.assertEqual([x[0] for x in skipped], ["auto-1", "auto-2"])
+
+    def test_an_incident_ending_exactly_at_the_start_does_not_overlap(self):
+        start, skipped = s1.free_stretch([self.inc("auto-1", -10, 0)], self.T, timedelta(minutes=50))
+        self.assertEqual((start, skipped), (self.T, []))
+
+    def test_the_span_covers_every_window_and_the_tail(self):
+        self.assertGreaterEqual(s1.LIVE_SPAN_MIN, max(off for _, off in s1.SCHEDULE) + s1.WINDOW_MIN + 12)
+
+
 if __name__ == "__main__":
     unittest.main()
