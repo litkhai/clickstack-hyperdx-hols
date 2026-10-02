@@ -138,6 +138,18 @@ docker compose --profile migration up -d   # the target on its own
 | `elasticsearch` | 9200 | `elastic` | the cluster to migrate **from** |
 | `clickhouse-target` | 8124 / 9001 | `elastic`, `migration` | the ClickHouse to migrate **to** |
 | `elasticsearch-secure` | 9201 | `elastic-secure` | the same Elasticsearch with **security on**, which is the 8.x default |
+| `grafana` | 3000 | `grafana` | Grafana 13.2.3 with both of the above as data sources, for `labs/elastic-migration/dashboards/` |
+
+**`grafana` is started together with `elastic`** (`docker compose --profile
+elastic --profile grafana up -d`): it has no `depends_on`, because a
+dependency on a service whose profile is off is a Compose error. Both plugins
+are installed at startup by `GF_PLUGINS_PREINSTALL_SYNC`, so the first start
+needs internet access, and both are pinned -- `elasticsearch` 12.9.1 and
+`grafana-clickhouse-datasource` 4.22.0. Since Grafana 13 the Elasticsearch data
+source is a separate plugin that floats to the latest release when unpinned.
+The data sources are provisioned from `grafana/provisioning/` (uids `es` and
+`ch`). Log in as `admin` / `GRAFANA_ADMIN_PASSWORD` (a local default in
+`.env.example`).
 
 **`elastic-secure` is the one that resembles a real source cluster.** The
 `elastic` profile has `xpack.security.enabled=false`, which is why every tool
@@ -388,6 +400,17 @@ docker compose --profile migration up -d   # 목적지만
 | `elasticsearch` | 9200 | `elastic` | 마이그레이션 **원본** 클러스터 |
 | `clickhouse-target` | 8124 / 9001 | `elastic`, `migration` | 마이그레이션 **목적지** ClickHouse |
 | `elasticsearch-secure` | 9201 | `elastic-secure` | 보안을 **켠** 같은 Elasticsearch. 8.x 기본값입니다 |
+| `grafana` | 3000 | `grafana` | 위 둘을 데이터 소스로 연결한 Grafana 13.2.3. `labs/elastic-migration/dashboards/`용 |
+
+**`grafana`는 `elastic`과 함께 띄웁니다**(`docker compose --profile elastic
+--profile grafana up -d`). `depends_on`이 없는데, 꺼진 프로파일의 서비스에 의존하면
+Compose가 오류를 내기 때문입니다. 두 플러그인은 시작할 때
+`GF_PLUGINS_PREINSTALL_SYNC`로 설치되므로 첫 시작에는 인터넷이 필요하고, 둘 다
+버전을 고정했습니다 -- `elasticsearch` 12.9.1, `grafana-clickhouse-datasource`
+4.22.0. Grafana 13부터 Elasticsearch 데이터 소스는 별도 플러그인이라, 고정하지
+않으면 최신 릴리스로 바뀝니다. 데이터 소스는 `grafana/provisioning/`에서
+프로비저닝됩니다(uid `es`, `ch`). 로그인은 `admin` / `GRAFANA_ADMIN_PASSWORD`
+(`.env.example`의 로컬 기본값)입니다.
 
 **실제 원본 클러스터에 가까운 것은 `elastic-secure`입니다.** `elastic`
 프로파일은 `xpack.security.enabled=false`이고, 그래서

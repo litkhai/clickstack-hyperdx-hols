@@ -29,7 +29,7 @@ and this section applies that rule to the documentation itself.
 | **ClickHouse Cloud specifics.** The `s3()` load, `SSD_CACHE(PATH …)` and the memory ceiling were all measured against a local single node. | The three claims you most want to rely on at real scale are the three never executed against the destination. [#41](https://github.com/litkhai/clickstack-hyperdx-hols/issues/41) |
 | **An index pattern whose indices have different mappings** -- now *detected*: `plan.py` refuses a field with two types across the pattern and warns about a field only some indices have, and `mapping_to_ddl.py` reads a pattern whose mappings are identical while refusing one whose mappings differ. | What it still does not do is *merge* two shapes into one table. Narrow the pattern and plan each group separately, or decide the column and pass `--allow-mapping-conflicts`. |
 | **Ingest.** Nothing converts Beats, Logstash or Elastic Agent configuration. | If your pipeline lives in Elastic rather than in front of it, that side is unbuilt. [#21](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21) |
-| **Dashboards and alerts.** Kibana saved objects are a separate problem. | [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5) |
+| **Dashboards: Kibana, HyperDX, and alerts.** Grafana dashboards on the Elasticsearch data source are converted -- to the ClickHouse data source, with `[NOT CONVERTED]` panels for what is not ([`dashboards/`](dashboards/)). Kibana saved objects, a HyperDX output and alert rules are not built. | Kibana: [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5). HyperDX: [#58](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58). Alerts: no issue yet -- the same query conversion, say so if you need it. |
 | **ID translation is not a tracked stage.** `run.py` tracks export/load/verify; `idmap/` is SQL you run. | The step most likely to need a re-run is the one with no record of what has been done. [#33](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33) |
 | **A live cutover.** The export's resume assumes a static source index. | Dual-write, and reading while writing, are out of scope -- a resumed slice opens a *new* point-in-time, so rows can be skipped or repeated if the index moved underneath. |
 | **The reverse direction.** ClickHouse → Elasticsearch is not supported anywhere here. | |
@@ -55,6 +55,9 @@ Read the one section you need. Do not read the whole lab first.
 | what could be silently wrong in a mapping table | [`data/idmap/preflight.sql`](data/idmap/preflight.sql) — the comments are the reasons |
 | what the translation is asserted to do | [`data/idmap/test_cases.py`](data/idmap/test_cases.py) — the case matrix, executable |
 | how to bring up a source and a target locally | [`../../_base/README.md`](../../_base/README.md) |
+| how to repoint Grafana dashboards from Elasticsearch to ClickHouse | [`dashboards/README.md`](dashboards/README.md) |
+| what a Lucene query becomes in SQL, and which ones do not translate | [`dashboards/README.md`](dashboards/README.md) § "Lucene" — and `./lucene_sql.py` on the query itself |
+| whether a converted panel shows the same numbers | [`dashboards/README.md`](dashboards/README.md) § `check.py` |
 | what the official docs already cover | [`README.md`](README.md) § "Start with the official documentation" |
 
 **Read the official ClickHouse documentation first.** This lab does not
@@ -236,7 +239,7 @@ Not a feeling. A list:
 | **ClickHouse Cloud 고유 부분.** `s3()` 적재, `SSD_CACHE(PATH …)`, 메모리 상한은 모두 로컬 단일 노드에서 측정했습니다. | 대규모에서 가장 의지하고 싶은 세 주장이 정작 목적지에서 실행되지 않은 셋입니다. [#41](https://github.com/litkhai/clickstack-hyperdx-hols/issues/41) |
 | **매핑이 서로 다른 인덱스 패턴** -- 이제 **감지합니다**: `plan.py`는 패턴 안에서 타입이 둘인 필드를 거부하고 일부 인덱스에만 있는 필드를 경고하며, `mapping_to_ddl.py`는 매핑이 동일한 패턴은 읽고 다른 패턴은 거부합니다. | 여전히 하지 않는 것은 두 모양을 한 테이블로 **합치는** 것입니다. 패턴을 좁혀 그룹별로 계획하거나, 컬럼을 정한 뒤 `--allow-mapping-conflicts`를 주세요. |
 | **입수(ingest).** Beats·Logstash·Elastic Agent 설정을 변환하는 것은 없습니다. | 파이프라인이 Elastic 앞이 아니라 Elastic 안에 있다면 그쪽은 미작성입니다. [#21](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21) |
-| **대시보드와 알림.** Kibana saved object는 별도 문제입니다. | [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5) |
+| **대시보드: Kibana, HyperDX, 알림.** Elasticsearch 데이터 소스를 쓰는 Grafana 대시보드는 변환됩니다 -- ClickHouse 데이터 소스로, 변환되지 않는 것은 `[NOT CONVERTED]` 패널로([`dashboards/`](dashboards/)). Kibana saved object, HyperDX 출력, 알림 규칙은 만들어지지 않았습니다. | Kibana: [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5). HyperDX: [#58](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58). 알림: 아직 이슈 없음 -- 같은 쿼리 변환이니 필요하면 말해 주세요. |
 | **ID 변환이 추적되는 단계가 아님.** `run.py`는 export/load/verify를 추적하고, `idmap/`은 실행하는 SQL입니다. | 재실행이 가장 필요한 단계가 무엇을 했는지 기록이 없는 단계입니다. [#33](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33) |
 | **무중단 전환.** 내보내기의 재개는 원본 인덱스가 정적임을 가정합니다. | 이중 기록과 "쓰면서 읽기"는 범위 밖입니다. 재개된 슬라이스는 **새** point-in-time을 열기 때문에, 인덱스가 그사이 움직였다면 행이 빠지거나 중복될 수 있습니다. |
 | **역방향.** ClickHouse → Elasticsearch는 어디에서도 지원하지 않습니다. | |
@@ -262,6 +265,9 @@ Not a feeling. A list:
 | 매핑 테이블에서 조용히 잘못될 수 있는 것 | [`data/idmap/preflight.sql`](data/idmap/preflight.sql) — 주석이 곧 이유입니다 |
 | 변환이 무엇을 보장하는지 | [`data/idmap/test_cases.py`](data/idmap/test_cases.py) — 실행 가능한 케이스 매트릭스 |
 | 원본과 목적지를 로컬에 올리는 방법 | [`../../_base/README.md`](../../_base/README.md) |
+| Grafana 대시보드를 Elasticsearch에서 ClickHouse로 바꾸는 방법 | [`dashboards/README.md`](dashboards/README.md) |
+| Lucene 쿼리가 SQL로 무엇이 되는지, 어떤 것이 변환되지 않는지 | [`dashboards/README.md`](dashboards/README.md) § "Lucene" — 쿼리 자체는 `./lucene_sql.py`로 |
+| 변환한 패널이 같은 숫자를 보이는지 | [`dashboards/README.md`](dashboards/README.md) § `check.py` |
 | 공식 문서가 이미 다루는 것 | [`README.md`](README.md) § "공식 문서부터" |
 
 **ClickHouse 공식 문서를 먼저 읽으세요.** 이 랩은 그것을 다시 쓰지 않고, 대체하지도

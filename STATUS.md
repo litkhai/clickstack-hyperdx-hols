@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-01** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-02** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -30,7 +30,7 @@ ClickStack 2.39.1 (ClickHouse 26.8.7.19), with a negative control showing the OT
 refuses a wrong key. Its first run found the search layer passing on an error response; that
 is fixed.
 
-Three services sit behind compose profiles, for `labs/elastic-migration/` only, so a plain
+Four services sit behind compose profiles, for `labs/elastic-migration/` only, so a plain
 `docker compose up -d` is unaffected:
 
 | Service | Port | Profile | What it is |
@@ -38,6 +38,7 @@ Three services sit behind compose profiles, for `labs/elastic-migration/` only, 
 | `elasticsearch` | 9200 | `elastic` | the source cluster, security off — the quick path |
 | `elasticsearch-secure` | 9201 | `elastic-secure` | the same version with security **on**, which is the 8.x default; this is what the authenticated path is verified against |
 | `clickhouse-target` | 8124 / 9001 | `elastic`, `migration` | the migration destination, pinned separately from the ClickStack bundle |
+| `grafana` | 3000 | `grafana` | Grafana with `elasticsearch` and `clickhouse-target` provisioned as data sources, for `dashboards/` |
 
 Version pins, and why they differ from each other:
 
@@ -46,6 +47,7 @@ Version pins, and why they differ from each other:
 | `clickstack` | 2.39.1 (bundles ClickHouse 26.8.7.19) | the version `otel-profiles/` was written against |
 | `elasticsearch`, `elasticsearch-secure` | 8.17.0 | the version the migration these labs were built for runs |
 | `clickhouse-target` (`migration` profile) | 26.6.8.7 | newest public patch of the 26.6 line ClickHouse Cloud's regular release channel runs (a live Cloud service reports `26.6.1.2191`) |
+| `grafana` | 13.2.3, plugins `elasticsearch` 12.9.1 and `grafana-clickhouse-datasource` 4.22.0 | latest stable on 2026-10-02. Since Grafana 13 the Elasticsearch data source is a separate plugin installed at startup, so it is pinned too |
 
 `labs/elastic-migration/` verifies against the last two, not the ClickStack bundle: a
 migration must not be verified against a newer ClickHouse than its destination.
@@ -67,9 +69,17 @@ into ClickHouse 26.6.8.7. Each tool carries its own `Verified on …` line:
 | `es_client.py` | Elasticsearch auth and TLS for all of the above |
 | `idmap/` | ID translation in ClickHouse, with the case matrix as 70 executable assertions and the dictionary layouts measured |
 
+`labs/elastic-migration/dashboards/` is written and verified end to end on Grafana 13.2.3
+(Elasticsearch data source 12.9.1, ClickHouse data source 4.22.0), Elasticsearch 8.17.0 and
+ClickHouse 26.6.8.7. `convert.py` rewrites a Grafana dashboard's Elasticsearch targets as SQL
+on the ClickHouse data source, classifying each one and emptying what it cannot convert
+(`[NOT CONVERTED]`). `check.py` runs both through Grafana's `/api/ds/query` and compares: on
+the 50-target fixture, 32 PASS, 4 PASS~ (inside a stated tolerance), 14 EMPTIED, 0 MISMATCH.
+The Lucene → SQL translator is shared with the HyperDX output still to come (#58).
+
 `labs/elastic-migration/AGENTS.md` is written for an agent **running** a migration rather
 than changing the lab, and opens with what the lab does not do. `ingest/` is still a plan
-only (#21).
+only (#21, #59).
 
 ## Open work
 
@@ -78,7 +88,8 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F1–F7: roadmap labs](https://github.com/litkhai/clickstack-hyperdx-hols/issues/2)
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
-- [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — [ingest](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21) is the part still outstanding
+- [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Elasticsearch ingest pipelines](https://github.com/litkhai/clickstack-hyperdx-hols/issues/21) and from [Filebeat and Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59), and the [HyperDX dashboard output](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)
+- Found while building the dashboards path: [Elasticsearch `float` values load one float32 ulp off](https://github.com/litkhai/clickstack-hyperdx-hols/issues/61) (`re-verify`), [the manifest records ClickHouse types only](https://github.com/litkhai/clickstack-hyperdx-hols/issues/62), [clickstack-config's Error count tile filter is probably dropped by the API](https://github.com/litkhai/clickstack-hyperdx-hols/issues/60) (`re-verify`)
 - Found while building the data path, none of them blocking:
   [parity check 4 assumes a single-pass export](https://github.com/litkhai/clickstack-hyperdx-hols/issues/32),
   [translation is not a tracked run stage](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33),

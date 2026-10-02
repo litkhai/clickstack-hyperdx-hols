@@ -1,0 +1,42 @@
+# Both data sources for labs/elastic-migration/dashboards/, read by Grafana at
+# startup (mounted read-only by the `grafana` profile in ../../docker-compose.yml).
+#
+# Field names are the ones the plugins read, not guessed:
+#   elasticsearch @ 12.9.1   provisioning/datasources/datasources.yml in
+#                            grafana/grafana-elasticsearch-datasource (tag v12.9.1):
+#                            url, jsonData.index, jsonData.timeField
+#   grafana-clickhouse-datasource @ 4.22.0
+#                            pkg/plugin/settings.go LoadSettings() in
+#                            grafana/clickhouse-datasource (tag v4.22.0) and
+#                            docs/sources/configure.md "Provision the data source":
+#                            jsonData.host, port, protocol, username, defaultDatabase
+#
+# The uids are what labs/elastic-migration/dashboards/fixtures/datasource-map.json
+# maps between: `es` -> `ch`.
+#
+# Elasticsearch has no security on this profile and ClickHouse takes `default`
+# with no password (see the `elasticsearch` and `clickhouse-target` services),
+# so there is no secureJsonData. That is only acceptable because both hold
+# nothing but synthetic seed data on localhost.
+apiVersion: 1
+
+datasources:
+  - name: Elasticsearch (logs-demo)
+    uid: es
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    jsonData:
+      index: logs-demo
+      timeField: "@timestamp"
+
+  - name: ClickHouse (clickhouse-target)
+    uid: ch
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: clickhouse-target
+      port: 9000
+      protocol: native
+      username: default
+      defaultDatabase: default
