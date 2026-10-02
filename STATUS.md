@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-02** — split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-03** — `docs/labs.json` added (notes-site export, 0 labs published; the only committed file under `docs/`). As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 

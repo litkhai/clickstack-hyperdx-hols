@@ -6,6 +6,9 @@ Produces:
   docs/<repo path>/index.html          one page per lab, from its README
   docs/assets/site.css, site.js        shared, so the pages stay small
   docs/<old path>/index.html           a redirect for each lab listed in MOVED.md
+  docs/labs.json                       labs whose lab.yaml sets web: true, for the notes
+                                       site (tools/labs_json.py, a copy from khai-workbench).
+                                       The only file under docs/ that is committed
 
 Nothing here is hand-written, so the site cannot drift from the repository.
 The indexes it reads are:
@@ -25,6 +28,7 @@ Requires the `markdown` package (pip install markdown).
 """
 import argparse
 import html
+import importlib.util
 import pathlib
 import re
 import shutil
@@ -740,6 +744,15 @@ def sitemap(has_page):
             "%s\n</urlset>\n" % body)
 
 
+def labs_json(root, has_page):
+    """docs/labs.json via tools/labs_json.py, with each published lab's page URL."""
+    spec = importlib.util.spec_from_file_location("labs_json", root / "tools" / "labs_json.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    text, _ = mod.build(root, lambda p: "%s/%s/" % (SITE, p) if p in has_page else None)
+    return text
+
+
 # --------------------------------------------------------------------------- #
 
 def build(root):
@@ -774,6 +787,7 @@ def build(root):
     files["assets/site.css"] = CSS
     files["assets/site.js"] = JS
     files["sitemap.xml"] = sitemap(has_page)
+    files["labs.json"] = labs_json(root, has_page)    # reads the committed one, so before rmtree
     files["robots.txt"] = "User-agent: *\nAllow: /\nSitemap: %s/sitemap.xml\n" % SITE
     files[".nojekyll"] = ""      # Jekyll would otherwise skip some paths
     return files, len(releases), sum(len(a[2]) for a in areas), len(has_page)

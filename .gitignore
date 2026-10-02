@@ -2,8 +2,10 @@
 .DS_Store
 
 # Generated Pages site — built by .github/scripts/build_site.py and deployed
-# by .github/workflows/pages.yml on every push to main; not committed.
-/docs/
+# by .github/workflows/pages.yml on every push to main; not committed, except
+# docs/labs.json, which the notes site fetches from main.
+/docs/*
+!/docs/labs.json
 
 # Secrets — commit only the .example / .template counterparts
 .env
