@@ -161,7 +161,7 @@ WITH
         ('POST /checkout', 230, 0, 5, 'inventory', 'sql', 'UPDATE stock SET reserved = reserved + ? WHERE sku = ? AND on_hand - reserved >= ?', 'UPDATE:stock', 12.0, 0.35, '', 0.0, 0.0, '', '', 0, 0, 1),
         ('POST /checkout', 300, 0, 3, 'checkout', 'cli', 'payment', 'POST /api/authorizations', 0.0, 0.3, '', 0.0, 0.0, '', '', 0, 0, 0),
         ('POST /checkout', 310, 0, 4, 'payment', 'srv', '/api/authorizations', 'POST', 2.0, 0.3, '', 0.0, 0.0, '', '', 0, 2, 0),
-        ('POST /checkout', 320, 0, 5, 'payment', 'ext', 'pg.example.com', 'POST /v1/payments', 14.0, 0.3, 'downstream-latency', 780.0, 1100.0, '', '', 0, 0, 0),
+        ('POST /checkout', 320, 0, 5, 'payment', 'ext', 'pg.example.com', 'POST /v1/payments', 11.0, 0.3, 'downstream-latency', 780.0, 1100.0, '', '', 0, 0, 0),
         ('POST /checkout', 400, 0, 3, 'checkout', 'cli', 'order', 'POST /api/orders', 0.0, 0.3, '', 0.0, 0.0, '', '', 0, 0, 2),
         ('POST /checkout', 410, 0, 4, 'order', 'srv', '/api/orders', 'POST', 2.0, 0.3, '', 0.0, 0.0, '', '', 0, 0, 0),
         ('POST /checkout', 420, 0, 5, 'order', 'conn', '', '', 0.05, 0.4, '', 0.0, 0.0, '', '', 0, 0, 0),
