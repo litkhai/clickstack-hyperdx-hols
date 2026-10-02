@@ -1,0 +1,3 @@
+method=get path=/a status=200 user=bob
+method=post status=500
+no pairs here

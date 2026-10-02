@@ -1,0 +1,3 @@
+# convert.py output and check.py's working files: run artifacts, not source.
+/out/
+/.run/

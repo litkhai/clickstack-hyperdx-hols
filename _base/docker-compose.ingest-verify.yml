@@ -1,0 +1,36 @@
+# Fixture for verifying labs/elastic-migration/ingest/ (issue #21): a converted
+# Elasticsearch ingest pipeline, loaded into ClickStack's own collector and fed
+# from a mounted directory. A compose override, so a plain `docker compose up -d`
+# is unaffected. check.py in that directory drives it; by hand:
+#
+#   cd _base
+#   F="-f docker-compose.yml -f docker-compose.ingest-verify.yml"
+#   docker compose $F up -d --force-recreate clickstack
+#   ... later, back to the normal configuration:
+#   docker compose up -d --force-recreate clickstack
+#
+# `--force-recreate` is needed because Compose does not notice that the content
+# of a bind-mounted file changed (see "Verifying the otel-profiles in Docker" in
+# README.md). Both paths below must exist before `up`, or Docker creates a
+# directory in their place; check.py creates them. They are gitignored
+# (labs/elastic-migration/ingest/.gitignore).
+#
+# Same pattern as docker-compose.otel-verify.yml, minus the log volume: the
+# input is a plain host directory that check.py writes into, one uniquely named
+# file per pipeline and run, so a row is traced back to its file by
+# LogAttributes['log.file.name'].
+#
+# Do not combine with docker-compose.otel-verify.yml: both set
+# CUSTOM_OTELCOL_CONFIG_FILE and mount a config at the same path.
+
+services:
+  clickstack:
+    environment:
+      # Overrides the empty default in docker-compose.yml.
+      CUSTOM_OTELCOL_CONFIG_FILE: /etc/otelcol-contrib/custom.config.yaml
+    volumes:
+      # One file: the generated fragments of every pipeline under test, joined
+      # by check.py.
+      - ../labs/elastic-migration/ingest/.run/custom.config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+      # The filelog input. The generated receivers read /ingest-verify/in/*.log.
+      - ../labs/elastic-migration/ingest/.run/in:/ingest-verify/in:ro

@@ -1,0 +1,2 @@
+1,widget,Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML like Gecko) Chrome/120.0.0.0 Safari/537.36,<b>bold</b> and <i>plain</i>
+2,gadget,curl/8.4.0,no tags

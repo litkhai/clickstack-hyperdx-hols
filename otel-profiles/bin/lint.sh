@@ -7,6 +7,9 @@
 #
 #   bin/lint.sh            all profiles
 #   bin/lint.sh gpu-nvidia one profile
+#   bin/lint.sh ./out/my-app   a profile directory outside profiles/: an argument
+#                              containing "/" is a path, and its basename is the
+#                              profile name (pipelines must be <signal>/my-app)
 
 set -uo pipefail
 
@@ -36,7 +39,10 @@ else
 fi
 
 for p in "${profiles[@]}"; do
-    dir="$here/profiles/$p"
+    case "$p" in
+        */*) dir="$p"; p="$(basename "$p")" ;;
+        *)   dir="$here/profiles/$p" ;;
+    esac
     echo "--- $p"
 
     if [ ! -d "$dir" ]; then

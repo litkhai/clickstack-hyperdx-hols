@@ -1,0 +1,4 @@
+{"level":"info","message":"user logged in","user":{"id":42,"name":"alice"},"duration_ms":12.5,"ok":true,"request_id":"r-1"}
+{"level":"ERROR","msg":"payment failed","tags":["billing","retry"],"request_id":"r-2","big":9007199254740993}
+{"service":"api","code":500,"request_id":"r-3"}
+plain text, not json
