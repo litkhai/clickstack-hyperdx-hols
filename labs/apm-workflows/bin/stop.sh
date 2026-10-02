@@ -18,6 +18,7 @@ views="rmv_traces rmv_logs rmv_metrics_histogram rmv_metrics_sum rmv_metrics_gau
 for v in $views; do
   for attempt in $(seq 1 40); do
     "${CH[@]}" query "SYSTEM $verb VIEW apm_workflows.$v"
+    sleep 3   # the status in system.view_refreshes follows the statement with a delay
     left=$("${CH[@]}" query --format TSV "SELECT countIf(NOT ($want)) FROM clusterAllReplicas(default, system.view_refreshes) WHERE database = 'apm_workflows' AND view = '$v'")
     if [ "$left" = "0" ]; then break; fi
   done

@@ -13,7 +13,8 @@
 -- (up to the traces watermark), so traces, logs and metrics of a minute always agree.
 -- "First not-yet-generated minute" = traces_next_minute. A minute with no requests at all is simply
 -- generated again (it stays empty), so nothing is written twice.
--- The 10-day look-back on the logs/metrics watermarks only bounds the scan; TTL is 30 days and the backfill 8.
+-- The logs/metrics watermarks read the last 30 minutes of their table and look back up to 10 days only when that is empty
+-- (an outage); TTL is 30 days and the backfill 8.
 -- select_sequential_consistency: the service has several replicas and consecutive refreshes (and the
 -- derived views after rmv_traces) may run on different ones; each must see what the previous one wrote,
 -- or it would compute a stale watermark and write a minute twice.
@@ -36,8 +37,11 @@ APPEND TO otel_logs
 AS
 WITH
     ifNull((SELECT next_minute FROM traces_next_minute), toStartOfMinute(now())) AS traces_next,
-    (SELECT toStartOfMinute(maxOrNull(Timestamp)) + 60 FROM otel_logs
-      WHERE Timestamp >= now() - INTERVAL 10 DAY) AS target_next,
+    (SELECT toStartOfMinute(max(t)) + 60 FROM
+       (SELECT maxOrNull(Timestamp) AS t FROM otel_logs WHERE Timestamp >= now() - INTERVAL 30 MINUTE
+        UNION ALL
+        SELECT maxOrNull(Timestamp) FROM otel_logs WHERE Timestamp >= now() - INTERVAL 10 DAY
+          AND (SELECT count() FROM (SELECT 1 FROM otel_logs WHERE Timestamp >= now() - INTERVAL 30 MINUTE LIMIT 1)) = 0)) AS target_next,
     ifNull(target_next, traces_next - 3600) AS from_minute,
     toUInt32(greatest(0, least(60, intDiv(toUnixTimestamp(traces_next) - toUnixTimestamp(from_minute), 60)))) AS n
 SELECT * FROM gen_logs(start_minute = from_minute, n_minutes = n)
@@ -49,8 +53,11 @@ APPEND TO otel_metrics_histogram
 AS
 WITH
     ifNull((SELECT next_minute FROM traces_next_minute), toStartOfMinute(now())) AS traces_next,
-    (SELECT toStartOfMinute(maxOrNull(TimeUnix)) FROM otel_metrics_histogram
-      WHERE TimeUnix >= now() - INTERVAL 10 DAY) AS target_next,
+    (SELECT toStartOfMinute(max(t)) FROM
+       (SELECT maxOrNull(TimeUnix) AS t FROM otel_metrics_histogram WHERE TimeUnix >= now() - INTERVAL 30 MINUTE
+        UNION ALL
+        SELECT maxOrNull(TimeUnix) FROM otel_metrics_histogram WHERE TimeUnix >= now() - INTERVAL 10 DAY
+          AND (SELECT count() FROM (SELECT 1 FROM otel_metrics_histogram WHERE TimeUnix >= now() - INTERVAL 30 MINUTE LIMIT 1)) = 0)) AS target_next,
     ifNull(target_next, traces_next - 3600) AS from_minute,
     toUInt32(greatest(0, least(60, intDiv(toUnixTimestamp(traces_next) - toUnixTimestamp(from_minute), 60)))) AS n
 SELECT * FROM gen_metrics_histogram(start_minute = from_minute, n_minutes = n)
@@ -62,8 +69,11 @@ APPEND TO otel_metrics_sum
 AS
 WITH
     ifNull((SELECT next_minute FROM traces_next_minute), toStartOfMinute(now())) AS traces_next,
-    (SELECT toStartOfMinute(maxOrNull(TimeUnix)) FROM otel_metrics_sum
-      WHERE TimeUnix >= now() - INTERVAL 10 DAY) AS target_next,
+    (SELECT toStartOfMinute(max(t)) FROM
+       (SELECT maxOrNull(TimeUnix) AS t FROM otel_metrics_sum WHERE TimeUnix >= now() - INTERVAL 30 MINUTE
+        UNION ALL
+        SELECT maxOrNull(TimeUnix) FROM otel_metrics_sum WHERE TimeUnix >= now() - INTERVAL 10 DAY
+          AND (SELECT count() FROM (SELECT 1 FROM otel_metrics_sum WHERE TimeUnix >= now() - INTERVAL 30 MINUTE LIMIT 1)) = 0)) AS target_next,
     ifNull(target_next, traces_next - 3600) AS from_minute,
     toUInt32(greatest(0, least(60, intDiv(toUnixTimestamp(traces_next) - toUnixTimestamp(from_minute), 60)))) AS n
 SELECT * FROM gen_metrics_sum(start_minute = from_minute, n_minutes = n)
@@ -75,8 +85,11 @@ APPEND TO otel_metrics_gauge
 AS
 WITH
     ifNull((SELECT next_minute FROM traces_next_minute), toStartOfMinute(now())) AS traces_next,
-    (SELECT toStartOfMinute(maxOrNull(TimeUnix)) FROM otel_metrics_gauge
-      WHERE TimeUnix >= now() - INTERVAL 10 DAY) AS target_next,
+    (SELECT toStartOfMinute(max(t)) FROM
+       (SELECT maxOrNull(TimeUnix) AS t FROM otel_metrics_gauge WHERE TimeUnix >= now() - INTERVAL 30 MINUTE
+        UNION ALL
+        SELECT maxOrNull(TimeUnix) FROM otel_metrics_gauge WHERE TimeUnix >= now() - INTERVAL 10 DAY
+          AND (SELECT count() FROM (SELECT 1 FROM otel_metrics_gauge WHERE TimeUnix >= now() - INTERVAL 30 MINUTE LIMIT 1)) = 0)) AS target_next,
     ifNull(target_next, traces_next - 3600) AS from_minute,
     toUInt32(greatest(0, least(60, intDiv(toUnixTimestamp(traces_next) - toUnixTimestamp(from_minute), 60)))) AS n
 SELECT * FROM gen_metrics_gauge(start_minute = from_minute, n_minutes = n)

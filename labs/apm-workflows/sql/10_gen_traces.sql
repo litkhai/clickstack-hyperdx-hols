@@ -261,3 +261,7 @@ FROM
         )
     )
 )
+-- The generator is a long chain of AND / OR / comparison expressions; the analyzer's logical-expression pass hashes them again
+-- and again (CPU profile: LogicalExpressionOptimizerVisitor::tryOptimizeAndCompareChain, getTreeHash). Switching its two chain
+-- rewrites off cuts the fixed planning cost of every refresh from 2.2 s to 0.7 s; the result is identical.
+SETTINGS optimize_and_compare_chain = 0, optimize_min_equality_disjunction_chain_length = 1000000;

@@ -30,9 +30,12 @@ WITH
             ('order', 'notification', 'Producer -> Consumer'), ('order', 'fulfillment', 'Producer -> Consumer'),
             ('payment', 'pg.example.com', 'Client -> external'), ('notification', 'mail.example.com', 'Client -> external'))
     )
-SELECT 'edge' AS part, parent_service, child, kind, calls FROM edges
-UNION ALL
-SELECT 'unexpected', parent_service, child, kind, calls FROM edges WHERE (parent_service, child, kind) NOT IN (SELECT parent_service, child, kind FROM expected)
-UNION ALL
-SELECT 'missing', parent_service, child, kind, 0 FROM expected WHERE (parent_service, child, kind) NOT IN (SELECT parent_service, child, kind FROM edges)
+SELECT * FROM
+(
+    SELECT 'edge' AS part, parent_service, child, kind, calls FROM edges
+    UNION ALL
+    SELECT 'unexpected', parent_service, child, kind, calls FROM edges WHERE (parent_service, child, kind) NOT IN (SELECT parent_service, child, kind FROM expected)
+    UNION ALL
+    SELECT 'missing', parent_service, child, kind, 0 FROM expected WHERE (parent_service, child, kind) NOT IN (SELECT parent_service, child, kind FROM edges)
+)
 ORDER BY part, parent_service, child
