@@ -291,7 +291,8 @@ def main(argv=None):
                 if out:
                     sys.stdout.write(out if out.endswith("\n") else out + "\n")
     except (ChError, ScopeError) as e:
-        print("ch.py: %s" % e, file=sys.stderr)
+        msg = str(e)
+        print("ch.py: %s" % (msg if len(msg) <= 2000 else msg[:2000] + " ...[%d chars cut]" % (len(msg) - 2000)), file=sys.stderr)
         return 1
     return 0
 
