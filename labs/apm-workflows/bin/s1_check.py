@@ -104,7 +104,10 @@ def insert_events(client, run_id, windows, block=None, faults_on=True):
         rows += [(fmt_ts(block[0]), BLOCK, "*", 1), (fmt_ts(block[1]), BLOCK, "*", 0)]
     body = "\n".join(json.dumps({"ts": ts, "run_id": run_id, "fault": name, "target": target, "enabled": enabled})
                      for ts, name, target, enabled in rows)
-    client.query("INSERT INTO fault_events (ts, run_id, fault, target, enabled) FORMAT JSONEachRow\n" + body)   # one insert, one part
+    # one insert, one part. insert_deduplicate = 0: an identical block inserted again after a DELETE (same --at, same
+    # run_id) would otherwise be dropped as a duplicate and the faults would silently not exist.
+    client.query("INSERT INTO fault_events (ts, run_id, fault, target, enabled) FORMAT JSONEachRow\n" + body,
+                 settings={"insert_deduplicate": 0})
 
 
 def windows_of_run(client, run_id):

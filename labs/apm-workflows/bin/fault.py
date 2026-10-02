@@ -52,7 +52,8 @@ def insert_event(client, ts, run_id, fault, target, enabled):
     client.query(
         "INSERT INTO fault_events (ts, run_id, fault, target, enabled) VALUES "
         "({ts:DateTime64(3)}, {run_id:String}, {fault:String}, {target:String}, {enabled:UInt8})",
-        params={"ts": ts, "run_id": run_id, "fault": fault, "target": target, "enabled": enabled})
+        params={"ts": ts, "run_id": run_id, "fault": fault, "target": target, "enabled": enabled},
+        settings={"insert_deduplicate": 0})   # the same row twice (e.g. after a DELETE) must still land
 
 
 def main(argv=None):
