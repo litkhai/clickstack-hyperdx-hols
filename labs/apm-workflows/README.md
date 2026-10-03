@@ -46,7 +46,7 @@ ClickHouse Cloud service with Managed ClickStack
 │   └── telemetry    otel_traces · otel_logs · otel_metrics_*        OTel exporter schema, TTL 30 days
 └── ClickStack
     ├── sources      APM Traces ⇄ APM Logs ⇄ APM Metrics              → apm_workflows
-    └── dashboard    APM workflows — 20 SQL tiles                      clickstack/tiles/*.sql
+    └── dashboard    APM workflows — 21 SQL tiles                      clickstack/tiles/*.sql
 ```
 
 - **Switches are rows.** A fault starts at the minute its `fault_events` row says, so every fault window is on record.
@@ -127,7 +127,7 @@ after this change.
 
 ### The dashboard
 
-*APM workflows* in the service's ClickStack, 20 SQL tiles, each one file in `clickstack/tiles/` (header comments give
+*APM workflows* in the service's ClickStack, 21 SQL tiles, each one file in `clickstack/tiles/` (header comments give
 its title, display type and grid position):
 
 - user requests, 5xx/exception rate, 4xx rate, p95 user-facing latency;
@@ -135,7 +135,7 @@ its title, display type and grid position):
 - S1: time in SQL by statement, SQL statements per user request, connection wait by pod, purchase time per step, the
   S1 diagnosis by endpoint and by service and pod (derived from `sql/s1_diagnose.sql`, so the query exists once);
 - Kafka publish→consume delay and consumer records lag, external calls by address, Hikari pending requests;
-- error and warning logs, MySQL slow log, fault switches and deploys.
+- error and warning logs, WARN/ERROR by message (numbers folded), MySQL slow log, fault switches and deploys.
 
 A server span is an error only for 5xx (OTel HTTP semantic conventions), so 4xx is shown separately.
 
@@ -289,7 +289,7 @@ Managed ClickStack이 있는 ClickHouse Cloud 서비스
 │   └── 텔레메트리 otel_traces · otel_logs · otel_metrics_*        OTel exporter 스키마, TTL 30일
 └── ClickStack
     ├── 소스       APM Traces ⇄ APM Logs ⇄ APM Metrics              → apm_workflows
-    └── 대시보드   APM workflows — SQL 타일 20개                     clickstack/tiles/*.sql
+    └── 대시보드   APM workflows — SQL 타일 21개                     clickstack/tiles/*.sql
 ```
 
 - **스위치는 행입니다.** 결함은 `fault_events` 행에 적힌 분부터 시작하므로, 결함 구간이 모두 기록으로 남습니다.
@@ -369,7 +369,7 @@ agent 기본 설정에서 소비자의 `process` span은 생산자 `publish` spa
 
 ### 대시보드
 
-서비스의 ClickStack에 있는 *APM workflows*입니다. SQL 타일 20개이고, 타일마다 `clickstack/tiles/`에 파일이 하나씩 있습니다
+서비스의 ClickStack에 있는 *APM workflows*입니다. SQL 타일 21개이고, 타일마다 `clickstack/tiles/`에 파일이 하나씩 있습니다
 (머리 주석에 제목, 표시 형식, 격자 위치).
 
 - 사용자 요청 수, 5xx·예외 오류율, 4xx 비율, 사용자 기준 p95
@@ -377,7 +377,7 @@ agent 기본 설정에서 소비자의 `process` span은 생산자 `publish` spa
 - S1: 문장별 SQL 시간, 사용자 요청당 SQL 문장 수, pod별 연결 대기, 구매 단계별 시간, 엔드포인트별·서비스와 pod별 S1 진단표
   (`sql/s1_diagnose.sql`에서 파생하므로 쿼리는 한 곳에만 있습니다)
 - Kafka 발행→소비 지연과 소비자 records lag, 주소별 외부 호출, Hikari 대기 요청
-- 오류·경고 로그, MySQL slow log, 결함 스위치와 배포
+- 오류·경고 로그, 메시지별 WARN/ERROR(숫자는 묶음), MySQL slow log, 결함 스위치와 배포
 
 서버 span은 5xx만 오류입니다(OTel HTTP 시맨틱 규약). 그래서 4xx는 따로 보여줍니다.
 
