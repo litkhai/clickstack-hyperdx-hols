@@ -10,19 +10,19 @@ transaction, telling a bad deploy from a good one, seeing the top errors as issu
 write-up, handing evidence to a coding agent. This lab shows each of them on **Managed ClickStack** in
 ClickHouse Cloud, and checks each one by SQL with a positive and a negative control.
 
-> **Status (2026-10-03).** S1 is built and verified (below). S2–S6 are designed in
-> [#66](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66) and not built yet; S7 is documentation only.
+> **Status (2026-10-03).** S1 is built and verified (below). S2 and S3 are built and not verified. S4–S7 are
+> documentation only (design in [#66](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66)).
 
 ### What it shows
 
 | # | Workflow | How it is shown | Status |
 |---|---|---|---|
 | S1 | **Slow transaction → the SQL behind it** — share of time in SQL, the statement, its service and table, the pod; N+1, connection wait, a slow external call and Kafka consumer lag told apart | `sql/s1_diagnose.sql`, the *APM workflows* dashboard, trace waterfall | **verified** |
-| S2 | **Alert on it** | ClickStack alerts — designed in #66 | not built |
-| S3 | **Deploy comparison** against 24 h and 7 d ago | SQL, a per-minute RED view | not built |
-| S4 | **Errors as issues** | SQL / materialized view, Event Patterns | not built |
-| S5 | **Incident write-up from an alert** | SQL | not built |
-| S6 | **Evidence for a coding agent** through MCP | ClickStack MCP, Cloud MCP | not built |
+| S2 | **Alert on it** — six tile alerts to Slack | `clickstack/setup.py --alerts`, the *APM alerts* dashboard | built, not verified |
+| S3 | **Deploy comparison** against 24 h and 7 d ago, JSON per service | `sql/s3_deploy_compare.sql` | built, not verified |
+| S4 | **Errors as issues** | SQL / materialized view, Event Patterns | documentation only |
+| S5 | **Incident write-up from an alert** | SQL | documentation only |
+| S6 | **Evidence for a coding agent** through MCP | ClickStack MCP, Cloud MCP | documentation only |
 | S7 | **Swapping the agent** | [documentation only](#s7--swapping-the-agent-documentation-only) | written, never run |
 
 ### How it is built: everything inside the Cloud service
@@ -253,19 +253,19 @@ labs/apm-workflows/
 사고 보고서 받기, 코딩 에이전트에게 근거 넘기기입니다. 이 랩은 각 흐름을 ClickHouse Cloud의 **Managed ClickStack**에서
 보여주고, 각 흐름을 SQL로 확인합니다. 결함을 켠 경우(양성)와 끈 경우(음성)를 모두 봅니다.
 
-> **상태 (2026-10-03).** S1은 만들었고 검증했습니다(아래). S2–S6은
-> [#66](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66)에 설계만 있고 아직 만들지 않았습니다. S7은 문서만 있습니다.
+> **상태 (2026-10-03).** S1은 만들었고 검증했습니다(아래). S2와 S3는 만들었지만 검증하지 않았습니다. S4–S7은
+> 문서만 있습니다(설계는 [#66](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66)).
 
 ### 보여주는 것
 
 | # | 업무 흐름 | 보여주는 방법 | 상태 |
 |---|---|---|---|
 | S1 | **느린 트랜잭션 → 그 뒤의 SQL**: SQL에 쓴 시간의 비중, 문장과 그 서비스·테이블, pod. N+1, 연결 대기, 느린 외부 호출, Kafka 소비 지연을 서로 구분 | `sql/s1_diagnose.sql`, *APM workflows* 대시보드, trace 워터폴 | **검증함** |
-| S2 | **알림** | ClickStack 알림 — #66에 설계 | 아직 |
-| S3 | **배포 비교**: 24시간 전·7일 전과 비교 | SQL, 분 단위 RED 뷰 | 아직 |
-| S4 | **오류를 이슈로** | SQL / materialized view, Event Patterns | 아직 |
-| S5 | **알림에서 사고 보고서로** | SQL | 아직 |
-| S6 | MCP로 **코딩 에이전트에게 근거** 넘기기 | ClickStack MCP, Cloud MCP | 아직 |
+| S2 | **알림** — 타일 알림 6개를 Slack으로 | `clickstack/setup.py --alerts`, *APM alerts* 대시보드 | 만듦, 미검증 |
+| S3 | **배포 비교**: 24시간 전·7일 전과 비교, 서비스별 JSON | `sql/s3_deploy_compare.sql` | 만듦, 미검증 |
+| S4 | **오류를 이슈로** | SQL / materialized view, Event Patterns | 문서만 |
+| S5 | **알림에서 사고 보고서로** | SQL | 문서만 |
+| S6 | MCP로 **코딩 에이전트에게 근거** 넘기기 | ClickStack MCP, Cloud MCP | 문서만 |
 | S7 | **agent 교체** | [문서만](#s7--agent-교체-문서만) | 작성, 실행한 적 없음 |
 
 ### 만드는 방식: 모든 것이 Cloud 서비스 안에서
