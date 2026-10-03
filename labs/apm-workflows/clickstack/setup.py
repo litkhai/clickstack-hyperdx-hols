@@ -3,6 +3,8 @@
 
   setup.py --test     run every tile's SQL against ClickHouse (last hour) and print row counts
   setup.py --apply    create or update the sources and the dashboard through the Cloud API
+  setup.py --alerts   create or update the "APM alerts" dashboard (clickstack/alerts/*.sql), a Slack webhook from
+                      APM_SLACK_WEBHOOK_URL in the same env file, and one alert per tile (header line "-- alert:")
 
 Credentials come from the file named by CH_ENV_FILE (process environment, or the lab's own .env),
 the same lookup as lib/ch.py: CH_HOST, CH_USER, CH_PASSWORD for SQL; CHC_ORG_ID, CHC_KEY_ID,
@@ -73,13 +75,13 @@ def service_id(env):
     raise SystemExit("no service in the organisation has CH_HOST as an endpoint")
 
 
-def tiles():
-    """Each tiles/*.sql is one tile: header comments name it, give its display type and grid position."""
+def tiles(folder="tiles"):
+    """Each <folder>/*.sql is one tile: header comments name it, give its display type and grid position."""
     out = []
-    for path in sorted(glob.glob(os.path.join(HERE, "tiles", "*.sql"))):
+    for path in sorted(glob.glob(os.path.join(HERE, folder, "*.sql"))):
         text = open(path).read()
-        head = dict(re.findall(r"^-- (tile|display|layout|from|statement|service): (.+)$", text, re.M))
-        body = "\n".join(l for l in text.splitlines() if not re.match(r"^-- (tile|display|layout|from|statement|service): ", l)).strip()
+        head = dict(re.findall(r"^-- (tile|display|layout|from|statement|service|alert): (.+)$", text, re.M))
+        body = "\n".join(l for l in text.splitlines() if not re.match(r"^-- (tile|display|layout|from|statement|service|alert): ", l)).strip()
         if "from" in head:  # derive from the lab's own SQL so the query exists once
             src = open(os.path.join(LAB, head["from"])).read()
             src = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("--")).strip()
@@ -91,8 +93,8 @@ def tiles():
             src = re.sub(r"\b(FROM|JOIN)\s+(otel_\w+|topo_\w+|fault_events|deploy_events|lab_settings|s1_runs)\b", rf"\1 {DB}.\2", src)
             body = src
         x, y, w, h = (int(v) for v in head["layout"].split())
-        out.append({"file": os.path.basename(path), "name": head["tile"], "display": head["display"],
-                    "x": x, "y": y, "w": w, "h": h, "sql": body})
+        out.append({"file": os.path.basename(path), "name": head["tile"], "display": head.get("display", "line"),
+                    "x": x, "y": y, "w": w, "h": h, "sql": body, "alert": head.get("alert")})
     return out
 
 
@@ -101,7 +103,7 @@ def test(env):
     params = {"startDateMilliseconds": end - 3600 * 1000, "endDateMilliseconds": end, "intervalSeconds": 60,
               "intervalMilliseconds": 60000}
     bad = 0
-    for t in tiles():
+    for t in tiles() + tiles("alerts"):
         try:
             r = sql(env, t["sql"], params)
             print(f"ok   {t['file']:<34} rows={r['rows']:<5} cols={','.join(c['name'] for c in r['meta'])}")
@@ -166,11 +168,48 @@ def apply(env):
     print(f"dashboard: {d['name']} — {len(d.get('tiles', []))} tiles ({'updated' if cur else 'created'})")
 
 
+def apply_alerts(env):
+    """Alerts are attached to tiles of their own dashboard; each tile's "-- alert: <type> <threshold> <interval> <windows>"."""
+    if not env.get("APM_SLACK_WEBHOOK_URL"):
+        raise SystemExit("APM_SLACK_WEBHOOK_URL is missing from the env file named by CH_ENV_FILE")
+    svc = service_id(env)
+    sources = api(env, svc, "GET", "/sources")
+    connection = next(s["connection"] for s in sources if s.get("connection"))
+    traces = next(s["id"] for s in sources if s["name"] == NAMES["trace"])
+    ts = tiles("alerts")
+    body = {"name": "APM alerts", "tags": ["apm-workflows"], "tiles": [
+        {"name": t["name"], "x": t["x"], "y": t["y"], "w": t["w"], "h": t["h"],
+         "config": {"configType": "sql", "displayType": "line", "connectionId": connection, "sourceId": traces, "sqlTemplate": t["sql"]}}
+        for t in ts]}
+    cur = next((d for d in api(env, svc, "GET", "/dashboards") if d["name"] == "APM alerts"), None)
+    d = api(env, svc, "PUT", f"/dashboards/{cur['id']}", body) if cur else api(env, svc, "POST", "/dashboards", body)
+    tile_id = {t["name"]: t["id"] for t in d["tiles"]}
+    wname = "APM alerts → Slack"
+    wbody = {"name": wname, "service": "slack", "url": env["APM_SLACK_WEBHOOK_URL"], "description": "labs/apm-workflows demo alerts"}
+    w = next((x for x in api(env, svc, "GET", "/webhooks") if x["name"] == wname), None)
+    w = api(env, svc, "PUT", f"/webhooks/{w['id']}", wbody) if w else api(env, svc, "POST", "/webhooks", wbody)
+    existing = {a.get("name"): a for a in api(env, svc, "GET", "/alerts")}
+    for t in ts:
+        kind, threshold, interval, windows = t["alert"].split()
+        a = {"dashboardId": d["id"], "tileId": tile_id[t["name"]], "source": "tile", "thresholdType": kind,
+             "threshold": float(threshold), "interval": interval, "name": t["name"],  # the Cloud API has no displayName
+             "channel": {"type": "webhook", "webhookId": w["id"]},
+             "message": "labs/apm-workflows demo alert (synthetic data). Dashboard: APM workflows."}
+        if int(windows) > 1:
+            a["numConsecutiveWindows"] = int(windows)
+        cur = existing.get(t["name"])
+        api(env, svc, "PUT", f"/alerts/{cur['id']}", a) if cur else api(env, svc, "POST", "/alerts", a)
+        print("alert: %s  (%s %s, every %s, %s window%s)" % (t["name"], kind, threshold, interval, windows, "s" if int(windows) > 1 else ""))
+    print("dashboard: APM alerts — %d tiles; webhook: %s" % (len(d["tiles"]), wname))
+
+
 if __name__ == "__main__":
     env = load_env()
     if "--test" in sys.argv:
         sys.exit(1 if test(env) else 0)
     elif "--apply" in sys.argv:
         apply(env)
+    elif "--alerts" in sys.argv:
+        apply_alerts(env)
     else:
         print(__doc__)
