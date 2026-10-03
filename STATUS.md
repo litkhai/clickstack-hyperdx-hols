@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-03** — `labs/apm-workflows/` split 1 (in-database generator, backfill, S1 verified on Managed ClickStack); `docs/labs.json` added (notes-site export, 0 labs published; the only committed file under `docs/`). As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-03** — `labs/apm-workflows/`: S1 verified on Managed ClickStack, background noise and incidents, S2 alerts and S3 comparison built but not verified; `docs/labs.json` added (notes-site export, 0 labs published; the only committed file under `docs/`). As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -93,9 +93,12 @@ than changing the lab, and opens with what the lab does not do.
 
 `labs/apm-workflows/` runs entirely inside a ClickHouse Cloud service with Managed ClickStack: an eleven-service shop
 generated in SQL by refreshable materialized views (8-day backfill plus live, TTL 30 days), fault switches as rows, and
-a ClickStack dashboard created through the Cloud API. **S1 verified** on ClickHouse 26.6.1.2191 (Cloud, ap-northeast-2)
-with Managed ClickStack, 2026-10-03: the replayed S1 check passes 44 of 44 assertions and restores the block exactly.
-S2–S6 are designed in #66 and not built; S7 is documentation only.
+a ClickStack dashboard (21 SQL tiles) created through the Cloud API. **S1 verified** on ClickHouse 26.6.1.2191 (Cloud,
+ap-northeast-2) with Managed ClickStack, 2026-10-03: the replayed S1 check passes 44 of 44 assertions and restores the
+block exactly — before the background noise was added; not re-run with it. Background WARN/ERROR noise and small
+incidents written ahead by `rmv_incidents` run in live (a manual 3-minute incident showed its errors only inside its
+window). S2: six tile alerts to Slack are applied, their firing not verified. S3: `sql/s3_deploy_compare.sql`, a
+no-deploy window comes out stable for all services, a real deploy not compared. S4–S7 are documentation only.
 
 ## Open work
 
@@ -104,7 +107,7 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F1–F7: roadmap labs](https://github.com/litkhai/clickstack-hyperdx-hols/issues/2)
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
-- [labs/apm-workflows/: S2–S6](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66) — split 1 (generator, backfill, S1) done; S2 alerts designed, webhook target open
+- [labs/apm-workflows/](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66) — S1 done; S2 alerts and S3 comparison built, not verified; S1 not re-run with the noise; S4–S6 documentation only
 - [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Filebeat and Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59) and the [HyperDX dashboard output](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)
 - Found while building the dashboards path: [Elasticsearch `float` values load one float32 ulp off](https://github.com/litkhai/clickstack-hyperdx-hols/issues/61) (`re-verify`), [the manifest records ClickHouse types only](https://github.com/litkhai/clickstack-hyperdx-hols/issues/62), [clickstack-config's Error count tile filter is probably dropped by the API](https://github.com/litkhai/clickstack-hyperdx-hols/issues/60) (`re-verify`)
 - Found while building the data path, none of them blocking:
