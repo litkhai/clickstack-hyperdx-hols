@@ -76,5 +76,37 @@ class LiveSkipAhead(unittest.TestCase):
         self.assertGreaterEqual(s1.LIVE_SPAN_MIN, max(off for _, off in s1.SCHEDULE) + s1.WINDOW_MIN + 12)
 
 
+class InsertDeduplication(unittest.TestCase):
+    """The regenerated block equals the one inserted before; the replicated insert deduplication must not drop it."""
+
+    class Fake:
+        def __init__(self):
+            self.calls = []
+
+        def apply_script(self, text, params=None, settings=None):
+            self.calls.append(("script", text, dict(settings or {})))
+
+        def query(self, text, params=None, fmt=None, settings=None, timeout=None):
+            self.calls.append(("query", text, dict(settings or {})))
+
+    def test_the_block_is_regenerated_with_insert_deduplicate_off(self):
+        fake = self.Fake()
+        s1.rewrite_block(fake, datetime(2026, 9, 25, 11, 38), datetime(2026, 9, 25, 12, 38), log=lambda *_: None)
+        regenerate = [c for c in fake.calls if "INSERT" in c[1].upper() and "gen_" in c[1]]
+        self.assertTrue(regenerate, "the regenerating script was not run")
+        for _, _, settings in regenerate:
+            self.assertEqual(settings.get("insert_deduplicate"), 0)
+
+    def test_the_fault_rows_are_inserted_with_insert_deduplicate_off(self):
+        fake = self.Fake()
+        s1.insert_events(fake, "s1-x", s1.plan_windows(datetime(2026, 9, 25, 11, 40), "pod"))
+        self.assertEqual(fake.calls[-1][2].get("insert_deduplicate"), 0)
+
+    def test_backfill_sh_turns_it_off_for_the_chunks(self):
+        sh = (LAB / "bin" / "backfill.sh").read_text()
+        line = [l for l in sh.splitlines() if "backfill_chunk.sql" in l and "apply" in l][0]
+        self.assertIn("insert_deduplicate=0", line)
+
+
 if __name__ == "__main__":
     unittest.main()

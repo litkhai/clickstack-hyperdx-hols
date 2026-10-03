@@ -45,6 +45,9 @@ SCHEDULE = [(NEGATIVE, 2), ("slow-query", 8), ("n-plus-one", 14), ("pool-exhaust
             ("downstream-latency", 26), ("kafka-consumer-lag", 32)]
 WINDOW_MIN, BLOCK_MIN = 4, 60
 SYNC = {"select_sequential_consistency": 1}
+# a block regenerated after a DELETE is byte-identical to one inserted before (generation is deterministic): the replicated
+# insert deduplication drops it silently, and the block stays empty. Every INSERT ... SELECT of the generator turns it off.
+INS = {**SYNC, "insert_deduplicate": 0}
 
 # --- expectations (the thresholds of the S1 spec) -------------------------------------------------
 SLOW_STATEMENT, SLOW_SERVICE, SLOW_TABLE = "customer_email", "order", "orders"
@@ -147,7 +150,7 @@ def rewrite_block(client, s, e, log=print):
     p = {"s": fmt_ts(s), "e": fmt_ts(e)}
     client.apply_script(sql("s1_block_delete.sql"), params=p, settings={"lightweight_deletes_sync": 2, **SYNC})
     pc = {"chunk_start": fmt_ts(s), "chunk_minutes": BLOCK_MIN}
-    client.apply_script(sql("backfill_chunk.sql"), params=pc, settings=SYNC)
+    client.apply_script(sql("backfill_chunk.sql"), params=pc, settings=INS)
     log("  block %s -> %s rewritten (%d minutes)" % (fmt_ts(s), fmt_ts(e), BLOCK_MIN))
 
 

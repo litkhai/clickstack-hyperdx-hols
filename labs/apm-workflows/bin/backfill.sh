@@ -60,7 +60,9 @@ while [ "$d" -lt "$days" ]; do
   # select_sequential_consistency: the service has several replicas; the derived inserts must see the
   # spans the previous statement just wrote, whichever replica serves them (without it a chunk's logs
   # came out empty on some runs)
-  "${CH[@]}" apply --setting select_sequential_consistency=1 --param chunk_start="$chunk_start" --param chunk_minutes=1440 "$LAB/sql/backfill_chunk.sql" >/dev/null
+  # insert_deduplicate=0: after TRUNCATE or --force the same chunk is byte-identical to the one inserted before (generation is
+  # deterministic) and the replicated insert deduplication would drop it silently
+  "${CH[@]}" apply --setting select_sequential_consistency=1 --setting insert_deduplicate=0 --param chunk_start="$chunk_start" --param chunk_minutes=1440 "$LAB/sql/backfill_chunk.sql" >/dev/null
   counts=$(q --setting select_sequential_consistency=1 --param chunk_start="$chunk_start" --param chunk_minutes=1440 --file "$LAB/sql/backfill_chunk_counts.sql" | tr '\n\t' ' ')
   echo "chunk $((d + 1))/$days $chunk_start  $counts ($(( $(date +%s) - s )) s)"
   d=$((d + 1))

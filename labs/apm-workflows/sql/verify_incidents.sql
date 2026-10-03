@@ -41,5 +41,8 @@ SELECT (SELECT fault FROM inc) AS fault, toString((SELECT a FROM inc)) AS starts
        countIf(ts >= (SELECT a FROM inc) AND ts < (SELECT b FROM inc)) AS events_inside,
        round(events_inside / dateDiff('minute', (SELECT a FROM inc), (SELECT b FROM inc)), 2) AS per_minute_inside,
        countIf(ts < (SELECT a FROM inc) OR ts >= (SELECT b FROM inc)) AS events_outside,
-       round(events_outside / 120, 3) AS per_minute_outside_60min_each_side
+       -- the minutes that exist outside the window: 60 before, up to 60 after (less when the hour after has not passed yet)
+       dateDiff('minute', (SELECT a FROM inc) - 3600, (SELECT a FROM inc))
+         + dateDiff('minute', (SELECT b FROM inc), least((SELECT b FROM inc) + 3600, now() - 120)) AS minutes_outside,
+       round(events_outside / minutes_outside, 3) AS per_minute_outside
 FROM sig;
