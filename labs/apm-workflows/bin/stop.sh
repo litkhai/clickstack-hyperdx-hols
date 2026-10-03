@@ -14,7 +14,7 @@ case "${1:-}" in
   --resume) verb="START"; want="status != 'Disabled'" ;;
   *) echo "usage: $0 [--resume]" >&2; exit 2 ;;
 esac
-views="rmv_traces rmv_logs rmv_metrics_histogram rmv_metrics_sum rmv_metrics_gauge"
+views="rmv_traces rmv_logs rmv_metrics_histogram rmv_metrics_sum rmv_metrics_gauge rmv_incidents"
 for v in $views; do
   for attempt in $(seq 1 40); do
     "${CH[@]}" query "SYSTEM $verb VIEW apm_workflows.$v"

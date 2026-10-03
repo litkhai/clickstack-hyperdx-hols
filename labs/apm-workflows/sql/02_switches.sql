@@ -1,6 +1,7 @@
 -- Switches are rows. The generator reads them; nothing here is "on" by default.
 
--- fault: slow-query | n-plus-one | pool-exhaustion | downstream-latency | exception-storm | kafka-consumer-lag
+-- fault: slow-query | n-plus-one | pool-exhaustion | downstream-latency | exception-storm | kafka-consumer-lag |
+--        mail-api-errors | pricing-timeouts | stock-deadlocks
 -- (where each one lives: bin/fault.py; the S1 check also writes marker rows the generator ignores)
 -- target: '*' (or '') = every pod, otherwise a k8s.pod.name. A request is affected iff the
 -- latest event for its fault whose ts <= the request's timestamp (and whose target is '*',
@@ -30,8 +31,11 @@ CREATE TABLE IF NOT EXISTS deploy_events
 ENGINE = MergeTree
 ORDER BY (service, ts);
 
--- Name/value settings; the newest row per name wins. base_rpm = requests per minute at
--- diurnal factor 1.0 (the daily curve runs ~0.7 to ~1.3).
+-- Name/value settings; the newest row per name wins.
+--   base_rpm         requests per minute at diurnal factor 1.0 (the daily curve runs ~0.7 to ~1.3)
+--   install_minute   the end of the backfill window; live continues from it
+--   noise_scale      scales the background WARN / ERROR paths (1 = the default rates, 0 = off)
+--   incidents        1 = rmv_incidents writes small incidents ahead of time, 0 = it stops writing new ones
 CREATE TABLE IF NOT EXISTS lab_settings
 (
     `name` LowCardinality(String),
@@ -49,3 +53,11 @@ WHERE NOT EXISTS (SELECT 1 FROM lab_settings WHERE name = 'base_rpm');
 INSERT INTO lab_settings (name, value)
 SELECT 'install_minute', toUnixTimestamp(toStartOfMinute(now()))
 WHERE NOT EXISTS (SELECT 1 FROM lab_settings WHERE name = 'install_minute');
+
+INSERT INTO lab_settings (name, value)
+SELECT 'noise_scale', 1
+WHERE NOT EXISTS (SELECT 1 FROM lab_settings WHERE name = 'noise_scale');
+
+INSERT INTO lab_settings (name, value)
+SELECT 'incidents', 1
+WHERE NOT EXISTS (SELECT 1 FROM lab_settings WHERE name = 'incidents');

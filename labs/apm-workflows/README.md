@@ -114,6 +114,17 @@ Each is off by default and switched by a row (`python3 bin/fault.py on|off <faul
 | `exception-storm` | `order`, order detail | three exception types, every message different (S4) |
 | bad deploy | `python3 bin/deploy.py checkout 4.2.0 --regression` | the new checkout calls `pricing` once per item, ~3% errors (S3) |
 
+### Background noise and small incidents
+
+So the shop is not unrealistically quiet, everyday failures run all the time (backfill and live): pricing timeouts that are
+retried, invalid cart input, MySQL deadlocks on stock that are retried, Kafka rebalances (WARN); payment-gateway timeouts,
+mail-API 503s, a rare search bug, duplicate order keys (ERROR). `lab_settings.noise_scale` scales them (0 = off).
+Measured by SQL over five live hours on 2026-10-03, as a share of user requests: WARN 1.8–2.7%, ERROR 0.2–0.9%, 5xx at the
+edge 0.0–0.3%. `rmv_incidents` also writes a small incident every few hours ahead of time into `fault_events`
+(`run_id = auto-…`; three extra kinds: `mail-api-errors`, `pricing-timeouts`, `stock-deadlocks`); `lab_settings.incidents = 0`
+stops new ones. **Not re-verified with the noise on:** the S1 check, the incident effect and continuity were not re-run
+after this change.
+
 ### The dashboard
 
 *APM workflows* in the service's ClickStack, 20 SQL tiles, each one file in `clickstack/tiles/` (header comments give
@@ -345,6 +356,16 @@ agent 기본 설정에서 소비자의 `process` span은 생산자 `publish` spa
 | `kafka-consumer-lag` | `notification` | 발행에서 소비까지의 지연이 분 단위로 커짐. `fulfillment`와 구매 자체는 빠름 |
 | `exception-storm` | `order` 주문 상세 | 예외 유형 세 가지, 메시지는 모두 다름 (S4) |
 | 나쁜 배포 | `python3 bin/deploy.py checkout 4.2.0 --regression` | 새 checkout이 품목마다 `pricing`을 호출하고, 오류 약 3% (S3) |
+
+### 평소 잡음과 작은 사고
+
+쇼핑몰이 비현실적으로 조용하지 않도록, 일상적인 실패가 늘 돕니다(백필과 live). WARN은 재시도되는 pricing 타임아웃,
+장바구니 입력 오류, 재시도되는 재고 교착, Kafka 리밸런스이고, ERROR는 결제 게이트웨이 타임아웃, 메일 API 503, 드문 검색 버그,
+주문 중복 키입니다. `lab_settings.noise_scale`로 키우거나 줄입니다(0이면 끔). 2026-10-03 live 다섯 시간을 SQL로 잰 값은
+사용자 요청 대비 WARN 1.8–2.7%, ERROR 0.2–0.9%, edge 5xx 0.0–0.3%입니다. `rmv_incidents`는 몇 시간에 한 번 작은 사고를
+`fault_events`에 미리 기록합니다(`run_id = auto-…`, 추가 결함 `mail-api-errors`, `pricing-timeouts`, `stock-deadlocks`).
+`lab_settings.incidents = 0`이면 새 사고를 만들지 않습니다. **잡음을 켠 상태로는 다시 검증하지 않았습니다:** S1 검사, 사고 효과,
+연속성 검사를 이 변경 뒤에 다시 돌리지 않았습니다.
 
 ### 대시보드
 

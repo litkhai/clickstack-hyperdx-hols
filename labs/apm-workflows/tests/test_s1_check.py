@@ -46,5 +46,67 @@ class Schedule(unittest.TestCase):
         self.assertEqual({n for n, _ in s1.SCHEDULE}, set(s1.FAULTS) | {s1.NEGATIVE})
 
 
+class LiveSkipAhead(unittest.TestCase):
+    T = datetime(2026, 10, 3, 6, 0)
+
+    def inc(self, name, a_min, b_min):
+        return (name, "mail-api-errors", self.T + timedelta(minutes=a_min), self.T + timedelta(minutes=b_min))
+
+    def test_free_when_nothing_overlaps(self):
+        start, skipped = s1.free_stretch([self.inc("auto-1", 120, 126)], self.T, timedelta(minutes=50))
+        self.assertEqual(start, self.T)
+        self.assertEqual(skipped, [])
+
+    def test_skips_to_the_minute_after_an_overlapping_incident(self):
+        start, skipped = s1.free_stretch([self.inc("auto-1", 30, 36)], self.T, timedelta(minutes=50))
+        self.assertEqual(start, self.T + timedelta(minutes=37))
+        self.assertEqual([x[0] for x in skipped], ["auto-1"])
+
+    def test_skips_over_two_incidents_when_the_gap_is_too_short(self):
+        incs = [self.inc("auto-1", 10, 15), self.inc("auto-2", 60, 66)]
+        start, skipped = s1.free_stretch(incs, self.T, timedelta(minutes=50))
+        self.assertEqual(start, self.T + timedelta(minutes=67))
+        self.assertEqual([x[0] for x in skipped], ["auto-1", "auto-2"])
+
+    def test_an_incident_ending_exactly_at_the_start_does_not_overlap(self):
+        start, skipped = s1.free_stretch([self.inc("auto-1", -10, 0)], self.T, timedelta(minutes=50))
+        self.assertEqual((start, skipped), (self.T, []))
+
+    def test_the_span_covers_every_window_and_the_tail(self):
+        self.assertGreaterEqual(s1.LIVE_SPAN_MIN, max(off for _, off in s1.SCHEDULE) + s1.WINDOW_MIN + 12)
+
+
+class InsertDeduplication(unittest.TestCase):
+    """The regenerated block equals the one inserted before; the replicated insert deduplication must not drop it."""
+
+    class Fake:
+        def __init__(self):
+            self.calls = []
+
+        def apply_script(self, text, params=None, settings=None):
+            self.calls.append(("script", text, dict(settings or {})))
+
+        def query(self, text, params=None, fmt=None, settings=None, timeout=None):
+            self.calls.append(("query", text, dict(settings or {})))
+
+    def test_the_block_is_regenerated_with_insert_deduplicate_off(self):
+        fake = self.Fake()
+        s1.rewrite_block(fake, datetime(2026, 9, 25, 11, 38), datetime(2026, 9, 25, 12, 38), log=lambda *_: None)
+        regenerate = [c for c in fake.calls if "INSERT" in c[1].upper() and "gen_" in c[1]]
+        self.assertTrue(regenerate, "the regenerating script was not run")
+        for _, _, settings in regenerate:
+            self.assertEqual(settings.get("insert_deduplicate"), 0)
+
+    def test_the_fault_rows_are_inserted_with_insert_deduplicate_off(self):
+        fake = self.Fake()
+        s1.insert_events(fake, "s1-x", s1.plan_windows(datetime(2026, 9, 25, 11, 40), "pod"))
+        self.assertEqual(fake.calls[-1][2].get("insert_deduplicate"), 0)
+
+    def test_backfill_sh_turns_it_off_for_the_chunks(self):
+        sh = (LAB / "bin" / "backfill.sh").read_text()
+        line = [l for l in sh.splitlines() if "backfill_chunk.sql" in l and "apply" in l][0]
+        self.assertIn("insert_deduplicate=0", line)
+
+
 if __name__ == "__main__":
     unittest.main()

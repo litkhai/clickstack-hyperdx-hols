@@ -10,8 +10,12 @@
 -- Resource attributes are copied from the span (apm.backfill rides along), so nothing here needs to know whether it
 -- runs live or in the backfill.
 --
---   ERROR   one per failed SERVER span that recorded an exception: exception.* of the span event, same TraceId/SpanId
---   WARN    a user request (web-bff) slower than 500 ms; a declined payment (402) with its exception
+--   ERROR   one per span that recorded an exception and failed: a SERVER span (Error), the mail listener's CONSUMER span, the
+--           order service's duplicate-key JDBC span. exception.* is the span's own exception event and TraceId / SpanId are that
+--           span's, so the log, the span status and the event always agree (bin sql/verify_noise.sql checks it).
+--   WARN    a user request (web-bff) slower than 500 ms; a declined payment (402); an invalid cart item (cart answered 400);
+--           a retried call that failed (pricing timeout, MySQL deadlock) -- on the failed attempt's span, only when a later
+--           attempt follows; a Kafka consumer coordinator warning (offset commit failed, poll timeout): no span, no trace id
 --   INFO    `order placed` (order), `order confirmation mail sent` (notification), `shipment created` (fulfillment)
 --   mysql   MySQL slow-log entries for statements over long_query_time = 0.2 s, written the way the repository's
 --           otel-profiles/profiles/mysql filelog parser leaves them: service.name = mysql, attributes slow_time,
@@ -23,31 +27,37 @@ WITH
     toStartOfMinute({start_minute:DateTime}) AS w0,
     w0 + toIntervalMinute({n_minutes:UInt32}) AS w1,
     (_m, _i, _s) -> (cityHash64(_m, _i, _s) % 1000003 + 0.5) / 1000003.0 AS u,
+    ifNull((SELECT argMax(value, ts) FROM lab_settings WHERE name = 'noise_scale'), 1) AS noise_scale,
     spans AS
     (
-        -- every log is stamped at or after its span's start, so spans from one minute before the window
-        -- up to its end are all it can need
-        SELECT * FROM otel_traces WHERE Timestamp >= w0 - 60 AND Timestamp < w1
+        -- every log is stamped at or after its span's start, so spans from one minute before the window up to a minute
+        -- past its end are all it can need (the extra minute: a retry's next attempt, the minute a Kafka warning belongs to)
+        SELECT * FROM otel_traces WHERE Timestamp >= w0 - 60 AND Timestamp < w1 + 60
     )
 SELECT * FROM
 (
--- ---- ERROR: a failed SERVER span with an exception ----------------------------------------------------
+-- ---- ERROR: a span that failed with an exception ----------------------------------------------------
 SELECT
     `Events.Timestamp`[1] + toIntervalMillisecond(1) AS Timestamp,
     toDateTime(Timestamp) AS TimestampTime,
     TraceId, SpanId, 1 AS TraceFlags,
     'ERROR' AS SeverityText, 17 AS SeverityNumber,
     ServiceName,
-    concat('Unhandled exception in ', SpanName, ' -> ', SpanAttributes['http.response.status_code']) AS Body,
+    multiIf(SpanKind = 'Consumer', concat('Failed to send order confirmation partition=', SpanAttributes['messaging.destination.partition.id'], ' offset=', SpanAttributes['messaging.kafka.message.offset']),
+            SpanKind = 'Client', 'Failed to create order: duplicate order reference',
+            concat('Unhandled exception in ', SpanName, ' -> ', SpanAttributes['http.response.status_code'])) AS Body,
     '' AS ResourceSchemaUrl,
     ResourceAttributes,
     '' AS ScopeSchemaUrl,
-    concat('com.example.', replaceAll(ServiceName, '-', ''), '.web.ApiExceptionHandler') AS ScopeName,
+    multiIf(SpanKind = 'Consumer', 'com.example.notification.OrderMailListener',
+            SpanKind = 'Client', 'com.example.order.OrderService',
+            concat('com.example.', replaceAll(ServiceName, '-', ''), '.web.ApiExceptionHandler')) AS ScopeName,
     '' AS ScopeVersion,
     CAST(map() AS Map(LowCardinality(String), String)) AS ScopeAttributes,
     CAST(`Events.Attributes`[1] AS Map(LowCardinality(String), String)) AS LogAttributes
 FROM spans
-WHERE SpanKind = 'Server' AND StatusCode = 'Error' AND length(`Events.Name`) > 0
+WHERE (SpanKind IN ('Server', 'Consumer') AND StatusCode = 'Error' AND length(`Events.Name`) > 0)
+   OR (SpanKind = 'Client' AND ServiceName = 'order' AND StatusCode = 'Error' AND `Events.Attributes`[1]['exception.type'] = 'java.sql.SQLIntegrityConstraintViolationException')
 
 UNION ALL
 
@@ -113,8 +123,112 @@ SELECT
     CAST(map() AS Map(LowCardinality(String), String)) AS ScopeAttributes,
     CAST(map() AS Map(LowCardinality(String), String)) AS LogAttributes
 FROM spans
-WHERE (ServiceName = 'order' AND SpanKind = 'Server' AND SpanName = 'POST /api/orders' AND StatusCode != 'Error')
-   OR (ServiceName IN ('notification', 'fulfillment') AND SpanKind = 'Consumer')
+WHERE (ServiceName = 'order' AND SpanKind = 'Server' AND SpanName = 'POST /api/orders' AND SpanAttributes['http.response.status_code'] = '200')
+   OR (ServiceName IN ('notification', 'fulfillment') AND SpanKind = 'Consumer' AND StatusCode != 'Error')
+
+UNION ALL
+
+-- ---- WARN: invalid cart input (the cart service answered 400) -----------------------------------------
+-- DefaultHandlerExceptionResolver logs the resolved Spring exception; the exception is attached as the log's exception.*
+SELECT
+    Timestamp + toIntervalNanosecond(Duration) - toIntervalMillisecond(1) AS Timestamp,
+    toDateTime(Timestamp) AS TimestampTime,
+    TraceId, SpanId, 1 AS TraceFlags,
+    'WARN' AS SeverityText, 13 AS SeverityNumber,
+    ServiceName,
+    concat('Resolved [org.springframework.web.bind.MethodArgumentNotValidException: ', val_msg, ']') AS Body,
+    '' AS ResourceSchemaUrl,
+    ResourceAttributes,
+    '' AS ScopeSchemaUrl,
+    'org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver' AS ScopeName,
+    '' AS ScopeVersion,
+    CAST(map() AS Map(LowCardinality(String), String)) AS ScopeAttributes,
+    CAST(map('exception.type', 'org.springframework.web.bind.MethodArgumentNotValidException',
+             'exception.message', val_msg,
+             'exception.stacktrace', concat('org.springframework.web.bind.MethodArgumentNotValidException: ', val_msg,
+                 '\n\tat org.springframework.web.servlet.mvc.method.annotation.RequestResponseBodyMethodProcessor.resolveArgument(RequestResponseBodyMethodProcessor.java:148)',
+                 '\n\tat org.springframework.web.method.support.HandlerMethodArgumentResolverComposite.resolveArgument(HandlerMethodArgumentResolverComposite.java:122)',
+                 '\n\tat org.springframework.web.method.support.InvocableHandlerMethod.getMethodArgumentValues(InvocableHandlerMethod.java:224)')) AS Map(LowCardinality(String), String)) AS LogAttributes
+FROM
+(
+    SELECT *,
+        concat('Validation failed for argument [0] in public org.springframework.http.ResponseEntity<com.example.cart.web.CartView> com.example.cart.web.CartController.addItem(com.example.cart.web.AddItemRequest): [Field error in object \'addItemRequest\' on field \'',
+               multiIf(cityHash64(SpanId, 'v') % 3 = 2, 'sku', 'quantity'), '\': rejected value [',
+               multiIf(cityHash64(SpanId, 'v') % 3 = 0, '0', cityHash64(SpanId, 'v') % 3 = 1, '-3', 'sku-0042'), ']; default message [',
+               multiIf(cityHash64(SpanId, 'v') % 3 = 2, 'must match \"SKU-\\d{4}\"', 'must be greater than or equal to 1'), ']]') AS val_msg
+    FROM spans
+    WHERE ServiceName = 'cart' AND SpanKind = 'Server' AND SpanAttributes['http.response.status_code'] = '400'
+)
+
+UNION ALL
+
+-- ---- WARN: a failed attempt that is retried (a later attempt of the same call follows) ----------------------
+-- pricing: the checkout -> pricing call timed out (java.net.http.HttpTimeoutException); inventory: MySQL deadlock (error 1213,
+-- SQLState 40001, MySQLTransactionRollbackException) on the stock UPDATE. The log is on the failed attempt's span.
+SELECT
+    `Events.Timestamp`[1] + toIntervalMillisecond(1) AS Timestamp,
+    toDateTime(Timestamp) AS TimestampTime,
+    TraceId, SpanId, 1 AS TraceFlags,
+    'WARN' AS SeverityText, 13 AS SeverityNumber,
+    ServiceName,
+    if(ServiceName = 'checkout',
+       concat('Retrying POST /api/quote (attempt ', toString(attempt + 1), '/3)'),
+       concat('Deadlock detected on stock update (MySQL error 1213, SQLState 40001), retrying (attempt ', toString(attempt + 1), '/3)')) AS Body,
+    '' AS ResourceSchemaUrl,
+    ResourceAttributes,
+    '' AS ScopeSchemaUrl,
+    if(ServiceName = 'checkout', 'com.example.checkout.client.PricingClient', 'com.example.inventory.repo.StockRepository') AS ScopeName,
+    '' AS ScopeVersion,
+    CAST(map() AS Map(LowCardinality(String), String)) AS ScopeAttributes,
+    CAST(`Events.Attributes`[1] AS Map(LowCardinality(String), String)) AS LogAttributes
+FROM
+(
+    SELECT *,
+        count() OVER (PARTITION BY TraceId, ParentSpanId, grp ORDER BY Timestamp ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS from_here,
+        row_number() OVER (PARTITION BY TraceId, ParentSpanId, grp ORDER BY Timestamp) AS attempt
+    FROM
+    (
+        SELECT *, cityHash64(SpanName, SpanAttributes['url.full'], SpanAttributes['db.statement']) AS grp
+        FROM spans
+        WHERE SpanKind = 'Client' AND (SpanAttributes['url.full'] LIKE '%/api/quote' OR SpanAttributes['db.statement'] LIKE 'UPDATE stock%')
+    )
+)
+WHERE StatusCode = 'Error' AND from_here > 1 AND length(`Events.Name`) > 0
+  AND `Events.Attributes`[1]['exception.type'] IN ('java.net.http.HttpTimeoutException', 'com.mysql.cj.jdbc.exceptions.MySQLTransactionRollbackException')
+
+UNION ALL
+
+-- ---- WARN: Kafka consumer coordinator warnings (a few per hour per consumer group) --------------------------
+-- Logger and message text: kafka-clients ConsumerCoordinator / AbstractCoordinator (3.7.0 sources); no span, so no trace id.
+-- At most one per group and minute, in minutes where the group consumed something; the pod is one of the group's.
+SELECT
+    ts AS Timestamp,
+    toDateTime(ts) AS TimestampTime,
+    '' AS TraceId, '' AS SpanId, 0 AS TraceFlags,
+    'WARN' AS SeverityText, 13 AS SeverityNumber,
+    ServiceName,
+    concat('[Consumer clientId=consumer-', ServiceName, '-1, groupId=', ServiceName, '] ',
+           multiIf(kind3 = 0, concat('Offset commit failed on partition order.created-', toString(h % 3), ' at offset ', toString(intDiv(toUnixTimestamp(m), 6) + h % 3), ': The coordinator is loading and hence can\'t process requests.'),
+                   kind3 = 1, concat('Offset commit failed on partition order.created-', toString(h % 3), ' at offset ', toString(intDiv(toUnixTimestamp(m), 6) + h % 3), ': This is not the correct coordinator.'),
+                   'consumer poll timeout has expired. This means the time between subsequent calls to poll() was longer than the configured max.poll.interval.ms, which typically implies that the poll loop is spending too much time processing messages. You can address this either by increasing max.poll.interval.ms or by reducing the maximum size of batches returned in poll() with max.poll.records.')) AS Body,
+    '' AS ResourceSchemaUrl,
+    res AS ResourceAttributes,
+    '' AS ScopeSchemaUrl,
+    if(kind3 = 2, 'org.apache.kafka.clients.consumer.internals.AbstractCoordinator', 'org.apache.kafka.clients.consumer.internals.ConsumerCoordinator') AS ScopeName,
+    '' AS ScopeVersion,
+    CAST(map() AS Map(LowCardinality(String), String)) AS ScopeAttributes,
+    CAST(map() AS Map(LowCardinality(String), String)) AS LogAttributes
+FROM
+(
+    SELECT ServiceName, m, argMin(ResourceAttributes, cityHash64(SpanId)) AS res,
+        cityHash64(toUInt32(m), ServiceName, 'rbk') AS h,
+        h % 5 AS kind5,
+        multiIf(kind5 < 2, 0, kind5 < 4, 1, 2) AS kind3,
+        m + toIntervalMillisecond(toUInt32(u(toUInt32(m), cityHash64(ServiceName), 'rbt') * 59000)) AS ts
+    FROM (SELECT ServiceName, SpanId, ResourceAttributes, toStartOfMinute(Timestamp) AS m FROM spans WHERE SpanKind = 'Consumer')
+    GROUP BY ServiceName, m
+    HAVING u(toUInt32(m), cityHash64(ServiceName), 'rb') < 4 / 60 * noise_scale
+)
 
 UNION ALL
 
