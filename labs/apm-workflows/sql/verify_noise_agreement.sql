@@ -113,7 +113,10 @@ FROM
      WHERE Timestamp >= {start:DateTime} AND Timestamp < {end:DateTime} - 60 AND SpanKind IN ('Server', 'Consumer') AND StatusCode = 'Error' AND length(`Events.Name`) > 0) AS s
 LEFT JOIN
     (SELECT TraceId, SpanId FROM otel_logs WHERE Timestamp >= {start:DateTime} AND Timestamp < {end:DateTime} + 3600 AND SeverityText = 'ERROR'
-        -- {inject} = 1: pretend the first ERROR log of the range's second hour was never written
+        -- {inject} = 1: pretend the first ERROR log of a failed SERVER / CONSUMER span, from the range's second hour on, was never written
         AND NOT ({inject:UInt8} = 1 AND (TraceId, SpanId) IN (SELECT TraceId, SpanId FROM otel_logs WHERE Timestamp >= {start:DateTime} + 3600 AND Timestamp < {end:DateTime}
-                                                                AND SeverityText = 'ERROR' AND SpanId != '' ORDER BY Timestamp LIMIT 1))) AS l
+                                                                AND SeverityText = 'ERROR' AND SpanId != ''
+                                                                AND (TraceId, SpanId) IN (SELECT TraceId, SpanId FROM otel_traces WHERE Timestamp >= {start:DateTime} AND Timestamp < {end:DateTime} - 60
+                                                                                          AND SpanKind IN ('Server', 'Consumer') AND StatusCode = 'Error' AND length(`Events.Name`) > 0)
+                                                                ORDER BY Timestamp LIMIT 1))) AS l
     ON s.TraceId = l.TraceId AND s.SpanId = l.SpanId;
