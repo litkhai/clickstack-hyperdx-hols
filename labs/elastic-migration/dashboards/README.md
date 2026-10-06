@@ -15,6 +15,8 @@ is not finished until every panel reads the new table.
 | [`convert.py`](convert.py) | rewrites every Elasticsearch target of a dashboard as a SQL target on the ClickHouse data source, and classifies each one |
 | [`lucene_sql.py`](lucene_sql.py) | Lucene `query_string` → ClickHouse SQL predicate. Output-agnostic: the HyperDX output ([#58](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)) reuses it |
 | [`check.py`](check.py) | runs the original and the converted target through Grafana's `POST /api/ds/query` over the same window, and compares them per series and bucket |
+| [`to_hyperdx.py`](to_hyperdx.py) | the same panels as HyperDX tiles: a `clickstack-config`-style template taking `${source_id}` |
+| [`check_hyperdx.py`](check_hyperdx.py) | runs every saved tile through HyperDX's MCP tool and compares it with the Elasticsearch target |
 
 ### Try it
 
@@ -231,6 +233,60 @@ column is `Nullable`, so a missing field loads as the column default, and
 `_exists_:f` becomes `f != <default>`, classed needs review. See
 `data/README.md`.
 
+### HyperDX tiles
+
+The same panels as HyperDX tiles (#58), for a migration that leaves Grafana:
+[`to_hyperdx.py`](to_hyperdx.py) writes a
+[`clickstack-config`](../../../clickstack-config/)-style template taking
+`${source_id}`, from the same inputs and with the same translator and
+classes as `convert.py`.
+
+```bash
+./to_hyperdx.py --dashboard fixtures/es-dashboard.json \
+    --datasource-map fixtures/datasource-map.json \
+    --manifest ../data/manifest.json --out out/hdx-dashboard.json.tftpl
+./check_hyperdx.py --original fixtures/es-dashboard.json \
+    --datasource-map fixtures/datasource-map.json --manifest ../data/manifest.json
+```
+
+- One tile per target, named `<title> (#<panel> [refId])`. A panel with an
+  unsupported target becomes one markdown tile, `[NOT CONVERTED] <title>`,
+  carrying the reasons.
+- **The filter goes on each select item**, as `where` with
+  `whereLanguage: "sql"` holding the same SQL predicate. A `where` on the
+  tile's `config` is dropped by the API (#60). HyperDX's own Lucene is never
+  used, because its semantics are not Elasticsearch's.
+- `date_histogram` → `line` (`stacked_bar` when stacked); terms only →
+  `table`, `bar` or `pie`; no buckets → `number`, which is needs review
+  because Grafana's backend rejects that query, so there is nothing to compare.
+- `quantile` only at 50 / 90 / 95 / 99; other percents, including the default
+  set, are unsupported. `count_distinct` is exact, so it is needs review
+  against Elasticsearch's cardinality.
+- **Terms are needs review.** Under a date_histogram, HyperDX ranks a series
+  by its peak bucket, and Elasticsearch by count, term or metric. A table
+  tile has no row limit.
+- **On a `Nullable` column, avg, min, max and quantile are needs review.**
+  HyperDX renders `AVG(toFloat64OrDefault(toString(x)))`, so a NULL counts as
+  0: over {NULL, 10, 20}, avg is 10, where SQL and Elasticsearch give 15.
+- The template cannot carry the source's time column, and needs-review
+  reasons have no field on a tile; both are on stderr.
+
+[`check_hyperdx.py`](check_hyperdx.py) creates a connection and a log source
+for the `data/` table on the local ClickStack. It then:
+
+1. sends the rendered template to `/api/v2/dashboards/validate` and diffs
+   `normalized` against what was authored, so that a key the API drops fails
+   the check;
+2. creates the dashboard and runs every saved tile through the MCP tool at
+   `/mcp` (`Authorization: Bearer <personal API key>`);
+3. compares each tile with the original Elasticsearch target, sent through
+   Grafana as `check.py` does.
+
+HyperDX picks its own bucket size (15 minutes over 12 hours). Elasticsearch
+is asked for that same size, so every aggregation is compared bucket by
+bucket. It deletes what it created. Exit 1 on a dropped key, an error, or a
+MISMATCH on a converted tile.
+
 ### Verified on
 
 **2026-10-02**, Grafana **13.2.3** (`grafana/grafana`, commit `90ffed0`),
@@ -239,6 +295,24 @@ column is `Nullable`, so a missing field loads as the column default, and
 (`clickhouse-target`, UTC), ClickStack/HyperDX **2.39.1** running but not on
 this path (its bundled ClickHouse is 26.8.7.19), Python 3.9.6.
 
+- **2026-10-07, HyperDX tiles** (#58): ClickStack/HyperDX **2.39.1**, the
+  `data/` table on ClickHouse **26.6.8.7**, Elasticsearch **8.17.0** through
+  the same Grafana. The 50 targets became 16 converted, 15 needs review and
+  19 unsupported. `/validate`: 526 authored values, 0 dropped or changed.
+  Through MCP:
+
+  | Class | Targets | PASS | PASS~ | MISMATCH |
+  |---|---|---|---|---|
+  | converted | 16 | 15 | 1 (Float32 ulp) | 0 |
+  | needs review | 15 | 11 | 2 | 2 |
+  | unsupported | 19 | — | — | — (19 EMPTIED) |
+
+  The two needs-review mismatches are the terms ranking above: panel 5
+  keeps a different top 3, and panel 7 has 201 where Elasticsearch has 503.
+  Faults, each caught: a `where` moved to the tile `config` (the stripped-key
+  check fails, and the tile counts 94 against 2); an edited predicate (MISMATCH,
+  13 against 8). `test_*.py`: 125 tests. Not run against ClickStack: a
+  number, bar or pie tile: the fixture produces none.
 - The 300,000-document seed loaded with `data/`: 4/4 chunks verified, parity
   checks passing.
 - `test_lucene_sql.py` and `test_convert.py`: 86 tests, all passing.
@@ -262,7 +336,6 @@ plugins already in the volume; Python 3.8 (syntax checked only).
 - **Alerts**: the same query conversion, not built — open an issue if you
   need it.
 - **Kibana** saved objects: [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5).
-- **HyperDX** tiles: [#58](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58).
 - **Other Elasticsearch queries in a dashboard**: annotation and variable
   queries are reported and left untouched.
 
@@ -280,6 +353,8 @@ Elasticsearch를 읽는 Grafana 대시보드를 ClickHouse로 바꾸고, 바꾼 
 | [`convert.py`](convert.py) | 대시보드의 Elasticsearch 타깃을 모두 ClickHouse 데이터 소스의 SQL 타깃으로 바꾸고, 하나씩 분류합니다 |
 | [`lucene_sql.py`](lucene_sql.py) | Lucene `query_string` → ClickHouse SQL 조건. 출력과 무관해서 HyperDX 출력([#58](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58))이 그대로 씁니다 |
 | [`check.py`](check.py) | 원래 타깃과 바꾼 타깃을 같은 시간 범위로 Grafana `POST /api/ds/query`에 돌려, 시리즈·버킷마다 비교합니다 |
+| [`to_hyperdx.py`](to_hyperdx.py) | 같은 패널을 HyperDX 타일로: `${source_id}`를 받는 `clickstack-config` 모양의 템플릿 |
+| [`check_hyperdx.py`](check_hyperdx.py) | 저장된 타일을 모두 HyperDX MCP 도구로 실행해 Elasticsearch 타깃과 비교합니다 |
 
 ### 실행해 보기
 
@@ -482,6 +557,55 @@ unsupported입니다. `es_type`이 생기기 전에 만든 manifest는 ClickHous
 `Nullable`이 아니어서, 없는 필드는 컬럼 기본값으로 적재되고 `_exists_:f`는
 `f != <기본값>`이 되어 needs review로 분류됩니다. `data/README.md`를 보세요.
 
+### HyperDX 타일
+
+Grafana를 떠나는 이전을 위해, 같은 패널을 HyperDX 타일로도 냅니다(#58).
+[`to_hyperdx.py`](to_hyperdx.py)는 `convert.py`와 같은 입력, 같은 변환기와 분류로
+`${source_id}`를 받는 [`clickstack-config`](../../../clickstack-config/) 모양의
+템플릿을 씁니다.
+
+```bash
+./to_hyperdx.py --dashboard fixtures/es-dashboard.json \
+    --datasource-map fixtures/datasource-map.json \
+    --manifest ../data/manifest.json --out out/hdx-dashboard.json.tftpl
+./check_hyperdx.py --original fixtures/es-dashboard.json \
+    --datasource-map fixtures/datasource-map.json --manifest ../data/manifest.json
+```
+
+- 타깃마다 타일 하나이고, 이름은 `<제목> (#<패널> [refId])`입니다. unsupported 타깃이
+  있는 패널은 사유를 담은 markdown 타일 `[NOT CONVERTED] <제목>` 하나가 됩니다.
+- **필터는 select 항목마다 둡니다.** 같은 SQL 조건을 `where`에,
+  `whereLanguage: "sql"`과 함께 넣습니다. 타일 `config`의 `where`는 API가
+  버립니다(#60). HyperDX 자체의 Lucene은 의미가 Elasticsearch와 달라서 쓰지 않습니다.
+- `date_histogram` → `line`(쌓으면 `stacked_bar`), terms만 → `table`, `bar`, `pie`.
+  버킷 없음 → `number`인데, Grafana 백엔드가 그 쿼리를 거부해서 비교할 대상이 없으므로
+  needs review입니다.
+- `quantile`은 50 / 90 / 95 / 99에서만 됩니다. 기본 묶음을 포함한 다른 백분위는
+  unsupported입니다. `count_distinct`는 정확한 값이라 Elasticsearch의 cardinality에
+  대해 needs review입니다.
+- **terms는 needs review입니다.** date_histogram 아래에서 HyperDX는 시리즈를 가장 큰
+  버킷으로, Elasticsearch는 개수·term·지표로 순위를 매깁니다. table 타일에는 행 제한이
+  없습니다.
+- **`Nullable` 컬럼의 avg, min, max, quantile은 needs review입니다.** HyperDX는
+  `AVG(toFloat64OrDefault(toString(x)))`로 그리므로 NULL이 0으로 셉니다. {NULL, 10, 20}의
+  avg는 10이고, SQL과 Elasticsearch는 15입니다.
+- 템플릿은 소스의 시간 컬럼을 담지 못하고, 타일에는 needs review 사유를 적을 필드가
+  없습니다. 둘 다 stderr에 나옵니다.
+
+[`check_hyperdx.py`](check_hyperdx.py)는 로컬 ClickStack에 `data/` 테이블의 연결과 로그
+소스를 만듭니다. 그다음:
+
+1. 렌더링한 템플릿을 `/api/v2/dashboards/validate`에 보내 `normalized`를 작성한 내용과
+   비교합니다. API가 키를 버리면 검사가 실패합니다.
+2. 대시보드를 만들고, 저장된 타일을 모두 `/mcp`의 MCP 도구로
+   (`Authorization: Bearer <개인 API 키>`) 실행합니다.
+3. 각 타일을 원래 Elasticsearch 타깃과 비교합니다. Elasticsearch 쪽은 `check.py`처럼
+   Grafana를 거쳐 보냅니다.
+
+HyperDX는 버킷 크기를 스스로 고릅니다(12시간에 15분). Elasticsearch에도 같은 크기를
+요청하므로, 모든 집계를 버킷마다 비교합니다. 만든 것은 지웁니다. 버려진 키, 오류,
+converted 타일의 MISMATCH가 있으면 종료 코드 1입니다.
+
 ### 검증 환경
 
 **2026-10-02**, Grafana **13.2.3** (`grafana/grafana`, commit `90ffed0`),
@@ -490,6 +614,22 @@ Elasticsearch **8.17.0** (Lucene 9.12.0), ClickHouse **26.6.8.7**
 (`clickhouse-target`, UTC), ClickStack/HyperDX **2.39.1**은 실행 중이지만 이 경로에
 없음(번들 ClickHouse 26.8.7.19), Python 3.9.6.
 
+- **2026-10-07, HyperDX 타일**(#58): ClickStack/HyperDX **2.39.1**, ClickHouse
+  **26.6.8.7**의 `data/` 테이블, 같은 Grafana를 거친 Elasticsearch **8.17.0**. 타깃 50개는
+  converted 16, needs review 15, unsupported 19가 됐습니다. `/validate`: 작성한 값 526개 중
+  버려지거나 바뀐 것 0. MCP로 실행한 결과:
+
+  | 분류 | 타깃 | PASS | PASS~ | MISMATCH |
+  |---|---|---|---|---|
+  | converted | 16 | 15 | 1(Float32 ulp) | 0 |
+  | needs review | 15 | 11 | 2 | 2 |
+  | unsupported | 19 | — | — | —(EMPTIED 19) |
+
+  needs review의 MISMATCH 둘은 위의 terms 순위 차이입니다. 패널 5는 다른 상위 3개를
+  남기고, 패널 7은 Elasticsearch의 503 자리에 201이 있습니다. 고장 주입, 모두 잡힘:
+  `where`를 타일 `config`로 옮김(버려진 키 검사가 실패하고, 타일이 2 대신 94를 셈),
+  조건 값 변경(MISMATCH, 13 대 8). `test_*.py`: 테스트 125개. ClickStack에서 돌리지 않은
+  것: number, bar, pie 타일. fixture에서 하나도 나오지 않습니다.
 - 문서 300,000건 시드를 `data/`로 적재: 청크 4/4 verified, parity 검사 통과.
 - `test_lucene_sql.py`, `test_convert.py`: 테스트 86개 모두 통과.
 - `fixtures/es-dashboard.json`(패널 40개, 타깃 50개, 위 표의 줄마다 하나)에 대한
@@ -511,6 +651,5 @@ Python 3.8(구문만 확인).
 
 - **알림**: 같은 쿼리 변환이지만 만들지 않았습니다. 필요하면 이슈를 열어 주세요.
 - **Kibana** saved object: [#5](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5).
-- **HyperDX** 타일: [#58](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58).
 - **대시보드 안의 다른 Elasticsearch 쿼리**: 주석(annotation)과 변수 쿼리는 보고만
   하고 그대로 둡니다.
