@@ -369,7 +369,17 @@ it is not something to guess: it needs the retention answer from
 The optional `--manifest` output is the contract with `export.py`: it lists,
 per field, whether the raw Elasticsearch value must reach ClickHouse as
 nested JSON (`JSON`, `Array(...)` and `Tuple(...)` columns) rather than being
-dot-flattened into scalar keys.
+dot-flattened into scalar keys. It also records each field's Elasticsearch
+type (`es_type`) and, for an alias, its target (`alias_of`), for readers of
+the loaded table such as `dashboards/` (#62).
+
+**No generated column is `Nullable`.** A document that lacked a field loads
+the column's default, and afterwards cannot be told from one that had that
+value. In the seed no scalar field is ever missing (an Elasticsearch
+`must_not exists` count is 0 for each); `labels`, a `JSON` column, is missing
+in 293,920 of 300,000 documents. Making a column `Nullable` costs a null map
+per row and keeps it out of the sort key, so it is a decision per field, not
+a default, and it is not made here (#62).
 
 ### `export.py`: parallel, resumable
 
@@ -1000,7 +1010,15 @@ export·load·정합성 검증이 안정적인 행 키를 갖도록 합성한 �
 선택적 `--manifest` 출력은 `export.py`와의 계약입니다: 각 필드가 원본
 Elasticsearch 값을 점(dot)으로 평탄화된 스칼라 키가 아니라 중첩 JSON
 (`JSON`, `Array(...)`, `Tuple(...)` 컬럼)으로 ClickHouse에 전달해야 하는지
-알려줍니다.
+알려줍니다. 또 `dashboards/`처럼 적재된 테이블을 읽는 쪽을 위해 필드마다
+Elasticsearch 타입(`es_type`)과, alias라면 그 대상(`alias_of`)을 기록합니다(#62).
+
+**생성된 컬럼은 어느 것도 `Nullable`이 아닙니다.** 필드가 없던 문서는 컬럼 기본값으로
+적재되고, 그 뒤에는 그 값을 실제로 가졌던 문서와 구별할 수 없습니다. 시드에서는 스칼라
+필드가 빠진 문서가 없습니다(필드마다 Elasticsearch `must_not exists` 개수가 0).
+`JSON` 컬럼인 `labels`는 300,000건 중 293,920건에 없습니다. 컬럼을 `Nullable`로
+만들면 행마다 null map이 붙고 정렬 키에 쓸 수 없으므로, 기본값이 아니라 필드마다 정할
+일이고 여기서는 정하지 않았습니다(#62).
 
 ### `export.py`: 병렬, 재개 가능
 

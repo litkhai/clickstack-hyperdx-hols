@@ -48,8 +48,8 @@ the ClickHouse data source to use and the table `data/` loaded:
         "time_column": "@timestamp", "aliases": {"level": "log.level"}}}
 ```
 
-`aliases` is there because the manifest does not record Elasticsearch
-aliases (see "What the manifest cannot tell it").
+`aliases` is optional: the manifest's `alias_of` supplies them (#62), and
+an entry here wins over it.
 
 ### Classification
 
@@ -218,12 +218,18 @@ What it normalises rather than hides:
 
 ### What the manifest cannot tell it
 
-`mapping_to_ddl.py --manifest` records each field's path, ClickHouse type and
-status — not its Elasticsearch type, not alias targets. So the converter
-reads `LowCardinality(String)` as a keyword and a plain `String` as analyzed
-text. A `wildcard`, `match_only_text` or `ip_range` field would also be
-treated as text, which is the conservative direction. Aliases come from the
-data-source map.
+`mapping_to_ddl.py --manifest` records each field's path, ClickHouse type,
+Elasticsearch type (`es_type`), alias target (`alias_of`) and status (#62).
+The converter reads keyword vs text from `es_type`: a `wildcard` field is a
+plain `String` column but matches the whole value, so it is a keyword;
+`match_only_text` is text; a range type such as `ip_range` is unsupported.
+A manifest written before `es_type` existed falls back to the ClickHouse
+type (`LowCardinality(String)` keyword, `String` text).
+
+What it still cannot tell: whether a document lacked a field. No generated
+column is `Nullable`, so a missing field loads as the column default, and
+`_exists_:f` becomes `f != <default>`, classed needs review. See
+`data/README.md`.
 
 ### Verified on
 
@@ -306,8 +312,8 @@ cd ../labs/elastic-migration/dashboards
         "time_column": "@timestamp", "aliases": {"level": "log.level"}}}
 ```
 
-`aliases`가 있는 이유는 manifest에 Elasticsearch alias가 기록되지 않기 때문입니다
-("manifest가 알려 주지 못하는 것" 참고).
+`aliases`는 선택입니다. manifest의 `alias_of`가 alias를 알려 주고(#62), 여기 적은
+항목이 그보다 우선합니다.
 
 ### 분류
 
@@ -465,11 +471,16 @@ percentiles 0.05(`--percentile-tol`). `--exact`는 모든 허용 오차를 끄�
 
 ### manifest가 알려 주지 못하는 것
 
-`mapping_to_ddl.py --manifest`는 필드마다 경로, ClickHouse 타입, 상태를 기록합니다.
-Elasticsearch 타입과 alias 대상은 기록하지 않습니다. 그래서 변환기는
-`LowCardinality(String)`을 keyword로, 그냥 `String`을 분석된 text로 읽습니다.
-`wildcard`, `match_only_text`, `ip_range` 필드도 text로 다뤄지는데, 보수적인 쪽입니다.
-alias는 데이터 소스 맵에서 옵니다.
+`mapping_to_ddl.py --manifest`는 필드마다 경로, ClickHouse 타입, Elasticsearch
+타입(`es_type`), alias 대상(`alias_of`), 상태를 기록합니다(#62). 변환기는 keyword와
+text를 `es_type`으로 가립니다. `wildcard` 필드는 그냥 `String` 컬럼이지만 값 전체가
+일치해야 하므로 keyword이고, `match_only_text`는 text, `ip_range` 같은 범위 타입은
+unsupported입니다. `es_type`이 생기기 전에 만든 manifest는 ClickHouse 타입으로
+돌아갑니다(`LowCardinality(String)`은 keyword, `String`은 text).
+
+여전히 알려 주지 못하는 것은 문서에 필드가 없었는지입니다. 생성된 컬럼은 어느 것도
+`Nullable`이 아니어서, 없는 필드는 컬럼 기본값으로 적재되고 `_exists_:f`는
+`f != <기본값>`이 되어 needs review로 분류됩니다. `data/README.md`를 보세요.
 
 ### 검증 환경
 
