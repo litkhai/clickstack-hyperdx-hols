@@ -7,6 +7,10 @@ filebeat.inputs:
       - dissect:
           tokenizer: "%{ts} %{level} %{msg}"
           target_prefix: app
+      - rename:
+          ignore_missing: true
+          fields:
+            - {from: app.msg, to: app.text}
       - add_fields:
           target: meta
           fields: {team: platform, tier: 2}

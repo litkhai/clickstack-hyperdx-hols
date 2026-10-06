@@ -300,7 +300,7 @@ class CheckParts(unittest.TestCase):
         cfg = F.load_filebeat(os.path.join(FIXTURES, "fb-dissect.yml"))
         rc = K.run_config(cfg, 0)
         self.assertEqual(rc["filebeat.inputs"][0]["type"], "stdin")
-        self.assertEqual(len(rc["filebeat.inputs"][0]["processors"]), 3)
+        self.assertEqual(len(rc["filebeat.inputs"][0]["processors"]), 4)
         self.assertEqual(len(rc["processors"]), 2)
         self.assertEqual(rc["output.console"], {"codec.json": {"pretty": False}})
         self.assertNotIn("output.elasticsearch", rc)
