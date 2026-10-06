@@ -44,11 +44,13 @@ from typing import List, Optional, Tuple
 CONVERTED, REVIEW, UNSUPPORTED = "converted", "needs review", "unsupported"
 RANK = {CONVERTED: 0, REVIEW: 1, UNSUPPORTED: 2}
 
+# network_direction is converted (#64): with its default ignore_missing it is the same function of
+# two IPs as Elasticsearch's; convert.py lowers it to needs review when ignore_missing is false.
 CLASS = {}
-for _p in "set remove rename append lowercase uppercase drop uri_parts".split():
+for _p in "set remove rename append lowercase uppercase drop uri_parts network_direction".split():
     CLASS[_p] = CONVERTED
 for _p in ("grok dissect date json kv convert csv gsub split trim sort user_agent community_id "
-           "network_direction html_strip redact fingerprint pipeline dot_expander").split():
+           "html_strip redact fingerprint pipeline dot_expander").split():
     CLASS[_p] = REVIEW
 
 # Reasons for the unsupported row of the table. Every one says what is missing in
@@ -71,12 +73,16 @@ UNSUPPORTED_WHY = {
     "reroute": "re-routes to another data stream; there is no data stream in OpenTelemetry",
     "circle": "geo shape processing; no OTTL equivalent",
     "geo_grid": "geo shape processing; no OTTL equivalent",
-    # in the needs-review row of the table, but no verified OTTL form was built in #21
-    "community_id": "in the needs-review row of the design table, but not implemented in #21",
-    "network_direction": "in the needs-review row of the design table, but not implemented in #21",
-    "redact": "in the needs-review row of the design table, but not implemented in #21",
-    "fingerprint": "Elasticsearch emits a base64 digest of a salted concatenation; OTTL hashes "
-                   "return hex, so the value would differ for every document",
+    # in the needs-review row of the design table, but no conversion was built (#64)
+    "community_id": "CommunityID() exists in the bundled collector (contrib v0.155.0), but its protocol set and "
+                    "arguments differ from Elasticsearch's (no IGMP, GRE, EIGRP, OSPF, PIM; no icmp_type / "
+                    "icmp_code); not built (#64)",
+    "redact": "needs an Elasticsearch platinum or enterprise license: on the basic-license test cluster _simulate "
+              "fails with \"current license is non-compliant for [redact_processor]\", so no conversion could be "
+              "checked (#64)",
+    "fingerprint": "Elasticsearch emits base64 of the raw digest; OTTL's hashes return hex and no converter turns "
+                   "hex into bytes (Decode has no hex encoding, checked with the bundled collector), so the value "
+                   "would differ for every document",
 }
 
 COMMON = ("if", "ignore_failure", "ignore_missing", "on_failure", "tag", "description")
@@ -98,6 +104,7 @@ class Step:
     reasons: List[str] = field(default_factory=list)
     reads: set = field(default_factory=set)      # filled by convert.py: fields this step reads
     writes: set = field(default_factory=set)     # ... and writes; "*" = unknown
+    handled: bool = False                         # filled by convert.py: its on_failure handlers were emulated
 
     def note(self, cls, reason):
         """Lower the class (never raise it) and keep the reason once."""
@@ -276,7 +283,9 @@ def _make(proc, origin):
     cfg = dict(cfg or {})
     st = Step(op=op, args={k: v for k, v in cfg.items() if k not in COMMON}, origin=origin,
               ignore_failure=bool(cfg.get("ignore_failure")),
-              ignore_missing=bool(cfg.get("ignore_missing")),
+              # network_direction is the one processor whose ignore_missing defaults to true
+              # (NetworkDirectionProcessor.Factory: readBooleanProperty(..., "ignore_missing", true))
+              ignore_missing=bool(cfg.get("ignore_missing", op == "network_direction")),
               on_failure=list(cfg.get("on_failure") or []), tag=cfg.get("tag"),
               cls=CLASS.get(op, UNSUPPORTED))
     src = cfg.get("if")
@@ -295,6 +304,21 @@ def _make(proc, origin):
 
 def _and(a, b):
     return b if a is None else a if b is None else ("and", a, b)
+
+
+def step_from_es(proc, origin):
+    """One Step from one processor object ({"set": {...}}), as steps_from_es builds them."""
+    return _make(proc, origin)
+
+
+def inherit_condition(parent, child, what="enclosing pipeline processor"):
+    """AND the parent step's `if` onto the child's: a nested pipeline's steps, an on_failure handler."""
+    if parent.cond_src:
+        child.cond_src = " && ".join("(%s)" % x for x in (parent.cond_src, child.cond_src) if x)
+        if parent.cond_error:
+            child.cond_error = "%s: %s" % (what, parent.cond_error)
+        elif not child.cond_error:
+            child.cond = _and(parent.cond, child.cond)
 
 
 def steps_from_es(pipelines, pid, _stack=()):
@@ -326,12 +350,7 @@ def steps_from_es(pipelines, pid, _stack=()):
             st.note(REVIEW, "inlined pipeline %r (%d steps) from the same pipelines source"
                     % (child, len(inner)))
             for s in inner:
-                if st.cond_src:
-                    s.cond_src = " && ".join("(%s)" % x for x in (st.cond_src, s.cond_src) if x)
-                    if st.cond_error:
-                        s.cond_error = "enclosing pipeline processor: " + st.cond_error
-                    elif not s.cond_error:
-                        s.cond = _and(st.cond, s.cond)
+                inherit_condition(st, s)
             out.extend(inner)
     top = pipelines[pid].get("on_failure")
     if top and not _stack:

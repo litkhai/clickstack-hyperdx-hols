@@ -1,6 +1,7 @@
 """Offline tests for convert.py: each row of the design table, the field mapping, conditions, grok, UTC."""
 import contextlib
 import io
+import ipaddress
 import json
 import os
 import tempfile
@@ -180,7 +181,7 @@ class NeedsReviewRow(unittest.TestCase):
 class UnsupportedRow(unittest.TestCase):
     def test_every_unsupported_processor_is_only_a_comment(self):
         ops = list(S.UNSUPPORTED_WHY)
-        self.assertGreaterEqual(len(ops), 20)
+        self.assertGreaterEqual(len(ops), 19)
         for op in ops:
             cv = conv({"set": {"field": "before", "value": 1}}, {op: {"field": "x"}}, {"set": {"field": "after", "value": 2}})
             st, ss = cv.blocks[1]
@@ -342,6 +343,276 @@ class GrokAndTime(unittest.TestCase):
         self.assertIn('set(log.attributes["b.c"], log.cache["f1"])', ss)
         self.assertEqual(one("dissect", {"field": "m", "pattern": "%{+a} %{b}"})[0].cls, S.UNSUPPORTED)
         self.assertEqual(one("dissect", {"field": "m", "pattern": "%{a->} %{b}"})[0].cls, S.UNSUPPORTED)
+
+
+# Recorded from Elasticsearch 8.17.0 (POST _ingest/pipeline/_simulate, network_direction with one named range, the IP as
+# both source and destination; "internal" = in the range): every IP below, per named range, that Elasticsearch calls internal.
+BATTERY = [
+    "10.0.0.1", "172.16.5.5", "172.15.255.255", "172.32.0.1", "192.168.1.1", "8.8.8.8", "127.0.0.1",
+    "127.255.255.254", "0.0.0.0", "255.255.255.255", "169.254.1.1", "169.253.0.1", "224.0.0.1", "224.0.0.255",
+    "224.0.1.1", "239.255.255.250", "240.0.0.1", "223.255.255.255", "100.64.0.1", "::1", "::", "fd00::1",
+    "fc00::1", "fe80::1", "febf::1", "fec0::1", "ff01::1", "ff02::1", "ff05::1", "ff0e::1", "ff11::1",
+    "ff12::1", "fff1::1", "fff2::1", "ff00::1", "2001:4860:4860::8888", "2001:db8::1"
+]
+ES_INTERNAL = {
+    "global_unicast": [
+        "10.0.0.1", "100.64.0.1", "169.253.0.1", "172.15.255.255", "172.16.5.5", "172.32.0.1", "192.168.1.1",
+        "2001:4860:4860::8888", "2001:db8::1", "223.255.255.255", "240.0.0.1", "8.8.8.8", "fc00::1", "fd00::1",
+        "fec0::1"
+    ],
+    "interface_local_multicast": [
+        "ff01::1", "ff11::1", "fff1::1"
+    ],
+    "link_local_multicast": [
+        "224.0.0.1", "224.0.0.255", "ff02::1", "ff12::1", "fff2::1"
+    ],
+    "link_local_unicast": [
+        "169.254.1.1", "fe80::1", "febf::1"
+    ],
+    "loopback": [
+        "127.0.0.1", "127.255.255.254", "::1"
+    ],
+    "multicast": [
+        "224.0.0.1", "224.0.0.255", "224.0.1.1", "239.255.255.250", "ff00::1", "ff01::1", "ff02::1", "ff05::1",
+        "ff0e::1", "ff11::1", "ff12::1", "fff1::1", "fff2::1"
+    ],
+    "private": [
+        "10.0.0.1", "172.16.5.5", "192.168.1.1", "fd00::1"
+    ],
+    "public": [
+        "100.64.0.1", "169.253.0.1", "172.15.255.255", "172.32.0.1", "2001:4860:4860::8888", "2001:db8::1",
+        "223.255.255.255", "224.0.1.1", "239.255.255.250", "240.0.0.1", "8.8.8.8", "fc00::1", "fec0::1",
+        "ff00::1", "ff05::1", "ff0e::1"
+    ],
+    "unicast": [
+        "10.0.0.1", "100.64.0.1", "169.253.0.1", "172.15.255.255", "172.16.5.5", "172.32.0.1", "192.168.1.1",
+        "2001:4860:4860::8888", "2001:db8::1", "223.255.255.255", "240.0.0.1", "8.8.8.8", "fc00::1", "fd00::1",
+        "fec0::1"
+    ],
+    "unspecified": [
+        "0.0.0.0", "::"
+    ],
+}
+
+
+IPA = 'log.attributes["source.ip"]'
+IPB = 'log.attributes["destination.ip"]'
+HAVE = '%s != nil and %s != nil' % (IPA, IPB)
+
+
+class NetworkDirection(unittest.TestCase):
+    def test_four_statements_one_per_value_behind_presence_guards(self):
+        st, ss = one("network_direction", {"internal_networks": ["10.0.0.0/8"]})
+        self.assertEqual(st.cls, S.CONVERTED)
+        self.assertEqual(st.reasons, [])
+        self.assertEqual(st.writes, {"network.direction"})
+        a, b = 'IsInCIDR(%s, ["10.0.0.0/8"])' % IPA, 'IsInCIDR(%s, ["10.0.0.0/8"])' % IPB
+        T = 'set(log.attributes["network.direction"], "%s") where ' + HAVE + ' and %s and %s'
+        self.assertEqual(ss, [T % ("internal", a, b), T % ("outbound", a, "not " + b),
+                              T % ("inbound", "not " + a, b), T % ("external", "not " + a, "not " + b)])
+
+    def test_named_ranges_agree_with_what_elasticsearch_answered(self):
+        for name, internal in ES_INTERNAL.items():
+            neg, cidrs = C.NAMED_NETWORKS[name]
+            nets = [ipaddress.ip_network(c) for c in cidrs]
+            for ip in BATTERY:
+                a = ipaddress.ip_address(ip)
+                hit = any(a.version == n.version and a in n for n in nets)
+                self.assertEqual(hit != neg, ip in internal, "%s %s" % (name, ip))
+
+    def test_every_named_range_the_elasticsearch_source_has_is_known(self):
+        self.assertEqual(sorted(C.NAMED_NETWORKS), sorted(ES_INTERNAL))
+
+    def test_cidrs_and_named_ranges_mix_and_a_complement_is_its_own_term(self):
+        _, ss = one("network_direction", {"internal_networks": ["10.0.0.0/8", "loopback", "192.168.0.0/16"]})
+        self.assertIn('IsInCIDR(%s, ["10.0.0.0/8", "127.0.0.0/8", "::1/128", "192.168.0.0/16"])' % IPA, ss[0])
+        _, ss = one("network_direction", {"internal_networks": ["public", "10.0.0.0/8"]})
+        self.assertIn('(IsInCIDR(%s, ["10.0.0.0/8"]) or not IsInCIDR(%s, ["10.0.0.0/8", "172.16.0.0/12"' % (IPA, IPA), ss[0])
+        self.assertIn('"255.255.255.255/32"]))', ss[0])
+        self.assertIn("and not (IsInCIDR(%s, [" % IPA, ss[2])                  # the negation of an `or` is parenthesised
+        _, ss = one("network_direction", {"internal_networks": ["public"]})
+        self.assertIn("and not IsInCIDR(%s, [" % IPA, ss[0])
+        self.assertIn("and IsInCIDR(%s, [" % IPA, ss[2])                         # not (not x) is x
+        self.assertEqual(C.NAMED_NETWORKS["unicast"], C.NAMED_NETWORKS["global_unicast"])
+
+    def test_fields_and_target_come_from_the_arguments(self):
+        st, ss = one("network_direction", {"internal_networks": ["private"], "source_ip": "client", "destination_ip": "server.ip",
+                                           "target_field": "net.dir"})
+        self.assertEqual(st.writes, {"net.dir"})
+        self.assertEqual(st.reads, {"client", "server.ip"})
+        self.assertTrue(ss[0].startswith('set(log.attributes["net.dir"], "internal") where log.attributes["client"] != nil '
+                                         'and log.attributes["server.ip"] != nil and IsInCIDR(log.attributes["client"], '))
+        _, ss = one("network_direction", {"internal_networks": ["private"], "source_ip": "message"})
+        self.assertIn('IsInCIDR(log.body.string, ', ss[0])
+        self.assertNotIn("log.body.string != nil", ss[0])
+
+    def test_a_condition_rides_on_every_statement(self):
+        _, ss = one("network_direction", {"internal_networks": ["private"], "if": "ctx.kind == 'net'"})
+        self.assertEqual(len(ss), 4)
+        self.assertTrue(all(x.count('log.attributes["kind"] == "net"') == 1 for x in ss), ss)
+
+    def test_missing_ip_with_ignore_missing_false_is_needs_review_and_says_why(self):
+        st, ss = one("network_direction", {"internal_networks": ["private"], "ignore_missing": False})
+        self.assertEqual(st.cls, S.REVIEW)
+        self.assertIn("fails the document when the source or the destination IP is missing", st.reasons[0])
+        self.assertIn("when an IP does not parse", st.reasons[0])
+        self.assertEqual(conv({"network_direction": {"internal_networks": ["private"], "ignore_missing": False}}).notes, [])
+        self.assertEqual(len(ss), 4)
+        self.assertEqual(one("network_direction", {"internal_networks": ["private"], "ignore_missing": True})[0].cls, S.CONVERTED)
+
+    def test_an_ip_that_does_not_parse_is_a_conversion_note(self):
+        cv = conv({"network_direction": {"internal_networks": ["private"]}})
+        self.assertTrue(any("does not parse" in n and "IsInCIDR is false" in n for n in cv.notes), cv.notes)
+        self.assertEqual(cv.blocks[0][0].cls, S.CONVERTED)
+
+    def test_what_cannot_be_translated_is_unsupported_and_emits_nothing(self):
+        for args in ({"internal_networks_field": "nets"}, {}, {"internal_networks": []}, {"internal_networks": "private"},
+                     {"internal_networks": ["{{nets}}"]}, {"internal_networks": ["privat"]},
+                     {"internal_networks": ["10.0.0.1"]}, {"internal_networks": ["10.0.0.5/8"]}):
+            st, ss = one("network_direction", args)
+            self.assertEqual((st.cls, ss), (S.UNSUPPORTED, []), args)
+
+    def test_fragment_is_valid_text_with_four_set_statements(self):
+        text = C.render_fragment(conv({"network_direction": {"internal_networks": ["private"]}}))
+        self.assertEqual(text.count('"set(log.attributes[\\"network.direction\\"]'), 4)
+
+
+KV = {"kv": {"field": "message", "field_split": " ", "value_split": "="}}
+
+
+class OnFailureEmulation(unittest.TestCase):
+    GROK = {"field": "message", "patterns": ["%{WORD:w}"]}
+    SETS = [{"set": {"field": "error.message", "value": "failed"}}, {"append": {"field": "tags", "value": "bad"}}]
+
+    def grok(self, on_failure, **kw):
+        return conv({"grok": dict(self.GROK, on_failure=on_failure, **kw)}, {"set": {"field": "after", "value": 1}})
+
+    def test_grok_handlers_follow_the_extraction_behind_len_cache_equals_zero(self):
+        cv = self.grok(self.SETS)
+        self.assertEqual([s.op for s, _ in cv.blocks], ["grok", "set", "append", "set"])
+        grok, sets, app, after = (s for s, _ in cv.blocks)
+        self.assertEqual(grok.cls, S.REVIEW)
+        self.assertTrue(grok.handled)
+        self.assertTrue(any("on_failure emulated" in r and "Len(log.cache) == 0" in r and "not observable here" in r
+                            for r in grok.reasons), grok.reasons)
+        self.assertFalse(any("not translated" in r for r in grok.reasons))
+        self.assertFalse(any("Elasticsearch fails the document" in r for r in grok.reasons), grok.reasons)
+        self.assertEqual(cv.blocks[1][1], ['set(log.attributes["error.message"], "failed") where Len(log.cache) == 0'])
+        self.assertEqual(cv.blocks[2][1], ['append(log.attributes["tags"], "bad") where Len(log.cache) == 0'])
+        self.assertEqual(cv.blocks[3][1], ['set(log.attributes["after"], 1)'])        # the pipeline goes on, unguarded
+        self.assertEqual((sets.cls, app.cls), (S.CONVERTED, S.CONVERTED))
+        self.assertEqual((sets.writes, app.writes), ({"error.message"}, {"tags"}))      # check.py attributes them to the handler
+        self.assertEqual((sets.origin, app.origin), ("p/0/on_failure/0", "p/0/on_failure/1"))
+
+    def test_dissect_handlers_too(self):
+        cv = conv({"dissect": {"field": "message", "pattern": "%{a} %{b}", "on_failure": self.SETS[:1]}})
+        self.assertEqual([s.op for s, _ in cv.blocks], ["dissect", "set"])
+        self.assertTrue(cv.blocks[0][0].handled)
+        self.assertEqual(cv.blocks[1][1], ['set(log.attributes["error.message"], "failed") where Len(log.cache) == 0'])
+        text = C.render_fragment(cv)
+        self.assertIn("# NEEDS REVIEW dissect: on_failure emulated", text)
+        self.assertIn("# [1] set (p/0/on_failure/0) -- CONVERTED", text)
+
+    def test_the_steps_condition_and_ignore_missing_keep_the_handlers_from_running_when_the_step_did_not(self):
+        cv = self.grok(self.SETS[:1], **{"if": "ctx.kind == 'x'", "ignore_missing": True, "field": "raw"})
+        self.assertEqual(cv.blocks[1][1], ['set(log.attributes["error.message"], "failed") where '
+                                           '(log.attributes["kind"] == "x") and (log.attributes["raw"] != nil and Len(log.cache) == 0)'])
+
+    def test_a_handlers_own_condition_and_remove_and_rename_are_allowed(self):
+        cv = self.grok([{"remove": {"field": "w"}}, {"rename": {"field": "a", "target_field": "b"}},
+                        {"set": {"field": "x", "value": 1, "if": "ctx.y == 2"}}])
+        self.assertEqual([s.op for s, _ in cv.blocks], ["grok", "remove", "rename", "set", "set"])
+        self.assertTrue(cv.blocks[1][0].handled is False and cv.blocks[0][0].handled)
+        self.assertEqual(cv.blocks[1][1], ['delete_matching_keys(log.attributes, "^w(\\\\..+)?$") where Len(log.cache) == 0'])
+        self.assertEqual(cv.blocks[2][1], ['set(log.attributes["b"], log.attributes["a"]) where log.attributes["a"] != nil and Len(log.cache) == 0',
+                                           'delete_key(log.attributes, "a") where log.attributes["a"] != nil and Len(log.cache) == 0'])
+        self.assertEqual(cv.blocks[3][1], ['set(log.attributes["x"], 1) where (log.attributes["y"] == 2) and (Len(log.cache) == 0)'])
+
+    def keeps_todays_behaviour(self, on_failure, **kw):
+        cv = self.grok(on_failure, **kw)
+        self.assertEqual([s.op for s, _ in cv.blocks], ["grok", "set"], on_failure)       # no handler block
+        grok = cv.blocks[0][0]
+        self.assertFalse(grok.handled)
+        self.assertTrue(any("on_failure (%d processors) is not translated" % len(on_failure) in r for r in grok.reasons), grok.reasons)
+        self.assertNotIn("error", " ".join(stmts(cv)))
+        self.assertTrue(any("Elasticsearch fails the document" in r for r in grok.reasons))
+        return cv
+
+    def test_any_other_op_or_a_read_of_ingest_keeps_the_whole_list_untranslated(self):
+        self.keeps_todays_behaviour(self.SETS + [{"convert": {"field": "w", "type": "integer"}}])
+        self.keeps_todays_behaviour(self.SETS + [{"script": {"source": "ctx.e = 1"}}])
+        self.keeps_todays_behaviour([{"set": {"field": "error.message", "value": "{{ _ingest.on_failure_message }}"}}])
+        self.keeps_todays_behaviour([{"set": {"field": "error.at", "copy_from": "_ingest.timestamp"}}])
+        self.keeps_todays_behaviour([{"set": {"field": "error.message", "value": "x", "on_failure": [{"set": {"field": "y", "value": 1}}]}}])
+
+    def test_a_handler_that_cannot_convert_or_needs_the_scratch_map_keeps_todays_behaviour(self):
+        self.keeps_todays_behaviour([{"append": {"field": "message", "value": "x"}}])
+        self.keeps_todays_behaviour([{"set": {"field": "error.message", "value": "x"}},
+                                     {"rename": {"field": "a", "target_field": "b", "if": "ctx.b == null"}}])      # uses log.cache
+        self.keeps_todays_behaviour([{"set": {"field": "error.message", "value": "x"}}], ignore_failure=True)      # ES: ignore_failure wins
+
+    def test_a_refused_list_leaves_no_trace_in_the_converter(self):
+        cv = self.keeps_todays_behaviour([{"set": {"field": "obj.x", "value": 1}}, {"remove": {"field": "message", "keep": ["x"]}}])
+        self.assertNotIn("obj", cv.objects)              # the dry run marked obj.x; the refusal put the state back
+
+    def test_kv_and_every_other_op_are_unchanged(self):
+        cv = conv(dict(KV, kv=dict(KV["kv"], on_failure=self.SETS[:1])))
+        self.assertEqual([s.op for s, _ in cv.blocks], ["kv"])
+        self.assertFalse(cv.blocks[0][0].handled)
+        self.assertTrue(any("on_failure (1 processors) is not translated" in r for r in cv.blocks[0][0].reasons))
+        cv = conv({"lowercase": {"field": "a", "on_failure": self.SETS[:1]}})
+        self.assertEqual([s.op for s, _ in cv.blocks], ["lowercase"])
+        self.assertTrue(any("is not translated" in r for r in cv.blocks[0][0].reasons))
+
+    def test_a_pipeline_level_on_failure_is_still_a_review_step(self):
+        cv = conv({"set": {"field": "a", "value": 1}}, extra={"p": {"processors": [{"set": {"field": "a", "value": 1}}],
+                                                                  "on_failure": [{"set": {"field": "e", "value": 1}}]}})
+        self.assertEqual(cv.blocks[-1][0].op, "pipeline_on_failure")
+
+
+class JsonReparse(unittest.TestCase):
+    JSON = {"json": {"field": "message", "add_to_root": True}}
+
+    def notes(self, st):
+        return [r for r in st.reasons if "re-parses the JSON body after this fragment" in r and "overwritten" in r]
+
+    def test_a_later_step_that_writes_a_field_other_than_message_says_it_may_be_overwritten(self):
+        cv = conv(self.JSON, {"set": {"field": "user", "value": "x"}}, {"rename": {"field": "a", "target_field": "b"}},
+                  {"remove": {"field": "c"}}, {"lowercase": {"field": "d", "target_field": "e"}})
+        steps = [s for s, _ in cv.blocks]
+        self.assertEqual(self.notes(steps[0]), [])                       # the json step itself: its own note already says it
+        for st in steps[1:]:
+            self.assertEqual(st.cls, S.REVIEW, st.op)
+            self.assertEqual(len(self.notes(st)), 1, st.op)
+        self.assertIn("if `user` is a key of the body, the value written here is overwritten", steps[1].reasons[0])
+        self.assertIn("`a` or `b`", steps[2].reasons[0])
+        self.assertIn("upserts its keys", steps[1].reasons[0])
+
+    def test_nothing_to_say_for_message_the_timestamp_a_drop_or_a_step_before_the_json(self):
+        cv = conv({"set": {"field": "early", "value": 1}}, self.JSON, {"set": {"field": "message", "value": "m"}},
+                  {"drop": {}}, {"script": {"source": "x"}})
+        steps = [s for s, _ in cv.blocks]
+        self.assertEqual([self.notes(s) for s in steps], [[]] * 5)
+        self.assertEqual([s.cls for s in steps], [S.CONVERTED, S.REVIEW, S.CONVERTED, S.CONVERTED, S.UNSUPPORTED])
+        date = conv(self.JSON, {"date": {"field": "t", "formats": ["yyyy-MM-dd"]}}).blocks[1][0]
+        self.assertEqual(self.notes(date), [])                            # log.time is not an attribute
+
+    def test_a_json_step_on_another_field_does_not_start_it(self):
+        cv = conv({"json": {"field": "payload", "add_to_root": True}}, {"set": {"field": "user", "value": "x"}})
+        self.assertEqual(cv.blocks[1][0].cls, S.CONVERTED)
+        cv = conv({"json": {"field": "payload", "target_field": "p"}}, {"set": {"field": "user", "value": "x"}})
+        self.assertEqual(cv.blocks[1][0].cls, S.CONVERTED)
+
+    def test_a_json_step_into_a_target_field_starts_it_too_and_the_note_reaches_emulated_handlers(self):
+        cv = conv({"json": {"field": "message", "target_field": "app"}}, {"set": {"field": "user", "value": "x"}})
+        self.assertEqual(len(self.notes(cv.blocks[1][0])), 1)
+        cv = conv(self.JSON, {"dissect": {"field": "app", "pattern": "%{a} %{b}",
+                                           "on_failure": [{"set": {"field": "error.message", "value": "x"}}]}})
+        self.assertEqual([len(self.notes(s)) for s, _ in cv.blocks], [0, 1, 1])
+
+    def test_the_note_is_in_the_fragment_above_the_statement(self):
+        text = C.render_fragment(conv(self.JSON, {"set": {"field": "user", "value": "x"}}))
+        self.assertIn("# NEEDS REVIEW set: ClickStack's transform re-parses the JSON body after this fragment", text)
 
 
 class Output(unittest.TestCase):

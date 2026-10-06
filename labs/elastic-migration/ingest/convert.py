@@ -22,8 +22,9 @@ this fragment's statements run first, so that ClickStack's shaping (severity fro
 a `level` field this fragment parsed, JSON bodies) sees the finished record. The
 cost, read in the image's /etc/otelcol-contrib/config.yaml: `transform` parses a
 `{...}` body again and UPSERTS its keys after this fragment, so a field this
-fragment changed after parsing it out of a JSON body is overwritten (check.py
-reports it as MISMATCH). A `drop` adds filter/<name> after transform/<name>.
+fragment changed after parsing it out of a JSON body is overwritten. Every step after
+a `json` step on `message` that writes another field says so (needs review, #64).
+A `drop` adds filter/<name> after transform/<name>.
 
 Field mapping, once (Elasticsearch `_source` is nested JSON, OTel attributes are
 flat dotted keys; nested objects are flattened to the same dotted names):
@@ -46,7 +47,10 @@ stderr lists every step with its reasons.
         cluster (grok.py); several patterns -> guarded statements, first match wins.
   times: always UTC unless the processor has a timezone, passed explicitly.
   ignore_failure -> error_mode: ignore (a failing statement is skipped); on_failure
-        handlers are NOT translated (a failure is not observable in OTTL).
+        handlers are NOT translated (a failure is not observable in OTTL), except on `grok`
+        and `dissect` (#64): when every handler is a set/remove/rename/append that does not
+        read `_ingest.*`, the handlers are emitted behind `Len(log.cache) == 0`, i.e. they run
+        when the extraction matched nothing.
 
 Exit code (as mapping_to_ddl.py): 0 whenever the directory was written -- the
 report is the decision, not the exit code; 1 when it could not be (unreadable
@@ -54,6 +58,7 @@ input, unknown pipeline id, grok definitions needed but unavailable, --name does
 not match --out-dir). --strict adds 2 when any step is unsupported.
 """
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -65,7 +70,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "data"))
 import es_client                                                   # noqa: E402
 import grok as G                                                   # noqa: E402
-from steps import CONVERTED, REVIEW, UNSUPPORTED, java_to_strptime, steps_from_es, cond_paths   # noqa: E402
+from steps import (CONVERTED, REVIEW, UNSUPPORTED, java_to_strptime, steps_from_es, step_from_es,   # noqa: E402
+                   inherit_condition, cond_paths)
 
 META = ("_index", "_id", "_version", "_routing", "_type", "_ingest", "_source")
 ISO_SHAPES = ["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"]
@@ -100,6 +106,33 @@ def lit(v):
     if isinstance(v, list) and all(isinstance(x, (str, int, float, bool)) for x in v):
         return "[%s]" % ", ".join(lit(x) for x in v)
     raise Unsupported("value %r is not a scalar or a list of scalars" % (v,))
+
+
+# network_direction named ranges as CIDRs: (complement?, [CIDR]). Read in Elasticsearch v8.17.0:
+# https://raw.githubusercontent.com/elastic/elasticsearch/v8.17.0/modules/ingest-common/src/main/java/org/elasticsearch/ingest/common/NetworkDirectionProcessor.java
+# (NetworkDirectionProcessor.inNetwork: a switch over the name, else CIDRUtils.isInRange). The predicates are
+# java.net.InetAddress methods, written out as CIDRs; an IP is internal when ANY entry matches. A complement is
+# `not IsInCIDR(ip, [...])`. check.py's _simulate comparison, not this table, is the authority.
+_LOOPBACK = ["127.0.0.0/8", "::1/128"]                                  # isLoopbackAddress
+_LINK_LOCAL = ["169.254.0.0/16", "fe80::/10"]                           # isLinkLocalAddress
+_MC_LINK_LOCAL = ["224.0.0.0/24"] + ["ff%x2::/16" % n for n in range(16)]       # isMCLinkLocal: scope nibble 2
+_MC_NODE_LOCAL = ["ff%x1::/16" % n for n in range(16)]                  # isMCNodeLocal: scope nibble 1 (IPv4: never)
+_MULTICAST = ["224.0.0.0/4", "ff00::/8"]                                # isMulticastAddress
+_UNSPECIFIED = ["0.0.0.0/32", "::/128"]
+_PRIVATE = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fd00::/8"]        # isPrivate: exactly these four
+_BROADCAST = ["255.255.255.255/32"]
+NAMED_NETWORKS = {
+    "loopback": (False, _LOOPBACK),
+    "link_local_unicast": (False, _LINK_LOCAL),
+    "link_local_multicast": (False, _MC_LINK_LOCAL),
+    "interface_local_multicast": (False, _MC_NODE_LOCAL),
+    "multicast": (False, _MULTICAST),
+    "unspecified": (False, _UNSPECIFIED),
+    "private": (False, _PRIVATE),
+    "unicast": (True, _BROADCAST + _UNSPECIFIED + _LOOPBACK + _MULTICAST + _LINK_LOCAL),
+    "public": (True, _PRIVATE + _LOOPBACK + _UNSPECIFIED + _LINK_LOCAL + _MC_LINK_LOCAL + _MC_NODE_LOCAL + _BROADCAST),
+}
+NAMED_NETWORKS["global_unicast"] = NAMED_NETWORKS["unicast"]
 
 
 class Acc:
@@ -155,6 +188,7 @@ class Conversion:
         self.objects = set()        # fields known to hold children (a.b written => a)
         self.counter = 0
         self.time_set = False
+        self.json_body = False      # a json step parsed `message`: ClickStack's transform will parse the body again
 
 
 class Converter:
@@ -169,10 +203,12 @@ class Converter:
             self.one(st)
         return self.c
 
-    def one(self, st):
+    def one(self, st, extra=None):
+        """Convert one step. `extra` is a guard ANDed onto every statement (an emulated on_failure handler)."""
         c = self.c
         fn = getattr(self, "op_" + st.op, None)
         stmts = []
+        st.handled = st.cls != UNSUPPORTED and self.emulable(st)
         if st.cls != UNSUPPORTED and fn:
             try:
                 stmts = fn(st)
@@ -183,6 +219,10 @@ class Converter:
         if st.cls == UNSUPPORTED:
             named = st.args.get("target_field") or st.args.get("field")       # where it says it writes, besides "*"
             stmts, st.writes = [], {"*"} | ({named} if isinstance(named, str) and "{{" not in named else set())
+        elif st.handled:
+            st.note(REVIEW, "on_failure emulated: the handlers run when the extraction matched nothing "
+                            "(`Len(log.cache) == 0`); Elasticsearch also runs them for other failures, which are "
+                            "not observable here")
         elif st.on_failure:
             st.note(REVIEW, "on_failure (%d processors) is not translated: a failed statement is not "
                             "observable in OTTL, so the handlers are not emitted" % len(st.on_failure))
@@ -203,10 +243,60 @@ class Converter:
                                 "disabled with `where false`" % (e, st.cond_src))
         out = []
         for s in stmts:
-            parts = [p for p in ((where if s.cond else None), s.guard) if p]
+            guard = " and ".join(x for x in (s.guard, extra) if x) or None
+            parts = [p for p in ((where if s.cond else None), guard) if p]
             out.append(s.text + (" where " + " and ".join("(%s)" % p if len(parts) > 1 else p
                                                           for p in parts) if parts else ""))
+        # ClickStack's `transform` parses a JSON body again after this fragment and upserts its keys
+        # (read in the image, clickhouse/clickstack-all-in-one:2.39.1, /etc/otelcol-contrib/config.yaml):
+        #   - set(log.cache, ExtractPatterns(log.body, "(?P<0>(\\{.*\\}))")) where IsString(log.body)
+        #   - merge_maps(log.attributes, ParseJSON(log.cache["0"]), "upsert") where IsMap(log.cache)
+        # so what a later step writes to a key of that JSON is overwritten.
+        written = sorted(w for w in st.writes if w not in ("*", "message", "@timestamp", DROP))
+        if c.json_body and st.cls != UNSUPPORTED and written:
+            st.note(REVIEW, "ClickStack's transform re-parses the JSON body after this fragment and upserts its "
+                            "keys; if %s is a key of the body, the value written here is overwritten"
+                            % (" or ".join("`%s`" % w for w in written)))
+        if st.op == "json" and st.cls != UNSUPPORTED and st.args.get("field") == "message":
+            c.json_body = True
         c.blocks.append((st, out))
+        if st.handled:
+            field = Acc(st.args["field"])
+            guard = " and ".join(x for x in (field.present() if st.ignore_missing else None, "Len(log.cache) == 0") if x)
+            for k, proc in enumerate(st.on_failure):
+                h = step_from_es(proc, "%s/on_failure/%d" % (st.origin, k))
+                inherit_condition(st, h, "the step this handler belongs to")
+                self.one(h, guard)
+
+    HANDLER_OPS = ("set", "remove", "rename", "append")
+
+    def emulable(self, st):
+        """May the on_failure handlers of this grok/dissect step be emitted behind `Len(log.cache) == 0`?
+
+        Only when every handler is one of HANDLER_OPS, converts, reads nothing under `_ingest` and needs
+        neither the scratch map nor a statement outside the step's condition. The handlers are converted
+        once here on throw-away steps (the converter's state is put back) and again, for real, by one().
+        """
+        if st.op not in ("grok", "dissect") or not st.on_failure or st.ignore_failure:
+            return False
+        c = self.c
+        snap = (set(c.objects), c.counter, c.uses_cache)
+        try:
+            for k, proc in enumerate(st.on_failure):
+                if not isinstance(proc, dict) or len(proc) != 1:
+                    return False
+                h = step_from_es(proc, "%s/on_failure/%d" % (st.origin, k))
+                if h.op not in self.HANDLER_OPS or h.on_failure or "_ingest" in json.dumps(proc, default=str):
+                    return False
+                try:
+                    ss = getattr(self, "op_" + h.op)(h)
+                except (Unsupported, KeyError):
+                    return False
+                if any(not x.cond or "log.cache" in x.text or "log.cache" in (x.guard or "") for x in ss):
+                    return False
+            return True
+        finally:
+            c.objects, c.counter, c.uses_cache = snap
 
     def grok_defs(self, ecs):
         if ecs not in self._grok:
@@ -348,6 +438,63 @@ class Converter:
             out.append(S('set(log.body, "")') if s.body else S("delete_key(log.attributes, %s)" % q(s.field)))
         return out
 
+    def op_network_direction(self, st):
+        a = st.args
+        if a.get("internal_networks_field"):
+            raise Unsupported("internal_networks_field: the list of internal networks comes from each document")
+        nets = a.get("internal_networks")
+        if not isinstance(nets, list) or not nets or not all(isinstance(n, str) for n in nets):
+            raise Unsupported("internal_networks must be a list of named ranges and CIDRs")
+        for n in nets:
+            if "{{" in n:
+                raise Unsupported("templated internal_networks entry %r" % n)
+            if n not in NAMED_NETWORKS:
+                try:
+                    if "/" not in n:
+                        raise ValueError("no prefix length")
+                    ipaddress.ip_network(n)
+                except ValueError:
+                    raise Unsupported("internal_networks entry %r is neither a named range nor a CIDR" % n)
+        src, dst = Acc(a.get("source_ip", "source.ip")), Acc(a.get("destination_ip", "destination.ip"))
+        t = Acc(a.get("target_field", "network.direction"))
+        # Checked with the bundled collector (check.py, netdir-strict): IsInCIDR is false, not an error, for a
+        # string that is not an IP, so such an IP counts as outside every network and the record gets a value.
+        unparsable = ("an IP that does not parse fails the document in Elasticsearch; here IsInCIDR is false for "
+                      "it, so it counts as outside every network and the record gets a direction")
+        if not st.ignore_missing:
+            st.note(REVIEW, "ignore_missing is false: Elasticsearch fails the document when the source or the "
+                            "destination IP is missing (here the statements are skipped and the record continues), "
+                            "and when an IP does not parse (here it counts as outside every network, IsInCIDR "
+                            "being false for it, and the record gets a direction)")
+        else:
+            self.c.notes.append("%s (%s): %s" % (st.op, st.origin, unparsable))
+        st.reads |= {src.field, dst.field}
+        self.mark(st, t.field)
+        in_s, out_s = self.membership(src.get, nets)
+        in_d, out_d = self.membership(dst.get, nets)
+        have = " and ".join(x for x in (src.present(), dst.present()) if x)
+        return [S('set(%s, "%s")' % (t.set, name), " and ".join(x for x in (have, ss, dd) if x))
+                for name, ss, dd in (("internal", in_s, in_d), ("outbound", in_s, out_d),
+                                     ("inbound", out_s, in_d), ("external", out_s, out_d))]
+
+    @staticmethod
+    def membership(ip, nets):
+        """OTTL for `ip is in one of nets` and for its negation (named ranges and CIDRs; see NAMED_NETWORKS)."""
+        plain, terms = [], []
+        for n in nets:
+            neg, cidrs = NAMED_NETWORKS.get(n, (False, [n]))
+            if neg:
+                terms.append("not IsInCIDR(%s, %s)" % (ip, lit(list(dict.fromkeys(cidrs)))))
+            else:
+                plain += cidrs
+        if plain:
+            terms.insert(0, "IsInCIDR(%s, %s)" % (ip, lit(list(dict.fromkeys(plain)))))
+        if len(terms) == 1:
+            t = terms[0]
+            return (t, t[len("not "):]) if t.startswith("not ") else (t, "not " + t)
+        joined = " or ".join(terms)
+        return "(%s)" % joined, "not (%s)" % joined
+
     # ---------------------------------------------------- needs-review ops
     def op_grok(self, st):
         a, s = st.args, Acc(st.args["field"])
@@ -358,7 +505,8 @@ class Converter:
         for w in r.rewrites:
             st.note(REVIEW, w + " -- matches can differ from Elasticsearch's")
         st.note(REVIEW, "no match: ExtractGrokPatterns returns an empty map and the record goes on; "
-                        "Elasticsearch fails the document (check.py shows it)")
+                        + ("the on_failure handlers run (below)" if st.handled else
+                           "Elasticsearch fails the document (check.py shows it)"))
         if any(t == "float" for _, t in r.captures):
             st.note(REVIEW, "float captures are 32-bit in Elasticsearch, 64-bit here")
         st.reads.add(s.field)
@@ -391,8 +539,9 @@ class Converter:
                 rx += re2_quote(t)
         if toks and toks[-1].startswith("%{"):
             rx += "$"
-        st.note(REVIEW, "no match: nothing is set and the record goes on; Elasticsearch fails the document. "
-                        "The regex can also backtrack to a later delimiter where dissect fails")
+        st.note(REVIEW, "no match: nothing is set and the record goes on; "
+                        + ("the on_failure handlers run (below)" if st.handled else "Elasticsearch fails the document")
+                        + ". The regex can also backtrack to a later delimiter where dissect fails")
         st.reads.add(s.field)
         self.mark(st, *keys)
         self.cache()

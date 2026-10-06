@@ -493,5 +493,157 @@
         }
       }
     ]
+  },
+  "netdir": {
+    "description": "network_direction: named ranges (private, public, loopback) and a mix of CIDRs and a named range; kv puts the IPs in source.ip / destination.ip",
+    "processors": [
+      {
+        "kv": {
+          "field": "message",
+          "field_split": " ",
+          "value_split": "="
+        }
+      },
+      {
+        "network_direction": {
+          "internal_networks": [
+            "private"
+          ]
+        }
+      },
+      {
+        "network_direction": {
+          "internal_networks": [
+            "public"
+          ],
+          "target_field": "direction.public"
+        }
+      },
+      {
+        "network_direction": {
+          "internal_networks": [
+            "loopback"
+          ],
+          "target_field": "direction.loopback"
+        }
+      },
+      {
+        "network_direction": {
+          "internal_networks": [
+            "203.0.113.0/24",
+            "2001:db8::/32",
+            "multicast"
+          ],
+          "target_field": "direction.mixed"
+        }
+      }
+    ]
+  },
+  "netdir-strict": {
+    "description": "network_direction with ignore_missing false: a missing IP, and an IP that is not one, fail the document in Elasticsearch",
+    "processors": [
+      {
+        "kv": {
+          "field": "message",
+          "field_split": " ",
+          "value_split": "="
+        }
+      },
+      {
+        "network_direction": {
+          "internal_networks": [
+            "private"
+          ],
+          "ignore_missing": false
+        }
+      }
+    ]
+  },
+  "grok-onfail": {
+    "description": "grok with an on_failure handler list (set, set, append): the handlers run when nothing matched, the pipeline goes on",
+    "processors": [
+      {
+        "grok": {
+          "field": "message",
+          "patterns": [
+            "%{WORD:verb} %{NOTSPACE:path}"
+          ],
+          "on_failure": [
+            {
+              "set": {
+                "field": "error.message",
+                "value": "grok failed"
+              }
+            },
+            {
+              "set": {
+                "field": "event.outcome",
+                "value": "failure"
+              }
+            },
+            {
+              "append": {
+                "field": "tags",
+                "value": "_grokparsefailure"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "set": {
+          "field": "event.dataset",
+          "value": "grok.onfail"
+        }
+      }
+    ]
+  },
+  "dissect-onfail": {
+    "description": "dissect with an on_failure handler: the handler runs when the pattern did not match, the pipeline goes on",
+    "processors": [
+      {
+        "dissect": {
+          "field": "message",
+          "pattern": "%{ts} [%{level}] %{msg}",
+          "on_failure": [
+            {
+              "set": {
+                "field": "error.message",
+                "value": "dissect failed"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "set": {
+          "field": "event.dataset",
+          "value": "dissect.onfail"
+        }
+      }
+    ]
+  },
+  "json-reparse": {
+    "description": "json into the root, then set a field that is a key of the JSON and one that is not: ClickStack's transform parses the body again and upserts its keys",
+    "processors": [
+      {
+        "json": {
+          "field": "message",
+          "add_to_root": true
+        }
+      },
+      {
+        "set": {
+          "field": "user",
+          "value": "overridden"
+        }
+      },
+      {
+        "set": {
+          "field": "note",
+          "value": "added"
+        }
+      }
+    ]
   }
 }

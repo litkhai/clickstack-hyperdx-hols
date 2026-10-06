@@ -9,8 +9,8 @@ import steps as S
 
 class ClassTable(unittest.TestCase):
     def test_every_row_of_the_design_table(self):
-        converted = "set remove rename append lowercase uppercase drop uri_parts".split()
-        review = ("grok dissect date json kv convert csv gsub split trim sort user_agent community_id network_direction "
+        converted = "set remove rename append lowercase uppercase drop uri_parts network_direction".split()
+        review = ("grok dissect date json kv convert csv gsub split trim sort user_agent community_id "
                   "html_strip redact fingerprint pipeline dot_expander").split()
         unsupported = ("script enrich geoip foreach bytes urldecode registered_domain join fail terminate inference "
                        "set_security_user date_index_name reroute circle geo_grid").split()
@@ -22,12 +22,20 @@ class ClassTable(unittest.TestCase):
             self.assertNotIn(op, S.CLASS, op)
             self.assertIn(op, S.UNSUPPORTED_WHY, op)
 
-    def test_four_needs_review_ops_are_unsupported_here_and_say_so(self):
-        # in the needs-review row of the table, not implemented in #21: unsupported, with the reason
-        for op in ("community_id", "network_direction", "redact", "fingerprint"):
+    def test_three_needs_review_ops_stay_unsupported_and_say_why(self):
+        # in the needs-review row of the table, no conversion built (#64): unsupported, with the reason
+        why = {"community_id": "IGMP", "redact": "platinum or enterprise license", "fingerprint": "base64"}
+        for op, word in why.items():
             st = S.steps_from_es({"p": {"processors": [{op: {}}]}}, "p")[0]
             self.assertEqual(st.cls, S.UNSUPPORTED, op)
-            self.assertTrue(st.reasons, op)
+            self.assertIn(word, st.reasons[0], op)
+
+    def test_network_direction_ignore_missing_defaults_to_true_the_others_to_false(self):
+        pl = lambda op, cfg: S.steps_from_es({"p": {"processors": [{op: cfg}]}}, "p")[0]    # noqa: E731
+        self.assertTrue(pl("network_direction", {"internal_networks": ["private"]}).ignore_missing)
+        self.assertFalse(pl("network_direction", {"internal_networks": ["private"], "ignore_missing": False}).ignore_missing)
+        self.assertFalse(pl("lowercase", {"field": "a"}).ignore_missing)
+        self.assertTrue(pl("lowercase", {"field": "a", "ignore_missing": True}).ignore_missing)
 
     def test_unknown_processor_is_unsupported_never_dropped(self):
         st = S.steps_from_es({"p": {"processors": [{"made_up": {"field": "x"}}]}}, "p")

@@ -1,0 +1,3 @@
+2026-10-02 [INFO] started
+no brackets in this line
+2026-10-03 [WARN] disk low
