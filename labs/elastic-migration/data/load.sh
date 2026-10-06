@@ -86,6 +86,66 @@ ch() {
     curl -sS --max-time 300 --user "$CH_USER:$CH_PASSWORD" "$CH_URL/" --data-binary "$1"
 }
 
+# Percent-encode $1 for a URL query string, byte by byte. The & 255 is for
+# macOS's bash 3.2, which reads a byte above 127 as a negative number.
+urlencode() {
+    local LC_ALL=C s="$1" out="" c i n h
+    for ((i = 0; i < ${#s}; i++)); do
+        c="${s:i:1}"
+        case "$c" in
+            [A-Za-z0-9.~_-]) out+="$c" ;;
+            *) printf -v n '%d' "'$c"; printf -v h '%%%02X' $((n & 255)); out+="$h" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
+# Float columns go through input() as String (#61). ClickHouse's input
+# formats parse a decimal into Float32 or Float64 without correct rounding:
+# loaded straight, 989 of 300,000 http.response.time_ms values sat one ulp
+# from Elasticsearch's own, and 4,694 / 1,780 client.geo lat / lon values one
+# ulp from the decimal. precise_float_parsing fixes CAST from String but the
+# input formats ignore it (26.6.8.7, and Cloud 26.6.1.2292). So a column
+# whose type contains Float32 or Float64 is read as String, with the float
+# replaced in place (a Tuple or Array keeps its shape), and CAST back to its
+# own type under precise_float_parsing=1. Only ordinary columns are listed;
+# ALIAS and MATERIALIZED ones stay the table's to compute, as before. A table
+# with no float column -- or none at all, which the INSERT then reports --
+# keeps the plain INSERT.
+if ! cols=$(curl -sS --max-time 60 --fail-with-body --user "$CH_USER:$CH_PASSWORD" "$CH_URL/" \
+                --data-binary "SELECT name, type FROM system.columns WHERE database = '${CH_DATABASE}' AND table = '${table}' AND default_kind = '' ORDER BY position FORMAT TSV" 2>&1); then
+    echo "FAIL  could not read the columns of ${CH_DATABASE}.${table}: $cols" >&2
+    exit 1
+fi
+structure=""
+select=""
+float_cols=""
+while IFS=$'\t' read -r name type; do
+    [ -n "$name" ] || continue
+    case "$type" in
+        *Float32*|*Float64*)
+            in_type=$(printf '%s' "$type" | sed -E 's/Float(32|64)/String/g')
+            select="${select:+$select, }CAST(\`$name\` AS $type) AS \`$name\`"
+            float_cols="${float_cols:+$float_cols, }$name"
+            ;;
+        *)
+            in_type="$type"
+            select="${select:+$select, }\`$name\`"
+            ;;
+    esac
+    structure="${structure:+$structure, }\`$name\` $in_type"
+done <<< "$cols"
+
+if [ -n "$float_cols" ]; then
+    structure="${structure//\\/\\\\}"
+    structure="${structure//\'/\\\'}"
+    insert="INSERT INTO ${CH_DATABASE}.${table} SELECT ${select} FROM input('${structure}') FORMAT JSONEachRow"
+    echo "floats: read as String, CAST under precise_float_parsing=1 -- $float_cols"
+else
+    insert="INSERT INTO ${CH_DATABASE}.${table} FORMAT JSONEachRow"
+fi
+insert_url="$CH_URL/?precise_float_parsing=1&query=$(urlencode "$insert")"
+
 failed=0
 loaded_parts=0
 skipped_parts=0
@@ -104,7 +164,7 @@ for part in "$out_dir"/part-*.ndjson; do
 
     if out=$(curl -sS --max-time 300 --fail-with-body \
                 --user "$CH_USER:$CH_PASSWORD" \
-                "$CH_URL/?query=INSERT%20INTO%20${CH_DATABASE}.${table}%20FORMAT%20JSONEachRow" \
+                "$insert_url" \
                 --data-binary "@$part" 2>&1); then
         printf 'PASS  %s loaded (%s rows)\n' "$(basename "$part")" "$n"
         date -u +%FT%TZ > "$marker"
@@ -128,9 +188,12 @@ fi
 # instead of one curl per file from a single machine:
 #
 #   INSERT INTO db.table
-#   SELECT * FROM s3('https://<bucket>.s3.amazonaws.com/logs-demo/part-*.ndjson',
-#                     '<key>', '<secret>', 'JSONEachRow')
+#   SELECT <the column list above, floats CAST from String>
+#   FROM s3('https://<bucket>.s3.amazonaws.com/logs-demo/part-*.ndjson',
+#           '<key>', '<secret>', 'JSONEachRow', '<the input() structure above>')
+#   SETTINGS precise_float_parsing = 1
 #
 # s3() reads every part matching the glob in one statement and lets
 # ClickHouse parallelize the read across its own threads, instead of one
-# HTTP request per file from this script.
+# HTTP request per file from this script. SELECT * would parse the floats
+# the same lossy way a plain INSERT does (#61).
