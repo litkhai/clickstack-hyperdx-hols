@@ -125,6 +125,18 @@ a `clickhouse_clickstack_*` resource logs a "Beta Resource" warning at `apply` t
 `plan` time). `CLICKHOUSE_SUPPRESS_BETA_WARNINGS=true` turns it off once acknowledged; nothing
 else about the resources' behavior changes.
 
+### 8. A filter goes on the select item, not on the tile
+
+The API's tile schema has no tile-level `where` (HyperDX source at `6db385c`, ClickStack
+2.39.1). Put the filter on each `select` item:
+`{"aggFn": "count", "alias": "Errors", "where": "SeverityText:error", "whereLanguage": "lucene"}`.
+A `where` on the tile's `config` is not rejected -- the API drops keys it does not know, so the
+tile, and any alert on it, counts every row. `POST /api/v2/dashboards/validate` still answers
+`valid: true`, with the key missing from the `normalized` body it returns; when a tile counts
+more than it should, compare that body with yours. Checked on ClickStack 2.39.1 on 2026-10-06
+(#60): with 425 logs and 25 errors, a tile-level `where` was not saved and the tile counted
+425; the same filter on the select item counted 25, the same as SQL.
+
 ---
 
 ## 한국어
@@ -246,3 +258,15 @@ provider 릴리스보다 먼저 일어날 수 있습니다. `plan`은 통과했�
 생성·수정·import마다 "Beta Resource" 경고가 `apply` 시점에만(`plan` 시점에는 아님) 찍힙니다.
 `CLICKHOUSE_SUPPRESS_BETA_WARNINGS=true`로 확인했다면 끌 수 있고, 그 외 리소스의 동작은
 달라지지 않습니다.
+
+### 8. 필터는 타일이 아니라 select 항목에 둡니다
+
+API의 타일 스키마에는 타일 단위 `where`가 없습니다(HyperDX 소스 `6db385c`, ClickStack
+2.39.1). 필터는 각 `select` 항목에 둡니다:
+`{"aggFn": "count", "alias": "Errors", "where": "SeverityText:error", "whereLanguage": "lucene"}`.
+타일의 `config`에 `where`를 넣어도 거부되지 않습니다 -- API가 모르는 키를 버리므로, 타일과
+그 타일에 걸린 알림은 모든 행을 셉니다. `POST /api/v2/dashboards/validate`도 `valid: true`라고
+답하고, 돌려주는 `normalized` 본문에서만 그 키가 빠져 있습니다. 타일이 예상보다 많이 센다면
+그 본문과 내 본문을 비교하세요. ClickStack 2.39.1에서 2026-10-06에 확인(#60): 로그 425건 중
+error 25건일 때, 타일 단위 `where`는 저장되지 않았고 타일은 425를 셌습니다. 같은 필터를
+select 항목에 두면 SQL과 같은 25를 셌습니다.

@@ -30,10 +30,8 @@
       "config": {
         "displayType": "number",
         "sourceId": "${logs_source_id}",
-        "where": "SeverityText:error",
-        "whereLanguage": "lucene",
         "select": [
-          { "aggFn": "count", "alias": "Errors" }
+          { "aggFn": "count", "alias": "Errors", "where": "SeverityText:error", "whereLanguage": "lucene" }
         ]
       }
     }
