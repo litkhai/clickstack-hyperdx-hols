@@ -1,0 +1,2 @@
+{"user":"alice","action":"login"}
+{"action":"logout"}

@@ -1,0 +1,14 @@
+source.ip=10.0.0.1 destination.ip=8.8.8.8
+source.ip=8.8.8.8 destination.ip=192.168.1.5
+source.ip=10.1.2.3 destination.ip=172.16.0.9
+source.ip=203.0.113.5 destination.ip=198.51.100.7
+source.ip=127.0.0.1 destination.ip=10.0.0.1
+source.ip=fd00::1 destination.ip=2001:4860:4860::8888
+source.ip=::1 destination.ip=fe80::1
+source.ip=169.254.1.1 destination.ip=224.0.0.1
+source.ip=0.0.0.0 destination.ip=255.255.255.255
+source.ip=224.0.1.1 destination.ip=ff0e::1
+source.ip=10.0.0.1
+source.ip=2001:db8::5 destination.ip=203.0.113.9
+source.ip=ff01::1 destination.ip=ff02::1
+source.ip=::ffff:10.0.0.1 destination.ip=8.8.8.8
