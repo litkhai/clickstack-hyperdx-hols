@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-03** — `labs/apm-workflows/`: S1 verified on Managed ClickStack, background noise and incidents, S2 alerts and S3 comparison built but not verified; `docs/labs.json` added (notes-site export, 0 labs published; the only committed file under `docs/`). As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-06** — `labs/apm-workflows/` closed as it stands (#66): S1 verified, S2 alerts and S3 comparison built but not verified, S4–S7 documentation only; one lab published to the notes site, `otel-profiles/profiles/aws-rds-mysql` (`docs/labs.json`, the only committed file under `docs/`). As of 2026-10-03: `labs/apm-workflows/` built. As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -107,7 +107,6 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F1–F7: roadmap labs](https://github.com/litkhai/clickstack-hyperdx-hols/issues/2)
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
-- [labs/apm-workflows/](https://github.com/litkhai/clickstack-hyperdx-hols/issues/66) — S1 done; S2 alerts and S3 comparison built, not verified; S1 not re-run with the noise; S4–S6 documentation only
 - [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Filebeat and Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59) and the [HyperDX dashboard output](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)
 - Found while building the dashboards path: [Elasticsearch `float` values load one float32 ulp off](https://github.com/litkhai/clickstack-hyperdx-hols/issues/61) (`re-verify`), [the manifest records ClickHouse types only](https://github.com/litkhai/clickstack-hyperdx-hols/issues/62), [clickstack-config's Error count tile filter is probably dropped by the API](https://github.com/litkhai/clickstack-hyperdx-hols/issues/60) (`re-verify`)
 - Found while building the data path, none of them blocking:
