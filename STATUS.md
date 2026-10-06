@@ -112,5 +112,4 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59) and the [HyperDX dashboard output](https://github.com/litkhai/clickstack-hyperdx-hols/issues/58)
 - Found while building the data path, none of them blocking:
   [parity check 4 assumes a single-pass export](https://github.com/litkhai/clickstack-hyperdx-hols/issues/32),
-  [translation is not a tracked run stage](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33),
-  [the DIRECT dictionary layout is unmeasured](https://github.com/litkhai/clickstack-hyperdx-hols/issues/34)
+  [translation is not a tracked run stage](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33)
