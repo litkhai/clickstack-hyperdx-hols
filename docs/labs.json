@@ -1,5 +1,16 @@
 {
   "repo": "clickstack-hyperdx-hols",
-  "generated": "2026-10-02T15:19:45Z",
-  "labs": []
+  "generated": "2026-10-06T08:06:45Z",
+  "labs": [
+    {
+      "path": "otel-profiles/profiles/aws-rds-mysql",
+      "title_ko": "Amazon RDS for MySQL 모니터링 프로필",
+      "summary_ko": "mysql 수신기와 CloudWatch 로그·지표를 사이드카 OpenTelemetry Collector로 ClickStack에 보내는 프로필입니다.",
+      "title_en": "Monitoring Amazon RDS for MySQL with ClickStack",
+      "summary_en": "A profile that sends RDS MySQL engine metrics and CloudWatch logs and metrics to ClickStack through a sidecar OpenTelemetry collector.",
+      "category": "third-party",
+      "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/otel-profiles/profiles/aws-rds-mysql/README.md#한국어",
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/otel-profiles/profiles/aws-rds-mysql/README.md#english"
+    }
+  ]
 }
