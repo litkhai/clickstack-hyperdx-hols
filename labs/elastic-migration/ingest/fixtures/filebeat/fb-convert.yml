@@ -13,7 +13,7 @@ filebeat.inputs:
           layouts: ["2006-01-02 15:04:05"]
       - convert:
           fields:
-            - {from: Code, to: code_num, type: integer}
+            - {from: Code, to: http_num, type: integer}
             - {from: ratio, to: ratio_f, type: double}
             - {from: ok, to: ok_b, type: boolean}
       - replace:

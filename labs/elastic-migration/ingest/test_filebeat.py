@@ -136,6 +136,8 @@ class Processors(unittest.TestCase):
         self.assertEqual([s.args.get("pattern") for s in st[:3]],
                          ["%{p.a} %{?skip} %{p.b}", "%{a}", "%{dissect.a} %{dissect.b}"])
         self.assertTrue(all(s.cls == S.REVIEW for s in st[:3]))
+        self.assertIn("log.flags", st[0].reasons[0] + st[0].reasons[-1])
+        self.assertIn("log.flags.*", st[0].writes)
         self.assertEqual((st[3].cls, "trim_values" in st[3].reasons[0]), (S.UNSUPPORTED, True))
         clash = steps_of([{"add_fields": {"target": "", "fields": {"a": "1"}}},
                           {"dissect": {"tokenizer": "%{a} %{b}", "target_prefix": ""}}])
@@ -182,6 +184,10 @@ class Processors(unittest.TestCase):
         self.assertEqual(lc[1].cls, S.CONVERTED)
         self.assertEqual(lc[2].cls, S.REVIEW)       # `up` upper-cased is `UP`: a rename, and it may be missing
         self.assertEqual(lc[0].cls, S.CONVERTED)
+        near = steps_of([{"add_fields": {"target": "", "fields": {"code_num": 1}}},
+                         {"lowercase": {"ignore_missing": True, "fields": ["Code"]}}])
+        self.assertEqual(near[1].cls, S.REVIEW)
+        self.assertIn("multiple keys match", near[1].reasons[0])
 
     def test_timestamp_layouts(self):
         st = steps_of([{"timestamp": {"field": "ts", "timezone": "Asia/Seoul",

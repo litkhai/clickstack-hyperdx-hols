@@ -23,9 +23,10 @@ about defaults. Observed there (8.17.0) and relied on below:
   add_fields            default target `fields`; target "" is the root; overwrites what exists (even message).
   add_tags              default target `tags`; appends, no de-duplication.
   add_labels            every value becomes a string; nested maps and lists flatten to labels.a.b / labels.l.0.
-  dissect               default field message, target_prefix `dissect` ("" = root); no match, a missing field,
-                        or a key that exists with overwrite_keys false (then NONE of the keys is written):
-                        the event goes on unchanged and silently (no error.message). trim_values pads away.
+  dissect               default field message, target_prefix `dissect` ("" = root); no match: the event goes on
+                        with log.flags: [dissect_parsing_error] (also with ignore_failure), no error.message;
+                        a missing field, or a key that exists with overwrite_keys false (then NONE of the keys
+                        is written): unchanged and silent. trim_values trims the values.
   decode_json_fields    target defaults to the field itself (message becomes an object); target "" merges to
                         the root; overwrite_keys false and ANY decoded key present (a `message` key always is):
                         nothing is merged; invalid JSON: unchanged, error.* only with add_error_key.
@@ -35,7 +36,9 @@ about defaults. Observed there (8.17.0) and relied on below:
                         a missing field with ignore_missing false: error.message.
   lowercase, uppercase  change the case of the field NAME, not of its value (Filebeat 8.17.0 `lowercase:
                         fields: [MiXed]` turns the key MiXed into mixed). Translated as `rename`. A missing
-                        field: error.message; two keys that differ only in case: error.message.
+                        field: error.message; two keys that differ only in case: error.message. Intermittent
+                        (1 run in 4) `multiple keys match` when another key starts with the same text
+                        (Code with code_num): the fixtures avoid that situation.
   timestamp             Go layouts, tried in order, default timezone UTC (TZ=Asia/Seoul in the container did
                         not change it), unparseable: @timestamp stays the ingest time, silently.
   when                  equals needs the same type as the field (a string field against 200 is false, and
@@ -469,9 +472,12 @@ class Translator:
             if hit:
                 reasons.append("overwrite_keys is false and %s may already exist: Filebeat 8.17.0 then writes NONE "
                                "of the keys (silently); the collector overwrites them" % ", ".join(hit))
+        reasons.append("no match: Filebeat 8.17.0 adds log.flags: [dissect_parsing_error] to the event (also with "
+                       "ignore_failure); the collector adds nothing")
         self.ctx.wrote(*keys)
         return [self.mk("dissect", {"field": field, "pattern": pat, "ignore_missing": True,
-                                    "ignore_failure": bool(a.get("ignore_failure"))}, o, cond, reasons)]
+                                    "ignore_failure": bool(a.get("ignore_failure"))}, o, cond, reasons,
+                        ["log.flags.*"])]
 
     def h_decode_json_fields(self, a, o, cond):
         fields = a.get("fields")
@@ -558,6 +564,10 @@ class Translator:
             if self.ctx.clash(t) and t != f and a.get("fail_on_error", True):
                 reasons.append("%s may already exist: Filebeat 8.17.0 fails with error.message "
                                "(`multiple keys match`, observed); the collector overwrites it" % t)
+            if any(k.lower() != t.lower() and k.lower().startswith(t.lower()) for k in self.ctx.known):
+                reasons.append("another field's name starts with %s: Filebeat 8.17.0 intermittently failed with "
+                               "error.message `multiple keys match` in that situation (1 run in 4, observed)" % t)
+                writes = ["error.*"]
             if t == f:                      # already in that case: nothing to rename, only the missing-field error is left
                 st = Step(op="noop", args={"field": f}, origin=o)
                 if reasons:
