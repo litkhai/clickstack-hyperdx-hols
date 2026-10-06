@@ -155,13 +155,14 @@ def es_get(base_url, path, timeout=30):
 class Field:
     """One leaf field, or one collapsed group of dynamically-grown fields."""
 
-    def __init__(self, path, ch_type, status, reason=None, es_type=None, group_of=None):
+    def __init__(self, path, ch_type, status, reason=None, es_type=None, group_of=None, alias_of=None):
         self.path = path            # dotted Elasticsearch path
         self.ch_type = ch_type      # ClickHouse type, or None if truly unplaceable
         self.status = status        # "converted" | "needs review" | "unsupported"
         self.reason = reason
         self.es_type = es_type
         self.group_of = group_of    # for collapsed dynamic groups: list of sub-paths
+        self.alias_of = alias_of    # for an Elasticsearch alias: the target path
 
 
 def is_multifield_fold(parent_type, sub_name, sub_spec):
@@ -301,10 +302,12 @@ def build_alias_fields(aliases, by_path, fields):
         target = by_path.get(target_path)
         if target is None or target.ch_type is None:
             fields.append(Field(alias_path, None, "unsupported",
-                                 f"alias target '{target_path}' was not itself convertible"))
+                                 f"alias target '{target_path}' was not itself convertible",
+                                 es_type="alias", alias_of=target_path))
             continue
         fields.append(Field(alias_path, target.ch_type, "converted",
-                             f"ALIAS of `{target_path}`", group_of=["ALIAS:" + target_path]))
+                             f"ALIAS of `{target_path}`", es_type="alias",
+                             group_of=["ALIAS:" + target_path], alias_of=target_path))
 
 
 def quote(path):
@@ -627,6 +630,12 @@ def main():
                 {
                     "path": f.path,
                     "ch_type": f.ch_type,
+                    # es_type and alias_of are for readers of the loaded table
+                    # (dashboards/lucene_sql.py): several Elasticsearch types
+                    # land in one ClickHouse type -- text, match_only_text and
+                    # wildcard are all String -- and query alike only in name.
+                    "es_type": f.es_type,
+                    "alias_of": f.alias_of,
                     "status": f.status,
                     # passthrough: export.py must hand this _source value to
                     # ClickHouse as a nested JSON value, not flatten into it --

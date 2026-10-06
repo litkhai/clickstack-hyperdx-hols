@@ -388,5 +388,49 @@ class TestVariables(unittest.TestCase):
                                 "$__conditionalAll(`service.name` IN (${service:singlequote}), $service)")
 
 
+class TestManifestTypes(unittest.TestCase):
+    """es_type and alias_of from the manifest (#62). Each type-driven case is
+    paired with the same field without es_type, which is how the ClickHouse
+    type alone reads it."""
+
+    @staticmethod
+    def schema(fields, aliases=None):
+        return Schema.from_manifest({"index": "i", "table": "t", "fields": fields}, aliases)
+
+    @staticmethod
+    def typed(path, ch_type, es_type, alias_of=None):
+        return dict(field(path, ch_type), es_type=es_type, alias_of=alias_of)
+
+    def test_wildcard_is_exact_although_its_column_is_a_plain_string(self):
+        typed = convert("code:ab-12", self.schema([self.typed("code", "String", "wildcard")]))
+        self.assertEqual((typed.sql, typed.cls), ("`code` = 'ab-12'", CONVERTED))
+        untyped = convert("code:ab-12", self.schema([field("code", "String")]))
+        self.assertEqual(untyped.cls, NEEDS_REVIEW)
+        self.assertIn("hasToken", untyped.sql)
+
+    def test_match_only_text_stays_analyzed(self):
+        r = convert("msg:timeout", self.schema([self.typed("msg", "String", "match_only_text")]))
+        self.assertEqual((r.sql, r.cls), ("hasToken(lowerUTF8(`msg`), 'timeout')", NEEDS_REVIEW))
+
+    def test_a_range_type_is_unsupported_not_text(self):
+        r = convert("net:10.0.0.1", self.schema([self.typed("net", "String", "ip_range")]))
+        self.assertEqual((r.sql, r.cls), (None, UNSUPPORTED))
+        self.assertEqual(convert("net:10.0.0.1", self.schema([field("net", "String")])).cls, NEEDS_REVIEW)
+
+    def test_alias_comes_from_the_manifest(self):
+        fields = [self.typed("log.level", "LowCardinality(String)", "keyword"),
+                  self.typed("level", "LowCardinality(String)", "alias", alias_of="log.level")]
+        r = convert("level:error", self.schema(fields))
+        self.assertEqual((r.sql, r.cls), ("`log.level` = 'error'", CONVERTED))
+        self.assertEqual(self.schema([fields[0], field("level", "LowCardinality(String)")]).aliases, {})
+
+    def test_an_alias_passed_in_wins(self):
+        fields = [self.typed("log.level", "LowCardinality(String)", "keyword"),
+                  self.typed("service.name", "LowCardinality(String)", "keyword"),
+                  self.typed("level", "LowCardinality(String)", "alias", alias_of="log.level")]
+        r = convert("level:cart", self.schema(fields, {"level": "service.name"}))
+        self.assertEqual(r.sql, "`service.name` = 'cart'")
+
+
 if __name__ == "__main__":
     unittest.main()

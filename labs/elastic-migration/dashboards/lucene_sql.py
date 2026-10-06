@@ -25,12 +25,14 @@ data/mapping_to_ddl.py):
                 `sql` is set and every reason is listed
   unsupported   nothing is emitted (`sql` is None); the reason says why
 
-Field types come from the data/ manifest (`mapping_to_ddl.py --manifest`). The
-manifest records the ClickHouse type, not the Elasticsearch one, so keyword vs
-text is read from it: `LowCardinality(String)` is a keyword, a plain `String`
-is treated as analyzed text. A field the manifest does not know is
-`unsupported` -- a column name is never guessed. Aliases are not in the
-manifest; pass them to Schema.from_manifest(aliases=...).
+Field types come from the data/ manifest (`mapping_to_ddl.py --manifest`).
+Keyword vs text is read from each field's `es_type`: `wildcard` is a keyword
+although it is a plain `String` column, `match_only_text` is text, and a range
+type is unsupported. A manifest without `es_type` falls back to the ClickHouse
+type: `LowCardinality(String)` is a keyword, a plain `String` analyzed text. A
+field the manifest does not know is `unsupported` -- a column name is never
+guessed. Aliases come from each field's `alias_of`; one passed to
+Schema.from_manifest(aliases=...) wins over the manifest's.
 
 This module knows nothing about Grafana or HyperDX: it returns a predicate
 string. `sql == ""` means "matches everything" (an empty query or `*`).
@@ -76,6 +78,15 @@ class Column:
         self.sql = quote(column)
 
 
+# Elasticsearch types that land in a String column but do not query like one
+# kind: a term on these matches the whole value, or the value is analyzed, or
+# it is a range. Used only when the manifest has es_type; without it the
+# ClickHouse type decides, as before.
+_EXACT_ES_TYPES = {"keyword", "constant_keyword", "version", "wildcard"}
+_ANALYZED_ES_TYPES = {"text", "match_only_text"}
+_RANGE_ES_TYPES = {"integer_range", "float_range", "long_range", "double_range", "date_range", "ip_range"}
+
+
 def _kind(ch_type):
     t, nullable, lc = ch_type, False, False
     while True:
@@ -113,16 +124,26 @@ class Schema:
 
     @classmethod
     def from_manifest(cls, manifest, aliases=None):
-        cols = {}
+        cols, found = {}, {}
         for f in manifest["fields"]:
+            if f.get("alias_of"):
+                found[f["path"]] = f["alias_of"]
             if not f.get("ch_type") or f.get("status") == "unsupported":
                 cols[f["path"]] = Column(f["path"], f["path"], f.get("ch_type") or "", "unsupported")
                 continue
             kind, nullable, base = _kind(f["ch_type"])
-            if f["path"] == "_id" and kind == "text":
+            es_type = f.get("es_type")
+            if es_type in _RANGE_ES_TYPES:
+                kind = "unsupported"   # a range in a String: a term query means "contains"
+            elif kind in ("keyword", "text") and es_type in _EXACT_ES_TYPES:
+                kind = "keyword"
+            elif kind in ("keyword", "text") and es_type in _ANALYZED_ES_TYPES:
+                kind = "text"
+            elif f["path"] == "_id" and kind == "text":
                 kind = "keyword"       # the document id: exact in Elasticsearch, a plain String here
             cols[f["path"]] = Column(f["path"], f["path"], base, kind, nullable)
-        return cls(cols, aliases)
+        found.update(aliases or {})    # an alias passed in wins over the manifest's
+        return cls(cols, found)
 
     def resolve(self, name):
         """Column for a query field, aliases resolved to their target; None if unknown."""
