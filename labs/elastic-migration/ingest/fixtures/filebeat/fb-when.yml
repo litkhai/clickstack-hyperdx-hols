@@ -1,0 +1,56 @@
+# Every translated `when` shape: equals (string, int), has_fields, contains, regexp, and / or / not,
+# drop_event, and if / then / else.
+filebeat.inputs:
+  - type: filestream
+    id: fb-when
+    paths: [/var/log/web/access.log]
+    processors:
+      - dissect:
+          tokenizer: "%{verb} %{path} %{status} %{dur}"
+          target_prefix: ""
+      - drop_event:
+          when:
+            equals: {path: /health}
+      - add_fields:
+          target: ""
+          fields: {tier: 2}
+      - add_tags:
+          tags: [tier2]
+          when:
+            equals: {tier: 2}
+      - add_tags:
+          tags: [server_error]
+          when:
+            regexp: {status: "^5"}
+      - add_tags:
+          tags: [static]
+          when:
+            contains: {path: /static/}
+      - add_tags:
+          tags: [has_dur]
+          when:
+            has_fields: [dur, verb]
+      - add_tags:
+          tags: [plain_get]
+          when:
+            and:
+              - equals: {verb: GET}
+              - not:
+                  contains: {path: /api}
+      - add_tags:
+          tags: [client_or_delete]
+          when:
+            or:
+              - regexp: {status: "^4"}
+              - equals: {verb: DELETE}
+      - if:
+          contains: {path: /api}
+        then:
+          - add_fields:
+              target: ""
+              fields: {kind: api}
+        else:
+          - add_fields:
+              target: ""
+              fields: {kind: other}
+output.console: {}

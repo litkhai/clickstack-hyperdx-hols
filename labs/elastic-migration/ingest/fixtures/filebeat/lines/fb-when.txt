@@ -1,0 +1,6 @@
+GET /health 200 3
+GET /api/users 200 41
+POST /api/users 500 120
+GET /static/app.js 304 2
+DELETE /api/users/7 404 15
+GET /index.html 200 9

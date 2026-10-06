@@ -1,0 +1,4 @@
+{"user": "bob", "action": "login", "debug": "x1", "ms": 12}
+{"user": "amy", "action": "logout", "debug": "x2", "ms": 7, "req": {"id": "r2", "ok": true}}
+{"action": "ping", "debug": "x3"}
+{"message": "inner", "action": "collide", "extra": 1}

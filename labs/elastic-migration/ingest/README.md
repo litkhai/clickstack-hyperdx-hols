@@ -11,9 +11,9 @@ compared field by field by SQL.
 
 This part is only for a migration whose processing lives **in** Elasticsearch
 (`GET _ingest/pipeline`). A team that ran its own pipeline into Elasticsearch
-has nothing to convert here. Filebeat processors and Logstash filters are
-[#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59); they will
-parse into the same step list.
+has nothing to convert here. Filebeat processors convert through the same
+step list (*Filebeat*, below); Logstash filters are still
+[#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59).
 
 | File | What it does |
 |---|---|
@@ -21,6 +21,8 @@ parse into the same step list.
 | [`steps.py`](steps.py) | the source-neutral step list: every processor with its class, its `if`, its failure handling. #59 parses into it |
 | [`grok.py`](grok.py) | grok definitions resolved recursively from the cluster, and the RE2 rewrite and refusals |
 | [`check.py`](check.py) | the line-by-line check against `_simulate` and the collector |
+| [`filebeat.py`](filebeat.py) | Filebeat processors → the same step list (`convert.py --filebeat`) |
+| [`check_filebeat.py`](check_filebeat.py) | the same check against Filebeat 8.17.0's own output |
 | [`validate.sh`](validate.sh) | compiles every generated fragment with the collector in ClickStack's own image |
 
 ### Try it
@@ -230,6 +232,49 @@ as compact JSON. `log.file.name` comes from `filelog`.
   the OpAMP part. It compiles every OTTL statement and grok pattern; it does
   not run them. `check.py` runs them.
 
+### Filebeat
+
+`convert.py --filebeat filebeat.yml [--input N]` reads Filebeat's processors
+instead of an ingest pipeline: input N's `processors`, then the top-level
+ones, in the order Filebeat runs them (#59). [`filebeat.py`](filebeat.py)
+turns each one into the ingest-pipeline steps above, so the classes, the
+OTTL and the check are the same. `when:` becomes the Painless shapes the
+`if` whitelist reads; `range`, `network` and `contains` on an array are
+unsupported, and so is a processor whose `when` does not translate.
+`script` and the metadata enrichers (`add_host_metadata` …) are unsupported:
+the collector's own resource detection is their replacement. PyYAML is
+needed for this path only.
+
+```bash
+./convert.py --filebeat fixtures/filebeat/fb-when.yml --name fb-when \
+    --include '/ingest-verify/in/fb-when.*.log' --out-dir out/fb-when
+./check_filebeat.py --restore     # every fixtures/filebeat/<id>.yml
+```
+
+[`check_filebeat.py`](check_filebeat.py) is `check.py` with Filebeat
+8.17.0's own output in place of `_simulate`: one container per line (stdin
+input, console output), the fields Filebeat adds by itself (`agent.*`,
+`ecs.*`, `host.*`, `input.*`) dropped, the same verdicts.
+
+What running Filebeat 8.17.0 showed, which the option names do not say:
+
+- **`lowercase` and `uppercase` change the field's name, not its value**:
+  `lowercase: fields: [MiXed]` renames the key. They are translated as
+  `rename`. With another key that starts with the same text (`Code` and
+  `code_num`), Filebeat failed intermittently with `multiple keys match`.
+- **Failure is not uniform.** `rename`, `copy_fields`, `replace` and
+  `lowercase` add `error.message` and roll the whole processor back; a
+  failed `dissect` adds `log.flags: [dissect_parsing_error]` instead;
+  `convert` and `decode_json_fields` (without `add_error_key`) fail
+  silently. Each is a needs-review reason.
+- **`decode_json_fields` with `overwrite_keys: false` merges nothing** when
+  any decoded key already exists, and a `message` key always does.
+- **`timestamp` parses in UTC by default**: setting `TZ` in the container
+  did not change it.
+- Not translated, with a note: input options (`tags`, `fields`,
+  `multiline`, `include_lines` …) and `${...}` references. Filebeat reads
+  unquoted `y` / `n` keys as booleans and PyYAML does not.
+
 ### Verified on
 
 Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
@@ -249,6 +294,16 @@ one bundled in ClickStack, which `otel_logs` lives in), Python 3.9.6.
   the same result. `test_*.py`: 91 tests. `lint.sh` passes on all 16
   generated directories, and its no-argument output is identical before and
   after the path change. `validate.sh` passes on all 16.
+- **2026-10-07, Filebeat** (#59): Filebeat **8.17.0**
+  (`docker.elastic.co/beats/filebeat:8.17.0`, arm64), the same ClickStack and
+  collector. 5 Filebeat fixtures over 20 lines: **15 PASS, 3 REVIEW,
+  2 UNSUPPORTED, 0 MISMATCH**. The first full run had 2 MISMATCH, both real
+  (`log.flags` on a failed dissect; the `lowercase` prefix failure), and
+  both were fixed. The ingest-pipeline output for all 21 pipelines is
+  byte-identical before and after. `test_*.py`: 140 tests. `lint.sh` and
+  `validate.sh` pass on the 5 Filebeat outputs. Not compared end to end:
+  `copy_fields`, `add_labels`, `uppercase` (unit tests and Filebeat runs
+  only).
 - Faults, each caught:
 
 | Fault | Caught by |
@@ -261,6 +316,7 @@ one bundled in ClickStack, which `otel_logs` lives in), Python 3.9.6.
 | `outbound` and `inbound` swapped in the `netdir` fragment (#64) | `check.py`: `MISMATCH` on 5 lines |
 | an `on_failure` value edited, `grok-onfail` and `dissect-onfail` (#64) | `check.py`: `MISMATCH` on the no-match line of each |
 | the re-parse note disabled in `convert.py` (#64) | `check.py`: `MISMATCH` on `json-reparse` |
+| a dissect key, a `when` value, a rename target edited in Filebeat fragments (#59) | `check_filebeat.py`: `MISMATCH` on 3, 1 and 3 lines |
 
 Not run: an authenticated cluster (the same `es_client` as `data/`, which is
 verified there, but not on this path); a host in another time zone (the
@@ -269,7 +325,7 @@ multiline events; Python 3.8 (syntax only).
 
 ### Not covered
 
-- Filebeat and Logstash ([#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)).
+- Logstash ([#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)).
 - Elastic Agent integrations, and Elasticsearch's built-in pipelines (`logs@json-pipeline` …), which were not tried.
 - Index templates and component templates: the schema half is [`../data/`](../data/).
 
@@ -283,9 +339,9 @@ collector에 통과시켜 `otel_logs`에 넣은 뒤, SQL로 필드마다 비교�
 
 이 부분은 처리 로직이 Elasticsearch **안에**(`GET _ingest/pipeline`) 있는 이전에만
 해당합니다. 자체 파이프라인으로 Elasticsearch에 넣던 팀은 여기서 바꿀 것이
-없습니다. Filebeat processor와 Logstash filter는
-[#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)이고, 같은 단계
-목록으로 파싱됩니다.
+없습니다. Filebeat processor는 같은 단계 목록으로 바뀝니다(아래 *Filebeat* 절).
+Logstash filter는 아직
+[#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)입니다.
 
 | 파일 | 하는 일 |
 |---|---|
@@ -293,6 +349,8 @@ collector에 통과시켜 `otel_logs`에 넣은 뒤, SQL로 필드마다 비교�
 | [`steps.py`](steps.py) | 출처와 무관한 단계 목록: processor마다 분류, `if`, 실패 처리. #59가 여기로 파싱합니다 |
 | [`grok.py`](grok.py) | 클러스터에서 grok 정의를 재귀적으로 풀고, RE2용으로 고쳐 쓰거나 거부합니다 |
 | [`check.py`](check.py) | `_simulate`와 collector를 한 줄씩 비교하는 검사 |
+| [`filebeat.py`](filebeat.py) | Filebeat processor → 같은 단계 목록(`convert.py --filebeat`) |
+| [`check_filebeat.py`](check_filebeat.py) | Filebeat 8.17.0 자신의 출력과 비교하는 같은 검사 |
 | [`validate.sh`](validate.sh) | 생성한 조각을 모두 ClickStack 이미지의 collector로 컴파일합니다 |
 
 ### 실행해 보기
@@ -487,6 +545,46 @@ grok 패턴 파일은 이 저장소에 넣지 않았습니다. Elasticsearch 8.1
   OpAMP 부분을 대신하는 stub를 더해 검증합니다. OTTL 문장과 grok 패턴을 모두
   컴파일하지만 실행하지는 않습니다. 실행은 `check.py`가 합니다.
 
+### Filebeat
+
+`convert.py --filebeat filebeat.yml [--input N]`은 ingest pipeline 대신 Filebeat의
+processor를 읽습니다. Filebeat이 실행하는 순서대로 입력 N의 `processors`, 그다음 최상위
+`processors`입니다(#59). [`filebeat.py`](filebeat.py)가 각각을 위의 ingest pipeline
+단계로 바꾸므로, 분류와 OTTL, 검사가 같습니다. `when:`은 `if` 허용 목록이 읽는
+Painless 모양이 됩니다. `range`, `network`, 배열에 대한 `contains`는 unsupported이고,
+`when`을 옮길 수 없는 processor도 그렇습니다. `script`와 메타데이터를 붙이는 processor
+(`add_host_metadata` …)는 unsupported입니다. collector 자체의 resource detection이
+그 대신입니다. 이 경로에만 PyYAML이 필요합니다.
+
+```bash
+./convert.py --filebeat fixtures/filebeat/fb-when.yml --name fb-when \
+    --include '/ingest-verify/in/fb-when.*.log' --out-dir out/fb-when
+./check_filebeat.py --restore     # fixtures/filebeat/<id>.yml 전부
+```
+
+[`check_filebeat.py`](check_filebeat.py)는 `_simulate` 자리에 Filebeat 8.17.0 자신의
+출력을 넣은 `check.py`입니다. 줄마다 컨테이너 하나(stdin 입력, console 출력)를 띄우고,
+Filebeat이 스스로 붙이는 필드(`agent.*`, `ecs.*`, `host.*`, `input.*`)는 빼고, 같은
+판정을 냅니다.
+
+Filebeat 8.17.0을 실제로 돌려서 알게 된 것(옵션 이름만으로는 알 수 없는 것):
+
+- **`lowercase`와 `uppercase`는 값이 아니라 필드 이름의 대소문자를 바꿉니다.**
+  `lowercase: fields: [MiXed]`는 키 이름을 바꿉니다. 그래서 `rename`으로 옮깁니다.
+  같은 글자로 시작하는 다른 키가 있으면(`Code`와 `code_num`) Filebeat이 가끔
+  `multiple keys match`로 실패했습니다.
+- **실패 방식이 제각각입니다.** `rename`, `copy_fields`, `replace`, `lowercase`는
+  `error.message`를 붙이고 processor 전체를 되돌립니다. 실패한 `dissect`는 대신
+  `log.flags: [dissect_parsing_error]`를 붙입니다. `convert`와 `decode_json_fields`
+  (`add_error_key` 없이)는 조용히 실패합니다. 각각 needs review 사유입니다.
+- **`decode_json_fields`는 `overwrite_keys: false`일 때**, 디코딩한 키 중 하나라도
+  이미 있으면 아무것도 합치지 않습니다. `message` 키는 늘 있습니다.
+- **`timestamp`는 기본으로 UTC로 파싱합니다.** 컨테이너에 `TZ`를 설정해도 바뀌지
+  않았습니다.
+- 메모만 남기고 옮기지 않는 것: 입력 옵션(`tags`, `fields`, `multiline`,
+  `include_lines` …)과 `${...}` 참조. Filebeat은 따옴표 없는 `y` / `n` 키를 boolean으로
+  읽지만 PyYAML은 그렇지 않습니다.
+
 ### 검증 환경
 
 Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
@@ -504,6 +602,14 @@ Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
   UNSUPPORTED 7, MISMATCH 0.** 리드가 다시 돌려 같은 결과. `test_*.py`: 테스트 91개.
   생성한 디렉터리 16개 모두 `lint.sh` 통과, 인자 없는 실행 결과는 경로 지원 추가 전후가
   같음. `validate.sh` 16개 모두 통과.
+- **2026-10-07, Filebeat**(#59): Filebeat **8.17.0**
+  (`docker.elastic.co/beats/filebeat:8.17.0`, arm64), 같은 ClickStack과 collector.
+  Filebeat fixture 5개, 입력 20줄: **PASS 15, REVIEW 3, UNSUPPORTED 2, MISMATCH 0.**
+  첫 전체 실행에는 MISMATCH가 2개 있었고 둘 다 실제 차이(dissect 실패 시 `log.flags`,
+  `lowercase`의 접두사 실패)여서 고쳤습니다. pipeline 21개의 ingest pipeline 출력은 전후가
+  바이트까지 같습니다. `test_*.py`: 테스트 140개. Filebeat 출력 5개 모두 `lint.sh`와
+  `validate.sh` 통과. 끝까지 비교하지 않은 것: `copy_fields`, `add_labels`, `uppercase`
+  (단위 테스트와 Filebeat 실행만).
 - 고장 주입. 모두 잡혔습니다.
 
 | 고장 | 잡은 것 |
@@ -516,6 +622,7 @@ Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
 | `netdir` 조각에서 `outbound`와 `inbound`를 맞바꿈(#64) | `check.py`: 5줄 `MISMATCH` |
 | `grok-onfail`, `dissect-onfail`의 `on_failure` 값 변경(#64) | `check.py`: 각각 매칭 실패 줄에서 `MISMATCH` |
 | `convert.py`에서 재파싱 메모를 끔(#64) | `check.py`: `json-reparse`에서 `MISMATCH` |
+| Filebeat 조각의 dissect 키, `when` 값, rename 대상 변경(#59) | `check_filebeat.py`: 각각 3, 1, 3줄 `MISMATCH` |
 
 실행하지 않은 것:
 - 인증이 켜진 클러스터. `data/`와 같은 `es_client`이고 거기서는 검증됐지만, 이 경로에서는 돌리지 않았습니다.
@@ -525,6 +632,6 @@ Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
 
 ### 다루지 않는 것
 
-- Filebeat와 Logstash ([#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)).
+- Logstash ([#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)).
 - Elastic Agent integration, Elasticsearch 내장 파이프라인(`logs@json-pipeline` …) — 시도하지 않았습니다.
 - index template과 component template: 스키마 쪽은 [`../data/`](../data/)입니다.

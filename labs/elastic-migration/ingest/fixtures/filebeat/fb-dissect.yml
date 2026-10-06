@@ -1,0 +1,26 @@
+# Dissect with a target_prefix, add_fields / add_tags at input and top level.
+filebeat.inputs:
+  - type: filestream
+    id: fb-dissect
+    paths: [/var/log/app/worker.log]
+    processors:
+      - dissect:
+          tokenizer: "%{ts} %{level} %{msg}"
+          target_prefix: app
+      - rename:
+          ignore_missing: true
+          fields:
+            - {from: app.msg, to: app.text}
+      - add_fields:
+          target: meta
+          fields: {team: platform, tier: 2}
+      - add_tags:
+          tags: [worker, nightly]
+processors:
+  - add_fields:
+      target: ""
+      fields: {env: prod}
+  - add_tags:
+      tags: [shipped]
+output.elasticsearch:
+  hosts: ["http://localhost:9200"]
