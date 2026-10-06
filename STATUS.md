@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-06** — `labs/elastic-migration/data/load.sh` reads float columns as text and casts them, since ClickHouse's input formats do not round floats correctly: 0 of 300,000 rows off, from 989 (#61). `clickstack-config/`: the Error count tile's filter moved onto its select item, since the API dropped it from the tile and the tile counted every log (#60). `labs/apm-workflows/` closed as it stands (#66): S1 verified, S2 alerts and S3 comparison built but not verified, S4–S7 documentation only; one lab published to the notes site, `otel-profiles/profiles/aws-rds-mysql` (`docs/labs.json`, the only committed file under `docs/`). As of 2026-10-03: `labs/apm-workflows/` built. As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-06** — `labs/elastic-migration/data/idmap/` on Cloud 26.6.1.2292: `SSD_CACHE` with its `PATH` works; `SYSTEM RELOAD DICTIONARY` reloads one replica only, so reload `ON CLUSTER` and check every replica; memory ceiling read, not measured; the `s3()` load not run, by decision (#41). `labs/elastic-migration/data/load.sh` reads float columns as text and casts them, since ClickHouse's input formats do not round floats correctly: 0 of 300,000 rows off, from 989 (#61). `clickstack-config/`: the Error count tile's filter moved onto its select item, since the API dropped it from the tile and the tile counted every log (#60). `labs/apm-workflows/` closed as it stands (#66): S1 verified, S2 alerts and S3 comparison built but not verified, S4–S7 documentation only; one lab published to the notes site, `otel-profiles/profiles/aws-rds-mysql` (`docs/labs.json`, the only committed file under `docs/`). As of 2026-10-03: `labs/apm-workflows/` built. As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -113,5 +113,3 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
   [parity check 4 assumes a single-pass export](https://github.com/litkhai/clickstack-hyperdx-hols/issues/32),
   [translation is not a tracked run stage](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33),
   [the DIRECT dictionary layout is unmeasured](https://github.com/litkhai/clickstack-hyperdx-hols/issues/34)
-- Needs the real destination to answer, so labelled `re-verify`:
-  [the Cloud-specific path — `s3()` load, `ssd_cache` PATH, memory ceiling — is documented but never run](https://github.com/litkhai/clickstack-hyperdx-hols/issues/41)
