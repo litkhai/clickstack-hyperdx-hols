@@ -38,7 +38,7 @@ reasons and counted, it does not fail the run); 2 when it could not run. Credent
 the env file (HYPERDX_API_URL, HYPERDX_API_KEY) or the environment and are never printed;
 Grafana's as in check.py.
 
-Measured on ClickStack 2.39.1 against ClickHouse 26.6.8.7 (see the issue / README for the date):
+Measured on ClickStack 2.39.1 (clickstack-all-in-one) against ClickHouse 26.6.8.7, 2026-10-06 UTC:
   * `whereLanguage: "sql"` on a select item is kept and filters; a tile-level `where` is dropped.
   * a backquoted timestampValueExpression (`@timestamp`) filters by time, both ends inclusive:
     `@timestamp` >= from AND `@timestamp` <= to.
@@ -412,8 +412,9 @@ def check_targets(g, api, dash, authored, orig, plan, Vo, frm, to, args, types):
                 rows.append(tag + ("MISMATCH", "tile %r is not in the created dashboard" % e["tile"], reasons))
             elif e["cls"] == L.UNSUPPORTED:
                 ok = e["tile"].startswith(H.PREFIX) and cfg.get("displayType") == "markdown"
-                rows.append(tag + (("EMPTIED", "markdown tile marked [NOT CONVERTED], no query") if ok else
-                                   ("MISMATCH", "not converted, but its tile is not a [NOT CONVERTED] markdown tile"), reasons))
+                v, d = ("EMPTIED", "markdown tile marked [NOT CONVERTED], no query") if ok else \
+                    ("MISMATCH", "not converted, but its tile is not a [NOT CONVERTED] markdown tile")
+                rows.append(tag + (v, d, reasons))
             elif cfg.get("displayType") == "markdown":
                 rows.append(tag + ("MISMATCH", "converted, but its tile is markdown", reasons))
             else:
