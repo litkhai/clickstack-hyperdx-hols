@@ -1,0 +1,25 @@
+# convert, replace, lowercase (a field NAME in Filebeat 8.17.0) and timestamp with a timezone.
+filebeat.inputs:
+  - type: filestream
+    id: fb-convert
+    paths: [/var/log/app/metrics.log]
+    processors:
+      - dissect:
+          tokenizer: "%{ts}|%{Code}|%{ratio}|%{ok}|%{name}"
+          target_prefix: ""
+      - timestamp:
+          field: ts
+          timezone: Asia/Seoul
+          layouts: ["2006-01-02 15:04:05"]
+      - convert:
+          fields:
+            - {from: Code, to: code_num, type: integer}
+            - {from: ratio, to: ratio_f, type: double}
+            - {from: ok, to: ok_b, type: boolean}
+      - replace:
+          fields:
+            - {field: name, pattern: '\s+', replacement: "_"}
+      - lowercase:
+          ignore_missing: true
+          fields: [Code]
+output.console: {}

@@ -1,0 +1,17 @@
+# decode_json_fields to the root, then rename and drop_fields. overwrite_keys is left false.
+filebeat.inputs:
+  - type: filestream
+    id: fb-json
+    paths: [/var/log/app/events.json]
+    processors:
+      - decode_json_fields:
+          fields: [message]
+          target: ""
+      - rename:
+          ignore_missing: true
+          fields:
+            - {from: user, to: account}
+processors:
+  - drop_fields:
+      fields: [debug]
+output.console: {}

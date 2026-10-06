@@ -1,0 +1,14 @@
+# Processors with no OTel form: a script and a metadata enricher, next to one that translates.
+filebeat.inputs:
+  - type: filestream
+    id: fb-unsupported
+    paths: [/var/log/app/misc.log]
+    processors:
+      - add_tags:
+          tags: [seen]
+      - script:
+          lang: javascript
+          source: "function process(event) { event.Put('js.checked', true); }"
+processors:
+  - add_host_metadata: ~
+output.console: {}
