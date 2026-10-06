@@ -1,0 +1,7 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-06
+web: true
+title_ko: "Amazon RDS for MySQL 모니터링 프로필"
+summary_ko: "mysql 수신기와 CloudWatch 로그·지표를 사이드카 OpenTelemetry Collector로 ClickStack에 보내는 프로필입니다."
+title_en: "Monitoring Amazon RDS for MySQL with ClickStack"
+summary_en: "A profile that sends RDS MySQL engine metrics and CloudWatch logs and metrics to ClickStack through a sidecar OpenTelemetry collector."
+category: third-party
