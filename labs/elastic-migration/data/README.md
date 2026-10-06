@@ -433,6 +433,26 @@ ClickHouse parallelizes the read itself rather than this script sending one
 curl per file from a single machine. The exact statement is in a comment at
 the bottom of `load.sh`.
 
+**Floats are read as text, then cast (#61).** ClickHouse's input formats
+parse a decimal into `Float32` or `Float64` without correct rounding, and
+they ignore `precise_float_parsing`. So `load.sh` reads every column whose
+type contains a float as `String` through `input()`, then casts it back to
+its own type under `precise_float_parsing = 1`. A table with no float column
+keeps the plain `INSERT`. Keep `Float32` for an Elasticsearch `float`: its
+doc value is a float32, and `Float64` would hold the decimal instead.
+Checked on 2026-10-06 against ClickHouse 26.6.8.7 and the 300,000-document
+seed, every row against the exported text:
+
+| Column | Off, plain `INSERT` | Off, `load.sh` now |
+|---|---|---|
+| `http.response.time_ms` (`Float32`, against the correctly rounded float32, which equals Elasticsearch's doc value on the 1,189 rows read back) | 989 | 0 |
+| `client.geo` lat / lon (`Float64`, against the correctly rounded double) | 4,694 / 1,780 | 0 / 0 |
+
+`parity_checks.py` passed as before. Floats inside a `JSON` column
+(`labels`, `metadata`) are typed by ClickHouse on insert and are not
+covered. `run.py`'s failure-and-resume matrix below was not re-run after
+this change.
+
 ### `parity_checks.py`: query pairs, not a screenshot
 
 ```bash
@@ -1039,6 +1059,24 @@ part 단위로 재개 가능합니다: `part-<n>.ndjson.loaded` 마커가 있으
 문장으로 `s3()`를 써서 적재하세요. 그러면 이 스크립트가 파일마다 curl을
 보내는 대신 ClickHouse가 직접 읽기를 병렬화합니다. 정확한 문장은
 `load.sh` 하단 주석에 있습니다.
+
+**float은 텍스트로 읽은 뒤 변환합니다(#61).** ClickHouse의 입력 형식은 십진수를
+`Float32`나 `Float64`로 파싱할 때 정확히 반올림하지 않고, `precise_float_parsing`도
+무시합니다. 그래서 `load.sh`는 타입에 float이 들어 있는 열을 모두 `input()`에서
+`String`으로 읽은 뒤, `precise_float_parsing = 1`로 원래 타입으로 변환합니다.
+float 열이 없는 테이블은 그냥 `INSERT`를 씁니다. Elasticsearch의 `float`은
+`Float32`로 두세요. Elasticsearch의 doc value가 float32이고, `Float64`는 그 대신
+십진수를 담습니다. 2026-10-06에 ClickHouse 26.6.8.7과 문서 300,000건 시드로,
+모든 행을 export한 텍스트와 비교해 확인했습니다:
+
+| 열 | 그냥 `INSERT`에서 어긋난 행 | 지금 `load.sh`에서 어긋난 행 |
+|---|---|---|
+| `http.response.time_ms` (`Float32`, 정확히 반올림한 float32와 비교. 다시 읽은 1,189행에서 Elasticsearch의 doc value와 같음) | 989 | 0 |
+| `client.geo` lat / lon (`Float64`, 정확히 반올림한 double과 비교) | 4,694 / 1,780 | 0 / 0 |
+
+`parity_checks.py`는 이전과 같이 통과했습니다. `JSON` 열(`labels`, `metadata`)
+안의 float은 적재 시 ClickHouse가 타입을 정하므로 다루지 않습니다. 아래 `run.py`의
+실패·재개 검증은 이번 변경 뒤에 다시 돌리지 않았습니다.
 
 ### `parity_checks.py`: 스크린샷이 아니라 쿼리 쌍
 

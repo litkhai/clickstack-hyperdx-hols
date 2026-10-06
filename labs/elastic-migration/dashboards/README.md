@@ -203,7 +203,9 @@ What it normalises rather than hides:
   `http.response.time_ms` values (0.33%) sat one float32 ulp away from
   Elasticsearch's. Avg and sum stayed within 1.21e-10; one `min` bucket out of
   100 differed by 6.5e-8. This is the load path in `data/`, not the
-  dashboards, and it is why the float32 tier exists.
+  dashboards, and it is why the float32 tier exists. `data/load.sh` has
+  since avoided it (#61); this run predates the change and was not repeated,
+  so the tier stays.
 - **`min`, `max` and `stddevPop` on a `Float32` column return `Float32`,**
   which the plugin sends as its shortest decimal: the first run showed `Min`
   1.1800001 against Elasticsearch's 1.1799999475479126. The converter casts
@@ -449,7 +451,9 @@ percentiles 0.05(`--percentile-tol`). `--exact`는 모든 허용 오차를 끄�
   적재한 뒤 `http.response.time_ms` 300,000개 중 993개(0.33%)가 Elasticsearch 값과
   float32 ulp 하나만큼 달랐습니다. avg와 sum은 1.21e-10 안이었고, `min` 버킷 100개 중
   하나가 6.5e-8 달랐습니다. 대시보드가 아니라 `data/`의 적재 경로 문제이고, float32
-  허용 단계가 있는 이유입니다.
+  허용 단계가 있는 이유입니다. 그 뒤 `data/load.sh`가 이 문제를 피하도록
+  바뀌었습니다(#61). 이 실행은 그 전의 것이고 다시 돌리지 않았으므로 허용 단계는
+  그대로 둡니다.
 - **`Float32` 컬럼의 `min`, `max`, `stddevPop`은 `Float32`를 돌려주고,** 플러그인은
   그것을 가장 짧은 십진수로 보냅니다. 첫 실행에서 `Min`이 1.1800001, Elasticsearch는
   1.1799999475479126이었습니다. 변환기는 float 컬럼을 `toFloat64()`로 바꿉니다.
