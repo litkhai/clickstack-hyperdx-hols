@@ -258,6 +258,44 @@ still fail the way they document:
 
 `./bench.py`: the numbers in the section above, from two map sizes.
 
+### On ClickHouse Cloud
+
+Run on 2026-10-06 against a ClickHouse Cloud service on **26.6.1.2292**: two
+replicas of 8 GiB (autoscaling 8–120 GiB), shared with other demo
+databases. A scratch database held a 200,000-row map, then 100,000 more rows,
+and was dropped afterwards (#41). `test_cases.py` and `bench.py` were not run
+there.
+
+- **`SSD_CACHE` works with `schema.sql`'s `PATH`.** 300,000 entries, well past
+  the 1 MiB write buffer, translated correctly on both replicas at 305 MiB per
+  replica, the "what you configure" footprint above. A `PATH` outside
+  `/var/lib/clickhouse/user_files/` is refused (`PATH_ACCESS_DENIED`), so keep
+  it there. The table above stands.
+- **Each replica holds its own copy of a dictionary, and
+  `SYSTEM RELOAD DICTIONARY` reloads only one.** After 100,000 mapping rows were added,
+  the plain reload that `test_cases.py` and `bench.py` run fixed one replica.
+  The other kept the 200,000-row copy and left the new keys untranslated,
+  with no error. `ON CLUSTER 'default'` reloaded both. In an earlier attempt, a
+  `HASHED` dictionary created right after the map's `INSERT` loaded 0 rows on
+  one replica, and `LIFETIME(0)` kept it that way. So on Cloud, reload with
+  `ON CLUSTER 'default'`, then check every replica before translating:
+
+  ```sql
+  SELECT hostName(), name, status, element_count
+  FROM clusterAllReplicas('default', system.dictionaries)
+  WHERE database = '<db>' AND name IN ('item_sn_dict_hashed', 'user_id_dict_hashed')
+  ```
+
+  On every row, `element_count` must equal the map's `count()`. (For
+  `SSD_CACHE`, the count is what has been looked up, not the map.)
+- **Memory: the ceiling is per replica, and close to the local one.**
+  `max_server_memory_usage` was 7.05 / 7.13 GiB at 8 GiB per replica. The
+  service's other work already used about 1.8 GiB, which left about 5.3 GiB
+  free, against 4.54 GiB locally. `HASHED` at 20M + 20M asked for 5.40 GiB
+  locally, and each replica loads its own copy. This was not measured on
+  Cloud: at the service's minimum size it is on the edge, and whether
+  autoscaling raises the ceiling in time for a dictionary load was not tested.
+
 ### What needs a decision, not a default
 
 The matrix is fixed; these are not. Worth settling before a real run:
@@ -516,6 +554,42 @@ regular release 채널이 도는 26.6 라인과 같은 minor), ClickStack/HyperD
   `[88002]`로 돌아왔습니다(T7-engine)
 
 `./bench.py`: 위 절의 숫자들, 두 가지 매핑 크기에서 측정.
+
+### ClickHouse Cloud에서
+
+2026-10-06에 ClickHouse Cloud 서비스 **26.6.1.2292**에서 실행했습니다. 8 GiB
+replica 2개(자동 확장 8–120 GiB)이고, 다른 데모 데이터베이스와 함께 쓰는
+서비스입니다. 임시 데이터베이스에 200,000행 매핑을 넣고 100,000행을 더 넣은 뒤
+지웠습니다(#41). `test_cases.py`와 `bench.py`는 거기서 돌리지 않았습니다.
+
+- **`SSD_CACHE`는 `schema.sql`의 `PATH`로 동작합니다.** 1 MiB 쓰기 버퍼를 훨씬
+  넘는 300,000개 항목이 두 replica 모두에서 올바르게 변환됐고, replica마다
+  305 MiB였습니다. 위에서 말한 "설정한 만큼"의 사용량입니다.
+  `/var/lib/clickhouse/user_files/` 밖의 `PATH`는 거부되므로(`PATH_ACCESS_DENIED`)
+  그 안에 두세요. 위 표는 그대로입니다.
+- **딕셔너리는 replica마다 따로 있고, `SYSTEM RELOAD DICTIONARY`는 하나만 다시
+  로드합니다.** 매핑 행 100,000개를 더 넣은 뒤 `test_cases.py`와 `bench.py`가 쓰는
+  보통의 리로드를 하자 replica 하나만 고쳐졌습니다. 다른 replica는 200,000행짜리
+  사본을 그대로 들고 새 키를 변환하지 못했고, 오류도 없었습니다.
+  `ON CLUSTER 'default'`로 리로드하자 둘 다 고쳐졌습니다. 그 전 시도에서는 매핑의
+  `INSERT` 직후 만든 `HASHED` 딕셔너리가 한 replica에서 0행으로 로드됐고,
+  `LIFETIME(0)` 때문에 그대로 남았습니다. 그러니 Cloud에서는
+  `ON CLUSTER 'default'`로 리로드하고, 변환 전에 모든 replica를 확인하세요:
+
+  ```sql
+  SELECT hostName(), name, status, element_count
+  FROM clusterAllReplicas('default', system.dictionaries)
+  WHERE database = '<db>' AND name IN ('item_sn_dict_hashed', 'user_id_dict_hashed')
+  ```
+
+  모든 행에서 `element_count`가 매핑의 `count()`와 같아야 합니다. (`SSD_CACHE`의
+  개수는 매핑이 아니라 지금까지 조회된 항목 수입니다.)
+- **메모리: 상한은 replica마다 있고, 로컬과 비슷합니다.** replica 8 GiB에서
+  `max_server_memory_usage`는 7.05 / 7.13 GiB였습니다. 서비스의 다른 작업이 이미
+  약 1.8 GiB를 써서 여유는 약 5.3 GiB였고, 로컬은 4.54 GiB였습니다. 로컬에서
+  `HASHED`는 20M + 20M에 5.40 GiB를 요구했고, replica마다 자기 사본을 로드합니다.
+  Cloud에서는 재지 않았습니다. 서비스의 최소 크기에서는 경계선이고, 자동 확장이
+  딕셔너리 로드에 맞춰 상한을 올려 주는지는 시험하지 않았습니다.
 
 ### 기본값이 아니라 결정이 필요한 것들
 
