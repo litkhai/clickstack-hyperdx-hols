@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-06** — `labs/elastic-migration/`: the manifest records each field's Elasticsearch type and alias target, and `dashboards/lucene_sql.py` reads them (a `wildcard` field is a keyword, a range type unsupported); no column made `Nullable` (#62). `labs/elastic-migration/data/idmap/` on Cloud 26.6.1.2292: `SSD_CACHE` with its `PATH` works; `SYSTEM RELOAD DICTIONARY` reloads one replica only, so reload `ON CLUSTER` and check every replica; memory ceiling read, not measured; the `s3()` load not run, by decision (#41). `labs/elastic-migration/data/load.sh` reads float columns as text and casts them, since ClickHouse's input formats do not round floats correctly: 0 of 300,000 rows off, from 989 (#61). `clickstack-config/`: the Error count tile's filter moved onto its select item, since the API dropped it from the tile and the tile counted every log (#60). `labs/apm-workflows/` closed as it stands (#66): S1 verified, S2 alerts and S3 comparison built but not verified, S4–S7 documentation only; one lab published to the notes site, `otel-profiles/profiles/aws-rds-mysql` (`docs/labs.json`, the only committed file under `docs/`). As of 2026-10-03: `labs/apm-workflows/` built. As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-06** — `labs/elastic-migration/ingest/`: `network_direction` converted, `on_failure` emulated for grok and dissect, ClickStack's JSON re-parse shown by a fixture and flagged; `community_id`, `redact`, `fingerprint` stay unsupported with checked reasons (#64). `labs/elastic-migration/`: the manifest records each field's Elasticsearch type and alias target, and `dashboards/lucene_sql.py` reads them (a `wildcard` field is a keyword, a range type unsupported); no column made `Nullable` (#62). `labs/elastic-migration/data/idmap/` on Cloud 26.6.1.2292: `SSD_CACHE` with its `PATH` works; `SYSTEM RELOAD DICTIONARY` reloads one replica only, so reload `ON CLUSTER` and check every replica; memory ceiling read, not measured; the `s3()` load not run, by decision (#41). `labs/elastic-migration/data/load.sh` reads float columns as text and casts them, since ClickHouse's input formats do not round floats correctly: 0 of 300,000 rows off, from 989 (#61). `clickstack-config/`: the Error count tile's filter moved onto its select item, since the API dropped it from the tile and the tile counted every log (#60). `labs/apm-workflows/` closed as it stands (#66): S1 verified, S2 alerts and S3 comparison built but not verified, S4–S7 documentation only; one lab published to the notes site, `otel-profiles/profiles/aws-rds-mysql` (`docs/labs.json`, the only committed file under `docs/`). As of 2026-10-03: `labs/apm-workflows/` built. As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -83,8 +83,9 @@ The Lucene → SQL translator is shared with the HyperDX output still to come (#
 and ClickStack 2.39.1 (collector otelcol-hyperdx 0.155.0). `convert.py` turns an Elasticsearch
 ingest pipeline into an `otel-profiles`-shaped collector fragment, every processor classified
 and the unconvertible ones left as comments. `check.py` runs the same lines through
-`_simulate` and through ClickStack's collector into `otel_logs`, and compares by SQL: on 16
-fixture pipelines and 50 lines, 29 PASS, 14 REVIEW, 7 UNSUPPORTED, 0 MISMATCH.
+`_simulate` and through ClickStack's collector into `otel_logs`, and compares by SQL: on 21
+fixture pipelines and 75 lines, 51 PASS, 17 REVIEW, 7 UNSUPPORTED, 0 MISMATCH (2026-10-06,
+after `network_direction`, `on_failure` for grok and dissect, and the JSON re-parse note, #64).
 `otel-profiles/bin/lint.sh` now also takes a directory path. Filebeat and Logstash are still
 a plan only (#59).
 

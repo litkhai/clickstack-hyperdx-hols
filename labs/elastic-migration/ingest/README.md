@@ -84,14 +84,18 @@ Every processor is exactly one class. The report says why for each step.
 
 | Class | What is emitted | Processors |
 |---|---|---|
-| converted | OTTL statements | set, remove, rename, append, lowercase, uppercase, drop, uri_parts |
+| converted | OTTL statements | set, remove, rename, append, lowercase, uppercase, drop, uri_parts, network_direction |
 | needs review | statements, with the reason as a comment above them | grok, dissect, date, json, kv, convert, csv, gsub, split, trim, sort, user_agent, html_strip, pipeline, dot_expander |
-| unsupported | **nothing executable** — only `# UNSUPPORTED <processor>: <reason>` | script, enrich, geoip, foreach, bytes, urldecode, registered_domain, join, fail, terminate, inference, set_security_user, date_index_name, reroute, circle, geo_grid |
+| unsupported | **nothing executable** — only `# UNSUPPORTED <processor>: <reason>` | script, enrich, geoip, foreach, bytes, urldecode, registered_domain, join, fail, terminate, inference, set_security_user, date_index_name, reroute, circle, geo_grid, community_id, redact, fingerprint |
 
-Four processors on the design's needs-review list are **not built yet** and
-come out as unsupported with that reason: community_id, network_direction,
-redact and fingerprint. (`fingerprint`: Elasticsearch emits a base64 digest,
-OTTL's hashes are hex.)
+Three processors on the design's needs-review list stay unsupported, each
+for a reason checked on 2026-10-06 (#64):
+- `community_id`: `CommunityID()` exists in the bundled collector, but its
+  protocol set and arguments differ from Elasticsearch's.
+- `redact`: needs a platinum or enterprise license. A basic-license cluster
+  fails it in `_simulate` too, so there was nothing to compare against.
+- `fingerprint`: Elasticsearch emits the base64 of the raw digest. OTTL's
+  hashes return hex, and no converter turns hex back into bytes.
 
 - **An `if` condition** (Painless) becomes an OTTL `where` only for a
   whitelist of shapes: `ctx.a.b == 'x'`, `ctx.a?.b != null`,
@@ -100,8 +104,16 @@ OTTL's hashes are hex.)
   statements are emitted with `where false`, so they cannot run, with the
   Painless text in the reason.
 - **`ignore_failure`** becomes `error_mode: ignore` and a note in the
-  report. An `on_failure` handler is not translated, so the step is needs
-  review.
+  report.
+- **`on_failure`** is translated only for `grok` and `dissect`, where a
+  failure can be seen: the extraction leaves `log.cache` empty. Their handlers
+  (`set`, `remove`, `rename`, `append`) run behind `Len(log.cache) == 0`, that
+  is, when nothing matched. Elasticsearch also runs them for other failures.
+  Every other `on_failure` is not translated, and its step is needs review.
+- **`network_direction`** expands Elasticsearch's named ranges (`private`,
+  `public`, `loopback` …) to CIDRs for `IsInCIDR`, taken from its 8.17.0
+  source. `public` and `unicast` are complements, so they become
+  `not IsInCIDR(…)`. `internal_networks_field` is unsupported.
 - **Times** are parsed in UTC unless the processor names a zone. The
   collector's `time_parser` defaults to `Local`; Elasticsearch defaults to
   UTC. Java date patterns are translated only where the translation is
@@ -195,9 +207,17 @@ as compact JSON. `log.file.name` comes from `filelog`.
   `9007199254740992`. Elasticsearch fails a document with an integer past
   `Long`.
 - **ClickStack's `transform` re-parses a JSON body after the fragment** and
-  upserts its keys. A key the fragment changed after parsing it would be
-  overwritten. This is read from the image's statements and not demonstrated
-  live — the fixtures avoid it.
+  upserts its keys, so a key the fragment changed after parsing it is
+  overwritten. The `json-reparse` fixture shows it: Elasticsearch keeps
+  `user: overridden`, ClickStack has `alice`. The converter therefore marks
+  every step that writes a field after a `json` step on `message` as needs
+  review, which moves steps in `app-json-root` and `app-json-nested` into
+  that class.
+- **`IsInCIDR` returns false for a string that is not an IP**, with no error.
+  `source.ip=not-an-ip` gives `network.direction: external`, where
+  Elasticsearch fails the document. A missing IP with `ignore_missing: false`
+  leaves the field absent, where Elasticsearch fails; the step is then needs
+  review. `::ffff:10.0.0.1` is IPv4 to Java, and the collector agrees.
 - **`UserAgent()`** returns `user_agent.name`, `version`, `original` and
   `os.name` / `os.version` only — no `os.full`, no `device.name` — and its
   parser tables are not Elasticsearch's.
@@ -212,19 +232,23 @@ as compact JSON. `log.file.name` comes from `filelog`.
 
 ### Verified on
 
-**2026-10-02**, Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
+Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
 **2.39.1** (`clickhouse/clickstack-all-in-one:2.39.1`), collector
 **otelcol-hyperdx 0.155.0** (contrib v0.155.0), ClickHouse **26.8.7.19** (the
 one bundled in ClickStack, which `otel_logs` lives in), Python 3.9.6.
 
-- 16 fixture pipelines in `GET _ingest/pipeline` shape, 15 checked over 50
-  sample lines (`nested-child` runs inside `nested-parent`): **29 PASS,
-  14 REVIEW, 7 UNSUPPORTED, 0 MISMATCH**. Re-run by the lead with the same
-  result.
-- `test_*.py`: 91 tests, all passing.
-- `lint.sh` passes on all 16 generated directories, and its no-argument
-  output is identical before and after the path change. `validate.sh`
-  passes on all 16.
+- **2026-10-06** (#64), same versions: 21 fixture pipelines, 20 checked over
+  75 sample lines: **51 PASS, 17 REVIEW, 7 UNSUPPORTED, 0 MISMATCH**. The 50
+  earlier lines kept their counts. ClickStack's ClickHouse ports were moved
+  to 18123 / 19000 through a temporary compose override, because another
+  local stack held 8123 and 9000; nothing else differed. `test_*.py`: 116
+  tests, all passing. `lint.sh` and `validate.sh` pass on all 21.
+- 2026-10-02: 16 fixture pipelines in `GET _ingest/pipeline` shape, 15
+  checked over 50 sample lines (`nested-child` runs inside `nested-parent`):
+  **29 PASS, 14 REVIEW, 7 UNSUPPORTED, 0 MISMATCH**, re-run by the lead with
+  the same result. `test_*.py`: 91 tests. `lint.sh` passes on all 16
+  generated directories, and its no-argument output is identical before and
+  after the path change. `validate.sh` passes on all 16.
 - Faults, each caught:
 
 | Fault | Caught by |
@@ -234,6 +258,9 @@ one bundled in ClickStack, which `otel_logs` lives in), Python 3.9.6.
 | a converted processor patched to emit nothing | a unit test |
 | a bare `logs:` pipeline | `lint.sh` |
 | a misspelled OTTL function | `validate.sh` |
+| `outbound` and `inbound` swapped in the `netdir` fragment (#64) | `check.py`: `MISMATCH` on 5 lines |
+| an `on_failure` value edited, `grok-onfail` and `dissect-onfail` (#64) | `check.py`: `MISMATCH` on the no-match line of each |
+| the re-parse note disabled in `convert.py` (#64) | `check.py`: `MISMATCH` on `json-reparse` |
 
 Not run: an authenticated cluster (the same `es_client` as `data/`, which is
 verified there, but not on this path); a host in another time zone (the
@@ -326,21 +353,33 @@ logs/<name>: [memory_limiter, transform/<name>, transform, batch] -> [clickhouse
 
 | 분류 | 출력 | Processor |
 |---|---|---|
-| converted | OTTL 문장 | set, remove, rename, append, lowercase, uppercase, drop, uri_parts |
+| converted | OTTL 문장 | set, remove, rename, append, lowercase, uppercase, drop, uri_parts, network_direction |
 | needs review | 문장, 위에 이유를 주석으로 | grok, dissect, date, json, kv, convert, csv, gsub, split, trim, sort, user_agent, html_strip, pipeline, dot_expander |
-| unsupported | **실행 가능한 것은 없음** — `# UNSUPPORTED <processor>: <이유>`만 | script, enrich, geoip, foreach, bytes, urldecode, registered_domain, join, fail, terminate, inference, set_security_user, date_index_name, reroute, circle, geo_grid |
+| unsupported | **실행 가능한 것은 없음** — `# UNSUPPORTED <processor>: <이유>`만 | script, enrich, geoip, foreach, bytes, urldecode, registered_domain, join, fail, terminate, inference, set_security_user, date_index_name, reroute, circle, geo_grid, community_id, redact, fingerprint |
 
-설계의 needs review 목록 중 넷은 **아직 만들지 않아서** 그 이유와 함께 unsupported로
-나옵니다: community_id, network_direction, redact, fingerprint. (`fingerprint`:
-Elasticsearch는 base64 digest를 내고, OTTL 해시는 hex입니다.)
+설계의 needs review 목록 중 셋은 unsupported로 남습니다. 각각 2026-10-06에 확인한
+이유입니다(#64):
+- `community_id`: 번들된 collector에 `CommunityID()`가 있지만, 지원하는 프로토콜과
+  인자가 Elasticsearch와 다릅니다.
+- `redact`: platinum이나 enterprise 라이선스가 필요합니다. basic 라이선스 클러스터는
+  `_simulate`에서도 이를 실패시키므로 비교할 대상이 없었습니다.
+- `fingerprint`: Elasticsearch는 해시 원래 바이트의 base64를 냅니다. OTTL 해시는 hex를
+  돌려주고, hex를 바이트로 되돌리는 함수가 없습니다.
 
 - **`if` 조건**(Painless)은 정해진 모양만 OTTL `where`로 바꿉니다.
   - 허용 모양: `ctx.a.b == 'x'`, `ctx.a?.b != null`, `.contains('x')`, RE2가 컴파일할
     수 있는 `=~ /re/`, 그리고 이들의 `&&` / `||` / `!`
   - 나머지는 추측하지 않습니다. 단계는 needs review가 되고, 문장은 `where false`로
     나와서 실행되지 않습니다. 이유에는 Painless 원문이 들어갑니다.
-- **`ignore_failure`**는 `error_mode: ignore`와 보고서 메모가 됩니다. `on_failure`
-  handler는 변환하지 않으므로 그 단계는 needs review입니다.
+- **`ignore_failure`**는 `error_mode: ignore`와 보고서 메모가 됩니다.
+- **`on_failure`**는 실패를 볼 수 있는 `grok`과 `dissect`에서만 변환합니다. 추출이
+  `log.cache`를 비워 두기 때문입니다. 그 handler(`set`, `remove`, `rename`, `append`)는
+  `Len(log.cache) == 0`, 즉 아무것도 맞지 않았을 때 실행됩니다. Elasticsearch는 다른
+  실패에서도 실행합니다. 그 밖의 `on_failure`는 변환하지 않고, 그 단계는 needs review입니다.
+- **`network_direction`**은 Elasticsearch의 이름 붙은 범위(`private`, `public`,
+  `loopback` …)를 8.17.0 소스에 따라 CIDR로 펼쳐 `IsInCIDR`에 넘깁니다. `public`과
+  `unicast`는 여집합이라 `not IsInCIDR(…)`가 됩니다. `internal_networks_field`는
+  unsupported입니다.
 - **시각**은 processor가 시간대를 지정하지 않으면 UTC로 파싱합니다. collector의
   `time_parser` 기본값은 `Local`이고 Elasticsearch는 UTC입니다. Java 날짜 패턴은
   정확히 옮길 수 있을 때만 옮깁니다. `UNIX`, `UNIX_MS`, `TAI64N`은 변환하지 않았다고
@@ -428,8 +467,15 @@ grok 패턴 파일은 이 저장소에 넣지 않았습니다. Elasticsearch 8.1
   `9007199254740992`로 도착합니다. Elasticsearch는 `Long`을 넘는 정수가 있는 문서를
   실패시킵니다.
 - **ClickStack `transform`은 조각 다음에 JSON 본문을 다시 파싱해 키를 upsert합니다.**
-  조각이 파싱한 뒤 바꾼 키는 덮어써집니다. 이미지의 문장에서 읽은 것이고 실제로
-  보여 주지는 않았습니다. fixture가 그 경우를 피합니다.
+  그래서 조각이 파싱한 뒤 바꾼 키는 덮어써집니다. `json-reparse` fixture가 보여 줍니다:
+  Elasticsearch는 `user: overridden`을 갖고, ClickStack에는 `alice`가 남습니다. 그래서
+  변환기는 `message`에 대한 `json` 단계 뒤에 필드를 쓰는 단계를 모두 needs review로
+  표시합니다. `app-json-root`와 `app-json-nested`의 단계 일부가 그쪽으로 옮겨 갔습니다.
+- **`IsInCIDR`는 IP가 아닌 문자열에 오류 없이 false를 돌려줍니다.**
+  `source.ip=not-an-ip`이면 `network.direction: external`이 되지만, Elasticsearch는
+  문서를 실패시킵니다. `ignore_missing: false`에서 IP가 없으면 필드가 빠지고
+  Elasticsearch는 실패시킵니다. 이때 단계는 needs review입니다. `::ffff:10.0.0.1`은
+  Java에서 IPv4이고, collector도 같게 봅니다.
 - **`UserAgent()`**는 `user_agent.name`, `version`, `original`과 `os.name` /
   `os.version`만 돌려줍니다. `os.full`, `device.name`은 없고, 파서 표도
   Elasticsearch와 다릅니다.
@@ -443,16 +489,20 @@ grok 패턴 파일은 이 저장소에 넣지 않았습니다. Elasticsearch 8.1
 
 ### 검증 환경
 
-**2026-10-02**, Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
+Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
 **2.39.1** (`clickhouse/clickstack-all-in-one:2.39.1`), collector
 **otelcol-hyperdx 0.155.0** (contrib v0.155.0), ClickHouse **26.8.7.19**(ClickStack에
 번들된 것, `otel_logs`가 있는 곳), Python 3.9.6.
 
-- `GET _ingest/pipeline` 모양의 fixture pipeline 16개 중 15개를 입력 50줄로
+- **2026-10-06**(#64), 같은 버전: fixture pipeline 21개 중 20개를 입력 75줄로 검사.
+  **PASS 51, REVIEW 17, UNSUPPORTED 7, MISMATCH 0.** 기존 50줄의 결과는 그대로입니다.
+  다른 로컬 스택이 8123과 9000을 쓰고 있어서, 임시 compose override로 ClickStack의
+  ClickHouse 포트를 18123 / 19000으로 옮겼습니다. 그 밖에는 같습니다. `test_*.py`: 테스트
+  116개 모두 통과. `lint.sh`와 `validate.sh`는 21개 모두 통과.
+- 2026-10-02: `GET _ingest/pipeline` 모양의 fixture pipeline 16개 중 15개를 입력 50줄로
   검사(`nested-child`는 `nested-parent` 안에서 실행): **PASS 29, REVIEW 14,
-  UNSUPPORTED 7, MISMATCH 0.** 리드가 다시 돌려 같은 결과.
-- `test_*.py`: 테스트 91개 모두 통과.
-- 생성한 디렉터리 16개 모두 `lint.sh` 통과, 인자 없는 실행 결과는 경로 지원 추가 전후가
+  UNSUPPORTED 7, MISMATCH 0.** 리드가 다시 돌려 같은 결과. `test_*.py`: 테스트 91개.
+  생성한 디렉터리 16개 모두 `lint.sh` 통과, 인자 없는 실행 결과는 경로 지원 추가 전후가
   같음. `validate.sh` 16개 모두 통과.
 - 고장 주입. 모두 잡혔습니다.
 
@@ -463,6 +513,9 @@ grok 패턴 파일은 이 저장소에 넣지 않았습니다. Elasticsearch 8.1
 | converted processor가 아무것도 내지 않도록 패치 | 단위 테스트 |
 | 이름 없는 `logs:` 파이프라인 | `lint.sh` |
 | OTTL 함수 이름 오타 | `validate.sh` |
+| `netdir` 조각에서 `outbound`와 `inbound`를 맞바꿈(#64) | `check.py`: 5줄 `MISMATCH` |
+| `grok-onfail`, `dissect-onfail`의 `on_failure` 값 변경(#64) | `check.py`: 각각 매칭 실패 줄에서 `MISMATCH` |
+| `convert.py`에서 재파싱 메모를 끔(#64) | `check.py`: `json-reparse`에서 `MISMATCH` |
 
 실행하지 않은 것:
 - 인증이 켜진 클러스터. `data/`와 같은 `es_client`이고 거기서는 검증됐지만, 이 경로에서는 돌리지 않았습니다.
