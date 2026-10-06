@@ -136,6 +136,8 @@ tile, and any alert on it, counts every row. `POST /api/v2/dashboards/validate` 
 more than it should, compare that body with yours. Checked on ClickStack 2.39.1 on 2026-10-06
 (#60): with 425 logs and 25 errors, a tile-level `where` was not saved and the tile counted
 425; the same filter on the select item counted 25, the same as SQL.
+`whereLanguage: "sql"` on the select item behaves the same: kept, and it filters
+(checked on 2026-10-07, #58: `` `log.level` = 'error' `` counted 15,163, as SQL did).
 
 ---
 
@@ -269,4 +271,5 @@ API의 타일 스키마에는 타일 단위 `where`가 없습니다(HyperDX 소�
 답하고, 돌려주는 `normalized` 본문에서만 그 키가 빠져 있습니다. 타일이 예상보다 많이 센다면
 그 본문과 내 본문을 비교하세요. ClickStack 2.39.1에서 2026-10-06에 확인(#60): 로그 425건 중
 error 25건일 때, 타일 단위 `where`는 저장되지 않았고 타일은 425를 셌습니다. 같은 필터를
-select 항목에 두면 SQL과 같은 25를 셌습니다.
+select 항목에 두면 SQL과 같은 25를 셌습니다. select 항목의 `whereLanguage: "sql"`도 마찬가지로
+저장되고 필터합니다(2026-10-07에 확인, #58: `` `log.level` = 'error' ``가 SQL과 같은 15,163을 셈).
