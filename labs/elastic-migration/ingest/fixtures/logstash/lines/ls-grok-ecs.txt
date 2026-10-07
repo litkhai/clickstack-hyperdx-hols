@@ -1,0 +1,4 @@
+203.0.113.9 - ann [05/Mar/2024:10:11:12 +0900] "GET /index.html HTTP/1.1" 200 5123 "-" "curl/8.4.0"
+198.51.100.7 - - [05/Mar/2024:10:11:13 +0900] "POST /api/login HTTP/1.1" 401 87 "https://example.test/" "Mozilla/5.0 (X11; Linux x86_64)"
+2001:db8::1 - bob [05/Mar/2024:10:11:14 +0900] "GET /img/logo.png HTTP/2.0" 304 - "-" "Wget/1.21"
+not an apache line

@@ -7,11 +7,22 @@
         --include '/var/log/my-app/*.log' --out-dir out/my-app
     ./convert.py --filebeat filebeat.yml --input 0 --name my-app \
         --include '/var/log/my-app/*.log' --out-dir out/my-app
+    ./convert.py --logstash pipeline.conf --name my-app \
+        --include '/var/log/my-app/*.log' --out-dir out/my-app
 
 --filebeat reads a filebeat.yml instead (#59): the processors of input N of
 `filebeat.inputs` (default 0), then the top-level `processors`, translated by
 filebeat.py into the same steps. It needs PyYAML (imported only for this option);
---id, --pipelines and --url are not used. Everything below applies to both inputs.
+--id, --pipelines and --url are not used. Everything below applies to every input.
+
+--logstash reads a Logstash configuration (#59): its `filter {}` blocks, in file
+order, translated by logstash.py into the same steps (standard library only).
+--ecs-compatibility is the pipeline's pipeline.ecs_compatibility (default v8, the
+Logstash 8.x default); a grok may set its own. Grok definitions come from Logstash's own
+pattern files, not from Elasticsearch: --grok-patterns may be a directory of them (a
+logstash-patterns-core `patterns/` with `ecs-v1` and `legacy`, or any directory of
+`NAME definition` files); with --logstash the default is .run/ls-patterns, which
+./check_logstash.py --extract-patterns copies out of the Logstash image (not vendored).
 
 --pipelines is the body of GET _ingest/pipeline (a file); --url reads
 GET _ingest/pipeline/<id> live through ../data/es_client.py (credentials from
@@ -74,6 +85,7 @@ import urllib.error
 from decimal import Decimal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+LS_PATTERNS = os.path.join(HERE, ".run", "ls-patterns")      # --logstash default; check_logstash.py --extract-patterns
 sys.path.insert(0, os.path.join(HERE, "..", "data"))
 import es_client                                                   # noqa: E402
 import grok as G                                                   # noqa: E402
@@ -891,9 +903,13 @@ def main(argv=None):
                    help="live source (when --pipelines is not given) and the grok definitions "
                         "(unless --grok-patterns)")
     es_client.add_arguments(p)
-    p.add_argument("--id", help="the ingest pipeline to convert (required unless --filebeat)")
+    p.add_argument("--id", help="the ingest pipeline to convert (required unless --filebeat or --logstash)")
     p.add_argument("--filebeat", metavar="FILE", help="a filebeat.yml: convert its processors (needs PyYAML); "
                    "--id, --pipelines and --url are then not used")
+    p.add_argument("--logstash", metavar="FILE", help="a Logstash configuration: convert its filter {} blocks; "
+                   "--id, --pipelines and --url are then not used")
+    p.add_argument("--ecs-compatibility", choices=("disabled", "v1", "v8"), default="v8",
+                   help="with --logstash: pipeline.ecs_compatibility of the pipeline (default v8, Logstash 8.x's)")
     p.add_argument("--input", type=int, default=0, help="with --filebeat: the input of filebeat.inputs whose "
                    "processors come first (default 0)")
     p.add_argument("--name", help="profile name (default: --id); must equal the --out-dir basename")
@@ -904,13 +920,17 @@ def main(argv=None):
                    "default: read from --url. Save: curl -s $ES_URL/_ingest/processor/grok > f.json")
     p.add_argument("--strict", action="store_true", help="exit 2 when any step is unsupported")
     args = p.parse_args(argv)
-    if not args.filebeat and not args.id:
-        p.error("--id is required unless --filebeat is given")
-    pid = os.path.basename(args.filebeat) if args.filebeat else args.id
-    kind = "Filebeat processors of" if args.filebeat else "Elasticsearch ingest pipeline"
-    name = args.name or (pid if not args.filebeat else None)
+    if args.filebeat and args.logstash:
+        p.error("--filebeat and --logstash are exclusive")
+    other = args.filebeat or args.logstash
+    if not other and not args.id:
+        p.error("--id is required unless --filebeat or --logstash is given")
+    pid = os.path.basename(other) if other else args.id
+    kind = ("Filebeat processors of" if args.filebeat else "Logstash filters of" if args.logstash
+            else "Elasticsearch ingest pipeline")
+    name = args.name or (pid if not other else None)
     if not name:
-        p.error("--name is required with --filebeat")
+        p.error("--name is required with --filebeat or --logstash")
     if os.path.basename(os.path.normpath(args.out_dir)) != name:
         print("error: --out-dir must end in %r: bin/lint.sh names the profile after the directory" % name,
               file=sys.stderr)
@@ -920,13 +940,16 @@ def main(argv=None):
         if args.filebeat:
             import filebeat as FB                     # PyYAML is imported inside, only for --filebeat
             steps = FB.steps_from_filebeat(FB.load_filebeat(args.filebeat), args.input, notes)
+        elif args.logstash:
+            import logstash as LS
+            steps = LS.steps_from_logstash(LS.load_logstash(args.logstash), notes, args.ecs_compatibility)
         elif args.pipelines:
             with open(args.pipelines) as fh:
                 pipelines = json.load(fh)
         else:
             es_client.configure(args, args.url)
             pipelines = fetch_pipelines(args.url, args.id)
-        if not args.filebeat:
+        if not other:
             steps = steps_from_es(pipelines, args.id)
     except (OSError, ValueError, KeyError, urllib.error.URLError) as e:
         print(es_client.cli_error(e) if isinstance(e, urllib.error.URLError)
@@ -934,6 +957,17 @@ def main(argv=None):
         return 1
 
     def grok_source(ecs):
+        patterns = args.grok_patterns or (LS_PATTERNS if args.logstash and os.path.isdir(LS_PATTERNS) else None)
+        if patterns and os.path.isdir(patterns):          # Logstash's own pattern files (--logstash, or any directory)
+            import logstash as LS
+            try:
+                return LS.load_pattern_dir(patterns, ecs)
+            except (OSError, ValueError) as e:
+                raise Unsupported("cannot read grok definitions from %s (%s)" % (patterns, e))
+        if args.logstash and not args.grok_patterns:
+            raise Unsupported("no grok definitions: pass --grok-patterns DIR (Logstash's own pattern files; "
+                              "./check_logstash.py --extract-patterns copies them out of the image into "
+                              ".run/ls-patterns, the default)")
         if args.grok_patterns:
             if ecs != "disabled":
                 raise Unsupported("--grok-patterns holds the disabled-mode patterns; this processor wants ecs_compatibility=%s (use --url)" % ecs)

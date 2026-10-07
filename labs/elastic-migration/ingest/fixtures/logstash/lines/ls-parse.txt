@@ -1,0 +1,4 @@
+INFO|42|1.5|user=ann;role=admin|{"a":1,"b":{"c":"x"}}|{"k":"v","n":7}
+WARN|7|0.25|user=bob;role=ops;team=core|{"a":2,"b":{"c":"y"}}|{"k":"w"}
+ERROR|0|10|user=cy|{"a":3}|not json
+short line

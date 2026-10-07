@@ -12,8 +12,8 @@ compared field by field by SQL.
 This part is only for a migration whose processing lives **in** Elasticsearch
 (`GET _ingest/pipeline`). A team that ran its own pipeline into Elasticsearch
 has nothing to convert here. Filebeat processors convert through the same
-step list (*Filebeat*, below); Logstash filters are still
-[#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59).
+step list (*Filebeat*, below), and so do Logstash filters (*Logstash*,
+below).
 
 | File | What it does |
 |---|---|
@@ -23,6 +23,8 @@ step list (*Filebeat*, below); Logstash filters are still
 | [`check.py`](check.py) | the line-by-line check against `_simulate` and the collector |
 | [`filebeat.py`](filebeat.py) | Filebeat processors → the same step list (`convert.py --filebeat`) |
 | [`check_filebeat.py`](check_filebeat.py) | the same check against Filebeat 8.17.0's own output |
+| [`logstash.py`](logstash.py) | Logstash `filter {}` → the same step list (`convert.py --logstash`) |
+| [`check_logstash.py`](check_logstash.py) | the same check against Logstash 8.17.0's own output |
 | [`validate.sh`](validate.sh) | compiles every generated fragment with the collector in ClickStack's own image |
 
 ### Try it
@@ -275,6 +277,73 @@ What running Filebeat 8.17.0 showed, which the option names do not say:
   `multiline`, `include_lines` …) and `${...}` references. Filebeat reads
   unquoted `y` / `n` keys as booleans and PyYAML does not.
 
+### Logstash
+
+`convert.py --logstash pipeline.conf` reads the `filter {}` blocks of a
+Logstash configuration, in file order (#59). `input` and `output` are left
+out, with a note. [`logstash.py`](logstash.py) turns each plugin into the
+ingest-pipeline steps above, as `filebeat.py` does, so the classes, the OTTL
+and the check are the same. Standard library only.
+
+- **Built:** `grok`, `dissect` (with `convert_datatype`), `kv`, `json`,
+  `date`, `drop`; `mutate` rename / update / replace / convert / gsub /
+  lowercase / uppercase / strip; and the common options `add_field`,
+  `remove_field`, `add_tag`.
+- **`if` / `else if` / `else`** become the Painless shapes the `if`
+  whitelist reads. OTTL has no `else`, so each branch carries its own
+  condition ANDed with the negation of every earlier one. `<`, `>`, `<=`,
+  `>=`, `nand`, `xor`, `not in` and `"x" in [array]` are unsupported.
+- **Unsupported, with a reason:** `ruby`, `aggregate`, `translate`, `geoip`,
+  `elasticsearch`, `http` and any other plugin; mutate `coerce`,
+  `capitalize`, `split`, `join`, `merge`, `copy`; `remove_tag`.
+
+Three rules from Logstash 8.17.0's installed source change what a
+configuration means:
+
+- **`pipeline.ecs_compatibility` defaults to `v8`**
+  (`logstash-core/lib/logstash/environment.rb`). grok then reads the `ecs-v1`
+  pattern files, so `%{COMBINEDAPACHELOG}` yields `source.address`,
+  `http.request.method` and the other ECS names. Elasticsearch ingest
+  defaults to the legacy names. The definitions come from the Logstash image
+  (`logstash-patterns-core` 4.3.4, into `.run/ls-patterns`); they are not
+  vendored.
+- **`mutate` runs in a fixed order, not the written one** (`mutate.rb`
+  3.5.8): coerce, rename, update, replace, convert, gsub, uppercase,
+  capitalize, lowercase, strip, split, join, merge, copy. Then come the
+  common options, in the order `add_field`, `remove_field`, `add_tag`,
+  `remove_tag`. The steps are emitted in that order.
+- **A grok capture into a field that already holds a string makes it an
+  array** `[old, new]`, unless the field is in `overwrite` (`grok.rb`
+  `handle`). Elasticsearch's grok overwrites the field. This is a
+  needs-review reason.
+
+```bash
+./check_logstash.py --extract-patterns     # once: the grok pattern files, out of the Logstash image
+./convert.py --logstash fixtures/logstash/ls-mutate.conf --name ls-mutate \
+    --include '/ingest-verify/in/ls-mutate.*.log' --out-dir out/ls-mutate
+./check_logstash.py --restore              # every fixtures/logstash/<id>.conf
+```
+
+[`check_logstash.py`](check_logstash.py) is `check.py` with Logstash
+8.17.0's own output in place of `_simulate`. It runs one container per
+fixture, because a JVM start costs tens of seconds. Each line goes in as
+`{"message": <line>, "ls_n": N}`. The line number travels in `@metadata`,
+which the fixture's filters do not see. The fields the stdin input adds
+(`@version`, `host.hostname`, `event.original`) are dropped.
+
+What running Logstash 8.17.0 showed:
+
+- **The fixed `mutate` order is real.** An `update` written before the
+  `rename` it depends on ran after it. A `remove_field` written first ran
+  last.
+- **`date` without `timezone` uses the JVM's default zone.** With
+  `TZ=Asia/Seoul`, `2024-03-05 10:11:12` became `01:11:12Z`. The check runs
+  Logstash with `TZ=UTC`. This is a needs-review reason.
+- **A failed `dissect` with `convert_datatype`** tags `_dissectfailure`, and
+  also `_dataconversionnullvalue_<field>_<type>` for every converted field.
+- **`!~` on a missing field is true**, and the collector agrees.
+- grok `:int` gives a number, not a string.
+
 ### Verified on
 
 Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
@@ -304,6 +373,21 @@ one bundled in ClickStack, which `otel_logs` lives in), Python 3.9.6.
   `validate.sh` pass on the 5 Filebeat outputs. Not compared end to end:
   `copy_fields`, `add_labels`, `uppercase` (unit tests and Filebeat runs
   only).
+- **2026-10-07, Logstash** (#59): Logstash **8.17.0**
+  (`docker.elastic.co/logstash/logstash:8.17.0`, arm64; mutate 3.5.8, grok
+  4.4.3, date 3.1.15, kv 4.7.0, json 3.2.1, dissect 1.2.5, patterns-core
+  4.3.4), the same ClickStack and collector. 6 Logstash fixtures over 25
+  lines: **18 PASS, 5 REVIEW, 2 UNSUPPORTED, 0 MISMATCH**. The 5 REVIEW lines
+  are the ones a filter fails on: Logstash adds a failure tag and the
+  collector adds nothing. The ingest-pipeline output for all 21 pipelines is
+  byte-identical before and after: 105 files, re-run by the lead.
+  `test_*.py`: 194 tests, 54 of them new. `lint.sh` and `validate.sh` pass on
+  the 6 Logstash outputs. `geoip`, `elasticsearch` and `http` are covered by
+  unit tests only, because they need a database or a network when Logstash
+  starts. The first dissect-key fault was not caught: a `json` with no target
+  may write any key, so `check.py` attributed the difference to it.
+  `ls-parse` now ends with a converted step on that field, and the fault is
+  caught.
 - Faults, each caught:
 
 | Fault | Caught by |
@@ -317,6 +401,7 @@ one bundled in ClickStack, which `otel_logs` lives in), Python 3.9.6.
 | an `on_failure` value edited, `grok-onfail` and `dissect-onfail` (#64) | `check.py`: `MISMATCH` on the no-match line of each |
 | the re-parse note disabled in `convert.py` (#64) | `check.py`: `MISMATCH` on `json-reparse` |
 | a dissect key, a `when` value, a rename target edited in Filebeat fragments (#59) | `check_filebeat.py`: `MISMATCH` on 3, 1 and 3 lines |
+| mutate emitted in the written order; `else` without the negation of the earlier branches; a dissect key edited in a Logstash fragment (#59) | `check_logstash.py`: `MISMATCH` on 2, 6 and 3 lines |
 
 Not run: an authenticated cluster (the same `es_client` as `data/`, which is
 verified there, but not on this path); a host in another time zone (the
@@ -325,7 +410,7 @@ multiline events; Python 3.8 (syntax only).
 
 ### Not covered
 
-- Logstash ([#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)).
+- Logstash plugins beyond the list above, and Logstash `input` / `output` sections.
 - Elastic Agent integrations, and Elasticsearch's built-in pipelines (`logs@json-pipeline` …), which were not tried.
 - Index templates and component templates: the schema half is [`../data/`](../data/).
 
@@ -340,8 +425,7 @@ collector에 통과시켜 `otel_logs`에 넣은 뒤, SQL로 필드마다 비교�
 이 부분은 처리 로직이 Elasticsearch **안에**(`GET _ingest/pipeline`) 있는 이전에만
 해당합니다. 자체 파이프라인으로 Elasticsearch에 넣던 팀은 여기서 바꿀 것이
 없습니다. Filebeat processor는 같은 단계 목록으로 바뀝니다(아래 *Filebeat* 절).
-Logstash filter는 아직
-[#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)입니다.
+Logstash filter도 마찬가지입니다(아래 *Logstash* 절).
 
 | 파일 | 하는 일 |
 |---|---|
@@ -351,6 +435,8 @@ Logstash filter는 아직
 | [`check.py`](check.py) | `_simulate`와 collector를 한 줄씩 비교하는 검사 |
 | [`filebeat.py`](filebeat.py) | Filebeat processor → 같은 단계 목록(`convert.py --filebeat`) |
 | [`check_filebeat.py`](check_filebeat.py) | Filebeat 8.17.0 자신의 출력과 비교하는 같은 검사 |
+| [`logstash.py`](logstash.py) | Logstash `filter {}` → 같은 단계 목록(`convert.py --logstash`) |
+| [`check_logstash.py`](check_logstash.py) | Logstash 8.17.0 자신의 출력과 비교하는 같은 검사 |
 | [`validate.sh`](validate.sh) | 생성한 조각을 모두 ClickStack 이미지의 collector로 컴파일합니다 |
 
 ### 실행해 보기
@@ -585,6 +671,67 @@ Filebeat 8.17.0을 실제로 돌려서 알게 된 것(옵션 이름만으로는 
   `include_lines` …)과 `${...}` 참조. Filebeat은 따옴표 없는 `y` / `n` 키를 boolean으로
   읽지만 PyYAML은 그렇지 않습니다.
 
+### Logstash
+
+`convert.py --logstash pipeline.conf`은 Logstash 설정의 `filter {}` 블록을 파일
+순서대로 읽습니다(#59). `input`과 `output`은 메모만 남기고 뺍니다.
+[`logstash.py`](logstash.py)가 `filebeat.py`처럼 각 플러그인을 위의 ingest pipeline
+단계로 바꾸므로, 분류와 OTTL, 검사가 같습니다. 표준 라이브러리만 씁니다.
+
+- **구현한 것:** `grok`, `dissect`(`convert_datatype` 포함), `kv`, `json`, `date`,
+  `drop`. `mutate`의 rename / update / replace / convert / gsub / lowercase /
+  uppercase / strip. 그리고 공통 옵션 `add_field`, `remove_field`, `add_tag`.
+- **`if` / `else if` / `else`**는 `if` 허용 목록이 읽는 Painless 모양이 됩니다.
+  OTTL에는 `else`가 없으므로, 각 분기는 자기 조건에 앞선 모든 분기 조건의 부정을
+  AND로 붙입니다. `<`, `>`, `<=`, `>=`, `nand`, `xor`, `not in`, `"x" in [array]`는
+  unsupported입니다.
+- **이유와 함께 unsupported:** `ruby`, `aggregate`, `translate`, `geoip`,
+  `elasticsearch`, `http`와 그 밖의 플러그인. mutate의 `coerce`, `capitalize`,
+  `split`, `join`, `merge`, `copy`. 그리고 `remove_tag`.
+
+Logstash 8.17.0에 설치된 소스에서 읽은 세 가지 규칙이 설정의 의미를 바꿉니다.
+
+- **`pipeline.ecs_compatibility`의 기본값은 `v8`입니다**
+  (`logstash-core/lib/logstash/environment.rb`). 그러면 grok은 `ecs-v1` 패턴
+  파일을 읽으므로, `%{COMBINEDAPACHELOG}`는 `source.address`,
+  `http.request.method` 같은 ECS 이름을 냅니다. Elasticsearch ingest의 기본은
+  legacy 이름입니다. 패턴 정의는 Logstash 이미지(`logstash-patterns-core` 4.3.4,
+  `.run/ls-patterns`로 추출)에서 가져오며, 저장소에 넣지 않습니다.
+- **`mutate`는 작성한 순서가 아니라 고정된 순서로 실행됩니다**(`mutate.rb` 3.5.8).
+  coerce, rename, update, replace, convert, gsub, uppercase, capitalize,
+  lowercase, strip, split, join, merge, copy 순이고, 그다음 공통 옵션이
+  `add_field`, `remove_field`, `add_tag`, `remove_tag` 순으로 돕니다. 단계도 이
+  순서로 냅니다.
+- **grok이 이미 문자열이 든 필드에 캡처하면 그 필드는 배열** `[old, new]`가
+  됩니다. 그 필드가 `overwrite`에 있으면 예외입니다(`grok.rb` `handle`).
+  Elasticsearch의 grok은 필드를 덮어씁니다. needs review 사유입니다.
+
+```bash
+./check_logstash.py --extract-patterns     # once: the grok pattern files, out of the Logstash image
+./convert.py --logstash fixtures/logstash/ls-mutate.conf --name ls-mutate \
+    --include '/ingest-verify/in/ls-mutate.*.log' --out-dir out/ls-mutate
+./check_logstash.py --restore              # every fixtures/logstash/<id>.conf
+```
+
+[`check_logstash.py`](check_logstash.py)는 `_simulate` 대신 Logstash 8.17.0 자신의
+출력을 쓰는 `check.py`입니다. JVM 시작에 수십 초가 걸리므로 컨테이너는 fixture마다
+하나씩 띄웁니다. 각 줄은 `{"message": <line>, "ls_n": N}`으로 들어가고, 줄 번호는
+fixture의 filter가 보지 못하는 `@metadata`에 실려 갑니다. stdin 입력이 덧붙이는
+필드(`@version`, `host.hostname`, `event.original`)는 비교 전에 뺍니다.
+
+Logstash 8.17.0을 실제로 돌려서 드러난 것:
+
+- **`mutate`의 고정 순서는 실제로 그렇게 동작합니다.** 의존하는 `rename`보다 앞에
+  쓴 `update`가 그 뒤에 실행됐고, 맨 앞에 쓴 `remove_field`가 맨 마지막에
+  실행됐습니다.
+- **`timezone`이 없는 `date`는 JVM 기본 시간대를 씁니다.** `TZ=Asia/Seoul`에서
+  `2024-03-05 10:11:12`가 `01:11:12Z`가 됐습니다. 검사는 Logstash를 `TZ=UTC`로
+  돌립니다. needs review 사유입니다.
+- **`convert_datatype`이 있는 `dissect`가 실패하면** `_dissectfailure` 태그와 함께,
+  변환하는 필드마다 `_dataconversionnullvalue_<field>_<type>` 태그도 붙습니다.
+- **없는 필드에 대한 `!~`는 참이며**, collector도 같은 결과를 냅니다.
+- grok `:int`는 문자열이 아니라 숫자를 냅니다.
+
 ### 검증 환경
 
 Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
@@ -610,6 +757,19 @@ Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
   바이트까지 같습니다. `test_*.py`: 테스트 140개. Filebeat 출력 5개 모두 `lint.sh`와
   `validate.sh` 통과. 끝까지 비교하지 않은 것: `copy_fields`, `add_labels`, `uppercase`
   (단위 테스트와 Filebeat 실행만).
+- **2026-10-07, Logstash**(#59): Logstash **8.17.0**
+  (`docker.elastic.co/logstash/logstash:8.17.0`, arm64. mutate 3.5.8, grok 4.4.3,
+  date 3.1.15, kv 4.7.0, json 3.2.1, dissect 1.2.5, patterns-core 4.3.4), 같은
+  ClickStack과 collector. Logstash fixture 6개, 입력 25줄: **PASS 18, REVIEW 5,
+  UNSUPPORTED 2, MISMATCH 0.** REVIEW 5줄은 filter가 실패하는 줄입니다. Logstash는
+  실패 태그를 붙이고 collector는 아무것도 붙이지 않습니다. pipeline 21개의 ingest
+  pipeline 출력은 전후가 바이트까지 같습니다(파일 105개, 리드가 다시 확인).
+  `test_*.py`: 테스트 194개, 그중 54개가 새것. Logstash 출력 6개 모두 `lint.sh`와
+  `validate.sh` 통과. `geoip`, `elasticsearch`, `http`는 Logstash가 시작할 때
+  데이터베이스나 네트워크가 필요하므로 단위 테스트로만 확인했습니다. 첫 dissect 키
+  고장 주입은 잡히지 않았습니다. target이 없는 `json`은 어떤 키든 쓸 수 있어서,
+  `check.py`가 차이를 그 단계 탓으로 돌렸기 때문입니다. 그래서 `ls-parse` 끝에 그
+  필드를 다루는 converted 단계를 하나 두었고, 이제 그 고장도 잡힙니다.
 - 고장 주입. 모두 잡혔습니다.
 
 | 고장 | 잡은 것 |
@@ -623,6 +783,7 @@ Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
 | `grok-onfail`, `dissect-onfail`의 `on_failure` 값 변경(#64) | `check.py`: 각각 매칭 실패 줄에서 `MISMATCH` |
 | `convert.py`에서 재파싱 메모를 끔(#64) | `check.py`: `json-reparse`에서 `MISMATCH` |
 | Filebeat 조각의 dissect 키, `when` 값, rename 대상 변경(#59) | `check_filebeat.py`: 각각 3, 1, 3줄 `MISMATCH` |
+| mutate를 작성 순서로 냄, 앞선 분기의 부정을 뺀 `else`, Logstash 조각의 dissect 키 변경(#59) | `check_logstash.py`: 각각 2, 6, 3줄 `MISMATCH` |
 
 실행하지 않은 것:
 - 인증이 켜진 클러스터. `data/`와 같은 `es_client`이고 거기서는 검증됐지만, 이 경로에서는 돌리지 않았습니다.
@@ -632,6 +793,6 @@ Elasticsearch **8.17.0** (Lucene 9.12.0), ClickStack/HyperDX
 
 ### 다루지 않는 것
 
-- Logstash ([#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)).
+- 위 목록 밖의 Logstash 플러그인, 그리고 Logstash `input` / `output` 절.
 - Elastic Agent integration, Elasticsearch 내장 파이프라인(`logs@json-pipeline` …) — 시도하지 않았습니다.
 - index template과 component template: 스키마 쪽은 [`../data/`](../data/)입니다.

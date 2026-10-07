@@ -13,7 +13,7 @@ first useful thing this lab does is let you establish which ones you can skip.
 | Part | Elastic input | ClickStack output | Status |
 |---|---|---|---|
 | ingest — Elasticsearch ingest pipelines | `GET _ingest/pipeline` | a collector config fragment (an `otel-profiles`-shaped directory) | written, [`ingest/`](ingest/) |
-| ingest — Filebeat, Logstash | Beats or Logstash config | the same fragment | planned, [#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59) |
+| ingest — Filebeat, Logstash | Beats or Logstash config | the same fragment | written, [`ingest/`](ingest/) |
 | data | `GET _mapping` plus the index contents | ClickHouse DDL and a load | written, [`data/`](data/) |
 | identity | ids that differ between the two systems | a mapping table, a dictionary and a quarantine | written, [`data/idmap/`](data/idmap/) |
 | dashboards — Grafana | a Grafana dashboard on the Elasticsearch data source | the same dashboard on the ClickHouse data source | written, [`dashboards/`](dashboards/) |
@@ -122,7 +122,7 @@ Elastic Agent를 쓰던 팀은 그쪽이 대부분입니다. 그래서 세 부�
 | 부분 | Elastic 입력 | ClickStack 출력 | 상태 |
 |---|---|---|---|
 | 입수 — Elasticsearch ingest pipeline | `GET _ingest/pipeline` | 컬렉터 설정 조각(`otel-profiles` 모양의 디렉터리) | 작성됨, [`ingest/`](ingest/) |
-| 입수 — Filebeat, Logstash | Beats·Logstash 설정 | 같은 조각 | 예정, [#59](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59) |
+| 입수 — Filebeat, Logstash | Beats·Logstash 설정 | 같은 조각 | 작성됨, [`ingest/`](ingest/) |
 | 데이터 | `GET _mapping`과 인덱스 내용 | ClickHouse DDL과 적재 | 작성됨, [`data/`](data/) |
 | 동일성 | 두 시스템에서 값이 다른 id | 매핑 테이블, 딕셔너리, 격리 | 작성됨, [`data/idmap/`](data/idmap/) |
 | 대시보드 — Grafana | Elasticsearch 데이터 소스를 쓰는 Grafana 대시보드 | ClickHouse 데이터 소스로 바꾼 같은 대시보드 | 작성됨, [`dashboards/`](dashboards/) |
