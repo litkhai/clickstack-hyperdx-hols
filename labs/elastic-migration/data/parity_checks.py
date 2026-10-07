@@ -5,6 +5,11 @@
         --ch-url http://localhost:8123 --ch-user api --ch-password api \
         --ch-database default --out-dir out/logs-demo
 
+    # a chunked run (plan.py + run.py): --plan in place of --out-dir
+    ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
+        --ch-url http://localhost:8123 --ch-user api --ch-password api \
+        --ch-database default --plan plan.json
+
 Each check is a *pair* -- one query per system -- because that is what lets
 this grade a migration's own output instead of asking someone to eyeball a
 dashboard (see labs/elastic-migration/README.md). Prints PASS/FAIL/SKIP like
@@ -14,7 +19,8 @@ Checks:
   1. total row count                  ES _count            vs  CH count()
   2. per-hour document counts         ES date_histogram     vs  CH toStartOfHour(...)
   3. field-level sampling             ES _mget              vs  CH SELECT ... WHERE _id IN (...)
-  4. slice coverage / silent 0-slice  export.py checkpoints vs  ES _count (SKIPped without --out-dir)
+  4. slice coverage / silent 0-slice  export.py checkpoints (one dir, or every chunk of a plan) vs ES _count
+                                      (SKIPped without --out-dir or --plan)
 
 Needs only Python 3's standard library.
 """
@@ -28,6 +34,9 @@ import urllib.error
 import urllib.request
 
 import es_client
+
+# run.py runs export.py with cwd=HERE, so a plan's relative out_dir is relative to here.
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 FIELDS_TO_SAMPLE = [
     ("service.name", ["service", "name"]),
@@ -189,7 +198,77 @@ def check_field_sampling(args):
         ok(f"field-level sampling ({len(ids)} docs x {len(FIELDS_TO_SAMPLE)} fields)")
 
 
+def check_plan_coverage(args):
+    """Check 4 for a chunked run: every chunk of plan.json, then per-index sums vs ES _count."""
+    label = "slice coverage (no silently-empty slice)"
+    try:
+        with open(args.plan) as fh:
+            plan = json.load(fh)
+        chunks = plan["chunks"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        bad("slice coverage", f"cannot read chunks from plan {args.plan}: {e}")
+        return
+    if not chunks:
+        skip(label, f"{args.plan} has no chunks")
+        return
+
+    problems = []
+    per_index = {}  # index -> rows exported over all of its chunks
+    n_slices = 0
+    for chunk in chunks:
+        cid = chunk["id"]
+        shown = chunk["out_dir"]
+        # relative out_dir is relative to this script, as run.py runs export.py with cwd=HERE
+        out_dir = os.path.join(HERE, shown)
+        checkpoints = sorted(f for f in os.listdir(out_dir) if f.endswith(".ckpt.json")) \
+            if os.path.isdir(out_dir) else []
+        if not checkpoints:
+            problems.append(f"chunk {cid}: no checkpoints in {shown} -- not exported yet")
+            per_index.setdefault(chunk["index"], 0)
+            continue
+
+        counts = {}
+        incomplete = []
+        for fname in checkpoints:
+            slice_id = fname.split("-")[1].split(".")[0]
+            try:
+                with open(os.path.join(out_dir, fname)) as fh:
+                    ckpt = json.load(fh)
+                counts[slice_id] = ckpt["exported"]
+            except (OSError, ValueError, KeyError) as e:
+                problems.append(f"chunk {cid}: cannot read {shown}/{fname}: {e}")
+                continue
+            if not ckpt.get("done"):
+                incomplete.append(slice_id)
+        n_slices += len(counts)
+        per_index[chunk["index"]] = per_index.get(chunk["index"], 0) + sum(counts.values())
+
+        if incomplete:
+            problems.append(f"chunk {cid}: slice(s) {incomplete} never finished -- rerun export.py to resume")
+        zero_slices = [s for s, n in counts.items() if n == 0]
+        if zero_slices and any(n > 0 for n in counts.values()):
+            problems.append(f"chunk {cid}: slice(s) {zero_slices} exported 0 rows while others did not "
+                            "-- likely a slicing bug, not empty data")
+
+    for index, exported_total in per_index.items():
+        if plan.get("base_query") is not None:
+            es_count = es_get(args.es_url, f"/{index}/_count", {"query": plan["base_query"]})["count"]
+        else:
+            es_count = es_get(args.es_url, f"/{index}/_count")["count"]
+        if exported_total != es_count:
+            problems.append(f"{index}: chunks exported {exported_total} rows in total, Elasticsearch now has "
+                            f"{es_count} -- expected if the index changed since export, otherwise a dropped slice")
+
+    for problem in problems:
+        bad("slice coverage", problem)
+    if not problems:
+        ok(f"slice coverage ({len(chunks)} chunks, {n_slices} slices, {sum(per_index.values())} rows, none empty)")
+
+
 def check_slice_coverage(args):
+    if args.plan:
+        check_plan_coverage(args)
+        return
     if not args.out_dir:
         skip("slice coverage (no silently-empty slice)", "no --out-dir given -- run export.py first and pass its output directory")
         return
@@ -240,7 +319,10 @@ def main():
     p.add_argument("--ch-password", default=os.environ.get("CH_PASSWORD", ""))
     p.add_argument("--ch-database", default=os.environ.get("CH_DATABASE", "default"))
     p.add_argument("--ch-table", required=True)
-    p.add_argument("--out-dir", default=None, help="export.py's --out-dir, to check slice coverage")
+    src = p.add_mutually_exclusive_group()
+    src.add_argument("--out-dir", default=None, help="export.py's --out-dir, to check slice coverage")
+    src.add_argument("--plan", default=None,
+                     help="plan.json from plan.py: check slice coverage across every chunk of the plan")
     p.add_argument("--bucket-interval", default="1h", choices=["15m", "1h", "1d"])
     p.add_argument("--sample-size", type=int, default=50)
     p.add_argument("--seed", type=int, default=None)
