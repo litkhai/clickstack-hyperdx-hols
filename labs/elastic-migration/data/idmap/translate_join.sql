@@ -88,6 +88,8 @@ FROM
             lower(replaceAll(uid_src, '-', '')) AS uid_norm,
             match(uid_norm, '^[0-9a-f]{32}$') AS uid_is_uuid
         FROM $DB$.user_logs_raw
+        -- The caller substitutes a chunk time range for $CHUNK_FILTER$, or 1 for the whole table.
+        WHERE $CHUNK_FILTER$
     ) AS c
     LEFT JOIN $DB$.item_sn_map AS m ON m.es_item_sn = c.sn_key
     LEFT JOIN $DB$.user_id_map AS u ON u.es_user_uuid_norm = c.uid_norm

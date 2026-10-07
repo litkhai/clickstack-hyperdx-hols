@@ -3,6 +3,8 @@
 
     ./run.py --plan plan.json --table logs_demo --manifest manifest.json
     ./run.py --plan plan.json --table logs_demo --status
+    ./run.py --plan plan.json --table user_logs_raw --translate
+    ./run.py --plan plan.json --table user_logs_raw --retranslate
 
 export.py checkpoints slices and load.sh skips parts it already loaded, so
 the *mechanism* to resume existed. What did not exist was anything that knows
@@ -15,6 +17,19 @@ So this drives the existing tools rather than reimplementing them, and keeps
 one state file:
 
     pending -> exported -> loaded -> verified        (failed, from any of them)
+
+--translate adds two stages after verified (idmap/README.md), per chunk, as
+the chunk loads:
+
+    verified -> translated -> reconciled
+
+translated runs idmap/translate.sql over the chunk's time range; reconciled
+checks the conservation law over that range (every raw _id is in user_logs or
+in the quarantine, and never both) and records how many rows the quarantine
+holds. The map's health (idmap/preflight.sql) and a reload of the two
+dictionaries run once per invocation, before the first chunk is translated.
+--retranslate re-runs only the chunks that ended with a non-empty quarantine,
+after the mapping table was fixed.
 
 Every transition is written atomically (tmp + fsync + rename, the same
 discipline export.py uses for checkpoints), so a kill -9 at any moment leaves
@@ -53,8 +68,21 @@ import es_client
 # facts: overwriting the first with "failed" loses the step a retry should
 # resume from, and the retry then has nothing to resume.
 STAGES = ["pending", "exported", "loaded", "verified"]
+TRANSLATE_STAGES = ["translated", "reconciled"]
+ALL_STAGES = STAGES + TRANSLATE_STAGES
+# The only table translate.sql reads: --translate names no other.
+TRANSLATE_TABLE = "user_logs_raw"
 HERE = os.path.dirname(os.path.abspath(__file__))
 stopping = False
+prepared = False        # preflight + dictionary reload done in this invocation
+
+
+class MapRejected(Exception):
+    """preflight.sql found the mapping tables wrong. The map's fault, not a chunk's."""
+
+    def __init__(self, rows):
+        super().__init__(f"{len(rows)} preflight FAIL check(s)")
+        self.rows = rows
 
 
 def now():
@@ -230,6 +258,19 @@ def do_load(args, chunk, table):
     return run_tool(cmd)
 
 
+def chunk_filter(chunk):
+    """The chunk's time range as a ClickHouse predicate; 1 when it has none.
+
+    One definition for verify and translate: the rows a chunk is counted over
+    and the rows it is translated over have to be the same rows.
+    """
+    if chunk.get("from_ms") is not None:
+        field = chunk["time_field"]
+        return (f'"{field}" >= fromUnixTimestamp64Milli(toInt64({chunk["from_ms"]})) '
+                f'AND "{field}" < fromUnixTimestamp64Milli(toInt64({chunk["to_ms"]}))')
+    return "1"
+
+
 def do_verify(args, chunk, plan, target, table):
     """The chunk's own row count, on both sides, plus a duplicate check.
 
@@ -239,12 +280,7 @@ def do_verify(args, chunk, plan, target, table):
     """
     expected = es_count(plan["es_url"], chunk["index"], chunk["query"])
     db, tbl = target["database"], table
-    if chunk.get("from_ms") is not None:
-        field = chunk["time_field"]
-        where = (f'"{field}" >= fromUnixTimestamp64Milli(toInt64({chunk["from_ms"]})) '
-                 f'AND "{field}" < fromUnixTimestamp64Milli(toInt64({chunk["to_ms"]}))')
-    else:
-        where = "1"
+    where = chunk_filter(chunk)
     got = ch_query(target, f"SELECT count(), uniqExact(_id) FROM {db}.{tbl} WHERE {where}")
     rows, unique = (int(x) for x in got.split("\t"))
     # Distinct _id is the number that has to match, not count(): export.py is
@@ -258,6 +294,124 @@ def do_verify(args, chunk, plan, target, table):
             f"{rows - unique} duplicate row(s) from an at-least-once resume; dedupe on load "
             "if exact counts matter")
     return True, unique, 0, None
+
+
+def ch_run(target, sql, timeout=300):
+    """ch_query, but a rejected statement reports the server's own error.
+
+    ch_query's HTTPError says only "HTTP Error 500", which is no use in a
+    state file that someone reads hours later.
+    """
+    try:
+        return ch_query(target, sql, timeout)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace").strip()
+        line = next((ln for ln in body.splitlines() if "DB::Exception" in ln), body)
+        raise RuntimeError(f"ClickHouse: {line[:300]}") from None
+
+
+def idmap_sql():
+    """read_sql and statements from idmap/test_cases.py.
+
+    Imported rather than copied: the SQL files hold comments with semicolons
+    in them, and one splitter is the way to be sure run.py, test_cases.py and
+    bench.py cut a file into the same statements.
+    """
+    sys.path.insert(0, os.path.join(HERE, "idmap"))
+    import test_cases
+    return test_cases.read_sql, test_cases.statements
+
+
+def init_translate(state, target):
+    want = {"db": target["database"], "sn_dict": "item_sn_dict_hashed",
+            "uid_dict": "user_id_dict_hashed"}
+    have = state.get("translate")
+    if have is None:
+        state["translate"] = want
+    elif have["db"] != want["db"]:
+        raise SystemExit(f"this state file translates into database {have['db']!r}, not "
+                         f"{want['db']!r}: its chunks would end up translated into two places.")
+
+
+def prepare_translation(state, state_path, target):
+    """Whole-map checks, once per invocation, before the first chunk is translated.
+
+    Not per chunk: preflight asks about the mapping tables, which a chunk does
+    not change. And the reload is what makes every chunk of this run translate
+    against one version of the map -- the dictionaries are LIFETIME(0), so a
+    mapping row added since the last reload is invisible, exactly like an
+    unmapped id (schema.sql, and T17-reload in test_cases.py).
+    """
+    global prepared
+    if prepared:
+        return
+    read_sql, _ = idmap_sql()
+    t = state["translate"]
+    rows = []
+    for line in ch_run(target, read_sql("preflight.sql", t["db"])).splitlines():
+        cells = line.split("\t")
+        rows.append(cells + [""] * (4 - len(cells)))      # ch_query strips a trailing empty detail
+    t["preflight"] = {"at": now(), "rows": rows}
+    write_state(state_path, state)
+
+    print("preflight (idmap/preflight.sql):")
+    for check, severity, n, detail in rows:
+        if severity == "INFO" or (severity == "WARN" and int(n) > 0):
+            print(f"  {severity:<4}  {check}: {n}" + (f"  ({detail})" if detail else ""))
+    fails = [r for r in rows if r[1] == "FAIL" and int(r[2]) > 0]
+    if fails:
+        for check, severity, n, detail in fails:
+            print(f"  FAIL  {check}: {n}" + (f"  ({detail})" if detail else ""), file=sys.stderr)
+        raise MapRejected(fails)
+
+    for name in (t["sn_dict"], t["uid_dict"]):
+        ch_run(target, f"SYSTEM RELOAD DICTIONARY {t['db']}.{name}")
+    t["reloaded_at"] = now()
+    write_state(state_path, state)
+    prepared = True
+    print(f"reloaded {t['sn_dict']} and {t['uid_dict']}: this run translates against one "
+          "version of the map")
+
+
+def do_translate(chunk, state, target):
+    """translate.sql over the chunk's time range.
+
+    Chunks run one at a time, so the TRUNCATE of user_logs_staged at the top
+    of the file only ever clears the previous chunk's scratch rows.
+    """
+    read_sql, statements = idmap_sql()
+    t = state["translate"]
+    subs = {"$SN_DICT$": t["sn_dict"], "$UID_DICT$": t["uid_dict"],
+            "$CHUNK_FILTER$": chunk_filter(chunk)}
+    for stmt in statements(read_sql("translate.sql", t["db"]), subs):
+        ch_run(target, stmt)
+
+
+def do_reconcile(chunk, state, target):
+    """The conservation law (T20 in test_cases.py), over this chunk's range.
+
+    Every raw _id is in user_logs or in the quarantine, and in not both. A
+    translated value cannot show whether it was translated; the counts can.
+    """
+    db = state["translate"]["db"]
+    where = chunk_filter(chunk)
+    got = ch_run(target, f"""SELECT
+        (SELECT uniqExact(`_id`) FROM {db}.user_logs_raw WHERE {where}),
+        (SELECT count() FROM {db}.user_logs FINAL WHERE {where}),
+        (SELECT count() FROM {db}.user_logs_quarantine FINAL WHERE {where}),
+        (SELECT count() FROM (SELECT `_id` FROM {db}.user_logs FINAL WHERE {where}
+                              INTERSECT
+                              SELECT `_id` FROM {db}.user_logs_quarantine FINAL WHERE {where}))""")
+    raw, out, held, both = (int(x) for x in got.split("\t"))
+    problems = []
+    if raw != out + held:
+        problems.append(f"{raw} distinct _id in user_logs_raw for this range, but user_logs has "
+                        f"{out} and the quarantine {held} ({out + held - raw:+d})")
+    if both:
+        problems.append(f"{both} _id in both user_logs and the quarantine")
+    if problems:
+        return False, out, held, "reconcile: " + "; ".join(problems)
+    return True, out, held, None
 
 
 def process_chunk(args, plan, chunk, state, state_path, target):
@@ -312,7 +466,32 @@ def process_chunk(args, plan, chunk, state, state_path, target):
             rec["note"] = note
             rec["finished_at"] = now()
             save()
+
+        # After verified, not after loaded: the raw load is checked first, so a
+        # reconcile failure can never be a load failure in disguise.
+        if args.translate and rec["stage"] == "verified":
+            prepare_translation(state, state_path, target)
+            do_translate(chunk, state, target)
+            rec["translations"] = rec.get("translations", 0) + 1
+            rec["stage"] = "translated"
+            rec["last_error"] = None
+            save()
+
+        if args.translate and rec["stage"] == "translated":
+            ok, translated, held, note = do_reconcile(chunk, state, target)
+            if not ok:
+                rec["last_error"] = note
+                save()
+                return False
+            rec["translated_rows"] = translated
+            rec["quarantined"] = held
+            rec["stage"] = "reconciled"
+            rec["last_error"] = None
+            rec["finished_at"] = now()
+            save()
         return True
+    except MapRejected:
+        raise                  # the map's fault, not this chunk's: it stays where it is
     except Exception as e:                                  # noqa: BLE001
         rec["last_error"] = f"{type(e).__name__}: {e}"
         save()
@@ -321,22 +500,27 @@ def process_chunk(args, plan, chunk, state, state_path, target):
 
 def print_status(state, plan=None):
     chunks = state["chunks"]
-    by_stage = {s: 0 for s in STAGES}
+    # A state file that has used --translate is done at reconciled, not verified.
+    translating = "translate" in state
+    stages = ALL_STAGES if translating else STAGES
+    done_stage = stages[-1]
+    by_stage = {s: 0 for s in stages}
     for rec in chunks.values():
         by_stage[rec["stage"]] = by_stage.get(rec["stage"], 0) + 1
 
-    done = by_stage["verified"]
+    done = by_stage[done_stage]
     total = len(chunks)
     est_total = sum(r["est_docs"] for r in chunks.values())
-    rows_done = sum(r["rows_loaded"] for r in chunks.values() if r["stage"] == "verified")
+    rows_done = sum(r["rows_loaded"] for r in chunks.values()
+                    if ALL_STAGES.index(r["stage"]) >= ALL_STAGES.index("verified"))
     seconds = sum(r["seconds"] for r in chunks.values())
     rate = (rows_done / seconds) if seconds > 0 and rows_done else None
 
     print(f"plan {state['plan']}  table {state['table']}  started {state['started_at']}"
           f"  updated {state['updated_at']}")
     failed = sorted(cid for cid, r in chunks.items() if r.get("failed"))
-    print(f"chunks: {done}/{total} verified"
-          + "".join(f", {n} {s}" for s, n in by_stage.items() if s != "verified" and n)
+    print(f"chunks: {done}/{total} {done_stage}"
+          + "".join(f", {n} {s}" for s, n in by_stage.items() if s != done_stage and n)
           + (f", {len(failed)} failed" if failed else ""))
     pct = (rows_done / est_total * 100) if est_total else 0
     print(f"rows:   {rows_done} of ~{est_total} loaded and verified ({pct:.1f}%)")
@@ -345,8 +529,22 @@ def print_status(state, plan=None):
         print(f"rate:   {rate:,.0f} rows/s over {human_duration(seconds)} of work"
               f"  ->  ~{human_duration(remaining / rate)} remaining at that rate")
 
+    held = affected = 0
+    if translating:
+        reconciled = [r for r in chunks.values() if r["stage"] == "reconciled"]
+        held = sum(r.get("quarantined", 0) for r in reconciled)
+        affected = sum(1 for r in reconciled if r.get("quarantined", 0) > 0)
+        line = (f"{held:,} rows held in quarantine, {affected} of {total} chunks affected"
+                if held else "no rows held in quarantine")
+        if done < total:
+            line += f"  (counted over the {done} reconciled chunk(s) so far)"
+        print(line)
+
+    # A chunk at verified or translated with an error is a translate/reconcile
+    # failure: a verified chunk of a plain run never carries one.
     stuck = sorted(cid for cid, r in chunks.items()
-                   if r["stage"] in ("exported", "loaded") and r["last_error"])
+                   if r["stage"] in ("exported", "loaded", "verified", "translated")
+                   and r["last_error"])
     for cid in failed + [c for c in stuck if c not in failed]:
         rec = chunks[cid]
         print(f"\n  chunk {cid}  stopped at {rec['stage']}  attempts {rec['attempts']}")
@@ -359,16 +557,22 @@ def print_status(state, plan=None):
         if len(notes) > 5:
             print(f"  ... and {len(notes) - 5} more chunk(s) with notes")
 
+    # Resuming without --translate would stop at verified and look finished.
+    flag = " --translate" if translating else ""
     if failed:
         print(f"\n{len(failed)} chunk(s) failed. Retry just those:")
         print(f"  ./run.py --plan {state['plan']} --table {state['table']} "
-              f"--only {','.join(failed)}")
+              f"--only {','.join(failed)}{flag}")
         return 1
     if done < total:
         print(f"\n{total - done} chunk(s) not finished. Resume:")
-        print(f"  ./run.py --plan {state['plan']} --table {state['table']}")
-        return 0
-    print("\nall chunks verified.")
+        print(f"  ./run.py --plan {state['plan']} --table {state['table']}{flag}")
+    else:
+        print(f"\nall chunks {done_stage}.")
+    if held:
+        print(f"\n{held:,} row(s) held in quarantine. After fixing the mapping table, "
+              "re-translate just the chunks that hold them:")
+        print(f"  ./run.py --plan {state['plan']} --table {state['table']} --retranslate")
     return 0
 
 
@@ -441,6 +645,13 @@ def main():
     p.add_argument("--status", action="store_true", help="print the run and exit; reads nothing "
                                                          "but the state file")
     p.add_argument("--only", help="comma-separated chunk ids to work on (e.g. the failed ones)")
+    p.add_argument("--translate", action="store_true",
+                   help=f"after verified, translate each chunk's ids with idmap/translate.sql and "
+                        f"reconcile it (needs --table {TRANSLATE_TABLE}); preflight and a "
+                        "dictionary reload run once, before the first chunk")
+    p.add_argument("--retranslate", action="store_true",
+                   help="implies --translate; re-run only the reconciled chunks whose quarantine "
+                        "is not empty, after fixing the mapping table")
     p.add_argument("--max-attempts", type=int, default=3)
     p.add_argument("--retry-backoff", type=float, default=5.0,
                    help="seconds, doubled per attempt (default 5)")
@@ -476,6 +687,12 @@ def main():
 
     if not args.table:
         p.error("--table is required unless --status")
+    if args.retranslate:
+        args.translate = True
+    # Before the state file is read: a refusal should not depend on its contents.
+    if args.translate and args.table != TRANSLATE_TABLE:
+        p.error(f"--translate reads {TRANSLATE_TABLE} (idmap/translate.sql names that table), "
+                f"not {args.table!r}. Load into --table {TRANSLATE_TABLE}, or drop --translate.")
 
     state = init_state(state_path, plan, args.plan, args.table)
     chunks = {c["id"]: c for c in plan["chunks"]}
@@ -484,7 +701,20 @@ def main():
     if unknown:
         p.error(f"--only names chunk(s) not in the plan: {', '.join(unknown)}")
 
-    todo = [cid for cid in wanted if state["chunks"][cid]["stage"] != "verified"]
+    if args.retranslate:
+        # Only the chunks that ended with rows held back. The others were
+        # translated against a map that had everything they needed.
+        todo = [cid for cid in wanted if state["chunks"][cid]["stage"] == "reconciled"
+                and state["chunks"][cid].get("quarantined", 0) > 0]
+        if not todo:
+            print("no chunk at reconciled with rows in quarantine -- nothing to retranslate")
+            return 0
+    else:
+        # Done is verified, or reconciled when translating; a chunk past verified
+        # is not work for a run that does not translate.
+        finish = ALL_STAGES.index("reconciled" if args.translate else "verified")
+        todo = [cid for cid in wanted
+                if ALL_STAGES.index(state["chunks"][cid]["stage"]) < finish]
     if args.dry_run:
         print(f"would work {len(todo)} of {len(wanted)} chunk(s) into {args.table}:")
         for cid in todo[:20]:
@@ -514,7 +744,14 @@ def main():
           f"({target['database']}.{args.table})")
     t_start = time.time()
     failed_now = []
+    rejected = None
     try:
+        if args.translate:
+            init_translate(state, target)
+            if args.retranslate:
+                for cid in todo:
+                    state["chunks"][cid]["stage"] = "verified"
+            write_state(state_path, state)
         for n, cid in enumerate(todo, 1):
             if stopping:
                 break
@@ -525,9 +762,14 @@ def main():
                 write_state(state_path, state)
                 ok = process_chunk(args, plan, chunk, state, state_path, target)
                 if ok:
-                    print(f"[{n}/{len(todo)}] chunk {cid} verified "
-                          f"({rec['rows_loaded']} rows, {rec['seconds']}s)"
-                          + (f" -- {rec['note']}" if rec.get("note") else ""))
+                    if args.translate:
+                        print(f"[{n}/{len(todo)}] chunk {cid} reconciled "
+                              f"({rec['rows_loaded']} rows loaded, {rec['translated_rows']} "
+                              f"translated, {rec['quarantined']} quarantined, {rec['seconds']}s)")
+                    else:
+                        print(f"[{n}/{len(todo)}] chunk {cid} verified "
+                              f"({rec['rows_loaded']} rows, {rec['seconds']}s)"
+                              + (f" -- {rec['note']}" if rec.get("note") else ""))
                     break
                 if rec["attempts"] >= args.max_attempts or stopping:
                     rec["failed"] = True
@@ -544,11 +786,20 @@ def main():
                 time.sleep(wait)
             if failed_now and args.stop_on_error:
                 break
+    except MapRejected as e:
+        rejected = e
     finally:
         try:
             os.unlink(lock)
         except OSError:
             pass
+
+    if rejected:
+        print(f"\nstopped before translating: the mapping tables failed preflight "
+              f"({len(rejected.rows)} FAIL check(s) above). No chunk is marked failed -- "
+              "the map is wrong, not the chunks. Fix the mapping table, then rerun the same "
+              "command.", file=sys.stderr)
+        return 1
 
     print(f"\n{human_duration(time.time() - t_start)} of wall clock this run")
     rc = print_status(state, plan)

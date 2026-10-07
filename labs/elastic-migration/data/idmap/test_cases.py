@@ -253,7 +253,8 @@ def reload_dicts(ch, db):
 
 def translate(ch, db, sn_dict, uid_dict, sql_file="translate.sql"):
     sql = read_sql(sql_file, db)
-    for stmt in statements(sql, {"$SN_DICT$": sn_dict, "$UID_DICT$": uid_dict}):
+    for stmt in statements(sql, {"$SN_DICT$": sn_dict, "$UID_DICT$": uid_dict,
+                                 "$CHUNK_FILTER$": "1"}):
         ch(stmt)
 
 

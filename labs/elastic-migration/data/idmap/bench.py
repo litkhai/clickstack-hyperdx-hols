@@ -156,7 +156,7 @@ def measure(ch, db, tag, sql_file, sn_dict, uid_dict, dicts):
             return not_fitting(f"loading {name}", e)
     load_state = dict_state(ch, db, dicts) if dicts else {}
 
-    subs = {"$SN_DICT$": sn_dict, "$UID_DICT$": uid_dict}
+    subs = {"$SN_DICT$": sn_dict, "$UID_DICT$": uid_dict, "$CHUNK_FILTER$": "1"}
     t0 = time.time()
     try:
         for stmt in statements(read_sql(sql_file, db), subs):
