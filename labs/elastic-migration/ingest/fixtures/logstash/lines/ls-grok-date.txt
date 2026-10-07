@@ -1,0 +1,4 @@
+2024-03-05 10:11:12 INFO auth pid=412 login ok user=ann
+2024-03-05 10:11:13 WARN billing pid=77 retry 2 of 5
+2024-03-05 10:11:14.250 ERROR search pid=9 index missing
+this line does not match the grok pattern

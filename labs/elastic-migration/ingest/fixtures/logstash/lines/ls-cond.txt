@@ -1,0 +1,7 @@
+GET /index.html 200
+GET /old/page 301
+POST /api/items 201
+GET /img/logo.png 404
+GET /img/logo.png 404 user=ann
+PUT /api/items/7 500 user=bob
+garbage

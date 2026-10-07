@@ -1,0 +1,4 @@
+ann|  padded value  |404|/Var/Log/App|tmp1
+bob| x |200|/Home/Bob|tmp2
+dave|  no old field  |201|/Srv/Data
+erin|none|301|/Tmp
