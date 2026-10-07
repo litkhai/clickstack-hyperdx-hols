@@ -130,9 +130,9 @@ def seed_elasticsearch(es_url, docs):
     base = f"{es_url.rstrip('/')}/{INDEX}"
     request(base, "DELETE")
     request(base, "PUT", json.dumps({
-        # Two shards, not one: plan.py recommends one slice per shard, and
-        # export.py's slice {"max": 1} is rejected by Elasticsearch 8.17.
-        "settings": {"number_of_shards": 2, "number_of_replicas": 0},
+        # The default of one shard, on purpose: plan.py then recommends one
+        # slice, which is the case #93 fixed in export.py.
+        "settings": {"number_of_replicas": 0},
         "mappings": {"properties": {
             "@timestamp": {"type": "date"},
             "log_type": {"type": "keyword"},

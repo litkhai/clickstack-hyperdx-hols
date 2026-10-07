@@ -112,5 +112,3 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [F1–F7: roadmap labs](https://github.com/litkhai/clickstack-hyperdx-hols/issues/2)
 - [F8: shorten and translate the two workshops](https://github.com/litkhai/clickstack-hyperdx-hols/issues/3)
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
-- Found while building the data path, not blocking:
-  [export.py fails on a one-shard index](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)

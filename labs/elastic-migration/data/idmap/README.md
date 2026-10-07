@@ -164,21 +164,21 @@ translation is tracked like the load: per chunk, with retries, a resume and
 
 ```bash
 cd labs/elastic-migration/data
-./idmap/seed_demo.py           # ES index user-logs-demo (4,000 docs, 4 days) + database idmap_demo
+./idmap/seed_demo.py           # ES index user-logs-demo (4,000 docs, 4 days, 1 shard) + database idmap_demo
 mkdir -p out-user
 ./plan.py --index user-logs-demo --target-rows 1000 --out-root out-user --out out-user/plan.json
-export CH_TARGET_URL=http://localhost:8124 CH_TARGET_DATABASE=idmap_demo    # where load.sh loads
-./run.py --plan out-user/plan.json --table user_logs_raw \
-    --ch-url http://localhost:8124 --ch-database idmap_demo --translate
+# The target, for load.sh and for run.py's own queries. A file, not exported
+# variables: without --env-file, load.sh reads _base/.env, and its values win.
+printf 'CH_TARGET_URL=http://localhost:8124\nCH_TARGET_DATABASE=idmap_demo\n' > out-user/target.env
+./run.py --plan out-user/plan.json --table user_logs_raw --env-file out-user/target.env --translate
 ./run.py --plan out-user/plan.json --status
 ./idmap/seed_demo.py --late    # the held-back mapping rows arrive
-./run.py --plan out-user/plan.json --table user_logs_raw \
-    --ch-url http://localhost:8124 --ch-database idmap_demo --retranslate
+./run.py --plan out-user/plan.json --table user_logs_raw --env-file out-user/target.env --retranslate
 ```
 
 `seed_demo.py` holds 4 ids back from the maps, so their rows fall in 2 of the
-4 days. It creates the index with 2 shards: with one, `plan.py` recommends 1
-slice and Elasticsearch rejects `slice.max: 1` ([#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)).
+4 days. The index has the default of one shard, so `plan.py` recommends one
+slice. That is the case [#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93) fixed in `export.py`.
 `--ambiguous` adds a second target for one `item_sn`.
 
 **Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7 (the pinned
@@ -192,6 +192,7 @@ migration target), 2026-10-07.
 | `--translate --table logs_demo` | refused, exit 2 |
 | fault: the quarantine `INSERT` removed from `translate.sql` | chunks 0001 and 0003 failed reconcile (`user_logs has 930 and the quarantine 0 (-70)`) and stopped at `verified`; with the file restored, `--only 0001,0003 --translate` reconciled both |
 | `test_cases.py` with the placeholder | 70 passed, 0 failed |
+| the same run on a one-shard index, so 1 slice (#93) | the same counts: 4/4 reconciled, 139 held in 2 chunks, then 4,000 = 4,000 + 0 |
 
 ### Check the mapping table before translating
 
@@ -531,22 +532,21 @@ cd labs/elastic-migration/data/idmap
 
 ```bash
 cd labs/elastic-migration/data
-./idmap/seed_demo.py           # ES index user-logs-demo (4,000 docs, 4 days) + database idmap_demo
+./idmap/seed_demo.py           # ES index user-logs-demo (4,000 docs, 4 days, 1 shard) + database idmap_demo
 mkdir -p out-user
 ./plan.py --index user-logs-demo --target-rows 1000 --out-root out-user --out out-user/plan.json
-export CH_TARGET_URL=http://localhost:8124 CH_TARGET_DATABASE=idmap_demo    # where load.sh loads
-./run.py --plan out-user/plan.json --table user_logs_raw \
-    --ch-url http://localhost:8124 --ch-database idmap_demo --translate
+# The target, for load.sh and for run.py's own queries. A file, not exported
+# variables: without --env-file, load.sh reads _base/.env, and its values win.
+printf 'CH_TARGET_URL=http://localhost:8124\nCH_TARGET_DATABASE=idmap_demo\n' > out-user/target.env
+./run.py --plan out-user/plan.json --table user_logs_raw --env-file out-user/target.env --translate
 ./run.py --plan out-user/plan.json --status
 ./idmap/seed_demo.py --late    # the held-back mapping rows arrive
-./run.py --plan out-user/plan.json --table user_logs_raw \
-    --ch-url http://localhost:8124 --ch-database idmap_demo --retranslate
+./run.py --plan out-user/plan.json --table user_logs_raw --env-file out-user/target.env --retranslate
 ```
 
 `seed_demo.py`는 매핑에서 id 4개를 빼 두므로, 그 행들은 4일 중 이틀에
-나옵니다. 인덱스는 샤드 2개로 만듭니다. 샤드가 하나면 `plan.py`가 슬라이스
-1개를 권하는데, Elasticsearch가 `slice.max: 1`을 거부하기 때문입니다
-([#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)). `--ambiguous`는 `item_sn` 하나에 두 번째 대상을 추가합니다.
+나옵니다. 인덱스는 기본값인 샤드 1개로 만들므로 `plan.py`가 슬라이스 1개를
+권합니다. `export.py`에서 [#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)으로 고친 경우입니다. `--ambiguous`는 `item_sn` 하나에 두 번째 대상을 추가합니다.
 
 **Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7(고정된 마이그레이션
 목적지), 2026-10-07.
@@ -559,6 +559,7 @@ export CH_TARGET_URL=http://localhost:8124 CH_TARGET_DATABASE=idmap_demo    # wh
 | `--translate --table logs_demo` | 거부, 종료 코드 2 |
 | 고장: `translate.sql`에서 격리 `INSERT` 제거 | 청크 0001과 0003이 reconcile에 실패하고(`user_logs has 930 and the quarantine 0 (-70)`) `verified`에서 멈춤. 파일을 되돌린 뒤 `--only 0001,0003 --translate`로 둘 다 reconciled |
 | 자리표시자를 넣은 `test_cases.py` | 70 통과, 0 실패 |
+| 같은 실행을 샤드 1개 인덱스, 즉 슬라이스 1개로(#93) | 같은 수치: 4/4 reconciled, 2개 청크에 139행 격리, 그 뒤 4,000 = 4,000 + 0 |
 
 ### 변환 전에 매핑 테이블을 검사하세요
 
