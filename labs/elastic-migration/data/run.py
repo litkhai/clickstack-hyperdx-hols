@@ -480,6 +480,10 @@ def process_chunk(args, plan, chunk, state, state_path, target):
         if args.translate and rec["stage"] == "translated":
             ok, translated, held, note = do_reconcile(chunk, state, target)
             if not ok:
+                # Back to verified, so the retry translates again: the counts are
+                # a function of the translation, and re-counting the same output
+                # can only fail the same way. translate.sql is safe to re-run.
+                rec["stage"] = "verified"
                 rec["last_error"] = note
                 save()
                 return False
