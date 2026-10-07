@@ -486,6 +486,20 @@ than pretending to pass. It was exercised against a deliberately zeroed-out
 checkpoint during development and correctly failed with the slice number
 named, not just "counts don't match" (see the PR that introduced this file).
 
+A chunked run (`plan.py` + `run.py`) passes `--plan plan.json` instead
+(`--out-dir` and `--plan` are mutually exclusive). Check 4 then reads every
+chunk's checkpoints. A chunk with no checkpoints on disk is a `FAIL`, not a
+`SKIP`: a planned chunk that was never exported is a gap. It also fails a
+slice that never finished, and a slice that exported 0 rows while the others
+in its chunk did not. It then compares the sum per index with `_count`,
+using the plan's `base_query` when there is one. Every failing chunk is named,
+not only the first (#32). Run on 2026-10-07 against the checkpoints of the
+4-chunk run below: `slice coverage (4 chunks, 12 slices, 300000 rows, none
+empty)`. Three faults were each caught: one `exported` lowered by 1
+(`299999` against `300000`), a chunk directory removed, and a slice set to
+`done: false`. The export and load were not re-run for this, so the
+verification line below is unchanged.
+
 ### `run.py`: one state for the whole migration
 
 `export.py` checkpoints slices and `load.sh` skips parts it has loaded, so
@@ -639,13 +653,12 @@ curl -sS http://localhost:8124/ --data-binary @ddl.sql
 ./run.py --plan plan.json --table logs_demo --manifest manifest.json
 ./run.py --plan plan.json --table logs_demo --status
 
-# whole-table checks. No --out-dir here: check 4 compares one export's
-# checkpoints against the whole index, which only holds for a single-pass
-# export -- run.py already made the per-chunk version of that check, for
-# every chunk.
+# whole-table checks. --plan, not --out-dir: one --out-dir is one chunk, and
+# check 4 compares the checkpoints against the whole index, so it needs
+# every chunk of the plan at once.
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
     --ch-url http://localhost:8124 --ch-user default --ch-password '' \
-    --ch-database default
+    --ch-database default --plan plan.json
 ```
 
 **Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7 (the pinned
@@ -1119,6 +1132,20 @@ float 열이 없는 테이블은 그냥 `INSERT`를 씁니다. Elasticsearch의 
 보았고, "개수가 안 맞음"이 아니라 슬라이스 번호를 짚어 정확히 실패했습니다
 (이 파일을 추가한 PR 참고).
 
+청크로 나눠 실행했다면(`plan.py` + `run.py`) 대신 `--plan plan.json`을
+넘깁니다(`--out-dir`와 `--plan`은 함께 쓸 수 없습니다). 그러면 검사 4는 모든
+청크의 체크포인트를 읽습니다. 디스크에 체크포인트가 하나도 없는 청크는
+`SKIP`이 아니라 `FAIL`입니다. 계획에 있는데 내보내지 않은 청크는 빈틈이기
+때문입니다. 끝나지 않은 슬라이스, 그리고 같은 청크의 다른 슬라이스는 행을
+냈는데 혼자 0건을 낸 슬라이스도 실패로 잡습니다. 그다음 인덱스별 합계를
+`_count`와 비교하며, 계획에 `base_query`가 있으면 그것을 씁니다. 실패한 청크는
+첫 번째만이 아니라 모두 이름을 밝힙니다(#32). 2026-10-07에 아래 4-청크 실행의
+체크포인트로 돌렸고 결과는 `slice coverage (4 chunks, 12 slices, 300000 rows,
+none empty)`였습니다. 고장 세 가지도 각각 잡혔습니다. `exported` 하나를 1
+줄이자 `299999` 대 `300000`, 청크 디렉터리 하나를 치우자 그 청크 이름,
+슬라이스 하나를 `done: false`로 바꾸자 그 슬라이스가 나왔습니다. 이 확인을
+위해 내보내기와 적재를 다시 돌리지는 않았으므로 아래 검증 줄은 그대로 둡니다.
+
 ### `run.py`: 마이그레이션 전체를 위한 하나의 상태
 
 `export.py`는 슬라이스를 체크포인트하고 `load.sh`는 적재한 part를 건너뛰므로,
@@ -1262,13 +1289,12 @@ curl -sS http://localhost:8124/ --data-binary @ddl.sql
 ./run.py --plan plan.json --table logs_demo --manifest manifest.json
 ./run.py --plan plan.json --table logs_demo --status
 
-# whole-table checks. No --out-dir here: check 4 compares one export's
-# checkpoints against the whole index, which only holds for a single-pass
-# export -- run.py already made the per-chunk version of that check, for
-# every chunk.
+# whole-table checks. --plan, not --out-dir: one --out-dir is one chunk, and
+# check 4 compares the checkpoints against the whole index, so it needs
+# every chunk of the plan at once.
 ./parity_checks.py --es-index logs-demo --ch-table logs_demo \
     --ch-url http://localhost:8124 --ch-user default --ch-password '' \
-    --ch-database default
+    --ch-database default --plan plan.json
 ```
 
 **Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7(고정된 마이그레이션
