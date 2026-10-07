@@ -115,10 +115,14 @@ def export_slice(base_url, index, slice_id, num_slices, out_dir, batch_size,
             while True:
                 body = {
                     "size": batch_size,
-                    "slice": {"id": slice_id, "max": num_slices},
                     "pit": {"id": pit_id, "keep_alive": keep_alive},
                     "sort": [{"_shard_doc": "asc"}],
                 }
+                # One slice is the whole PIT: Elasticsearch rejects `slice.max: 1`
+                # ("failed to parse field [max]"), and an index created without
+                # settings has one shard, so plan.py recommends exactly that (#93).
+                if num_slices > 1:
+                    body["slice"] = {"id": slice_id, "max": num_slices}
                 if query:
                     body["query"] = query
                 if ckpt["last_sort"] is not None:
@@ -168,6 +172,8 @@ def main():
     p.add_argument("--keep-alive", default="2m")
     p.add_argument("--query", help="JSON query object to restrict the export (default: match_all)")
     args = p.parse_args()
+    if args.slices < 1:
+        p.error("--slices must be 1 or more")
 
     es_client.configure(args, args.url)
     os.makedirs(args.out_dir, exist_ok=True)

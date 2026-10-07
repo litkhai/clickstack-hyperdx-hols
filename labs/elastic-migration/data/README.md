@@ -221,7 +221,10 @@ summarised in one line rather than one per bucket.
 
 Slices default to the index's primary shard count, capped at 8:
 Elasticsearch documents slicing as most effective at `slices <= shards`, and
-`export.py` already warns about a slice that exported nothing.
+`export.py` already warns about a slice that exported nothing. An index
+created without settings has one shard, so it gets one slice. For one slice,
+`export.py` sends no `slice` clause, because Elasticsearch 8.17.0 rejects
+`slice.max: 1` with `failed to parse field [max]` ([#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)).
 
 Then run one chunk with the query the plan emitted:
 
@@ -891,7 +894,10 @@ _cat counts one Lucene doc per `nested` element; sizing uses _count (2.5x differ
 
 슬라이스 기본값은 인덱스의 주 샤드 수이고 최대 8입니다. Elasticsearch가
 `slices <= shards`에서 가장 효과적이라고 문서화했고, 0건을 내보낸 슬라이스는
-`export.py`가 이미 경고합니다.
+`export.py`가 이미 경고합니다. 설정 없이 만든 인덱스는 샤드가 1개이므로 슬라이스도
+1개입니다. 슬라이스가 1개일 때 `export.py`는 `slice` 절을 보내지 않습니다.
+Elasticsearch 8.17.0이 `slice.max: 1`을 `failed to parse field [max]`로 거부하기
+때문입니다([#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)).
 
 그다음 계획이 만들어 준 쿼리로 청크 하나를 실행합니다.
 
