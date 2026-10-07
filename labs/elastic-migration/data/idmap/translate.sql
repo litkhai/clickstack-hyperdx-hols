@@ -92,6 +92,8 @@ FROM
             uid_status = 'native',     toInt64OrNull(uid_src),
                                        CAST(NULL, 'Nullable(Int64)')) AS uid_out
     FROM $DB$.user_logs_raw
+    -- The caller substitutes a chunk time range for $CHUNK_FILTER$, or 1 for the whole table.
+    WHERE $CHUNK_FILTER$
 );
 
 -- The translated rows. ReplacingMergeTree on _id, so a second run replaces
