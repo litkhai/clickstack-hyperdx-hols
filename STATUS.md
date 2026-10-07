@@ -66,7 +66,7 @@ into ClickHouse 26.6.8.7. Each tool carries its own `Verified on …` line:
 | `mapping_to_ddl.py` | `_mapping` to DDL, every field classified, and the sort key measured and marked `NEEDS REVIEW` rather than defaulted silently |
 | `export.py` | PIT + `search_after` per slice, checkpointed and resumable |
 | `load.sh` | NDJSON into ClickHouse, resumable per part |
-| `run.py` | one run state for the whole migration: `pending → exported → loaded → verified`, retries, `--status` |
+| `run.py` | one run state for the whole migration: `pending → exported → loaded → verified`, and with `--translate` `→ translated → reconciled` (ID translation per chunk, quarantine counts, `--retranslate`); retries, `--status` |
 | `parity_checks.py` | query pairs, one per system; `--plan` checks slice coverage across every chunk of a plan |
 | `es_client.py` | Elasticsearch auth and TLS for all of the above |
 | `idmap/` | ID translation in ClickHouse, with the case matrix as 70 executable assertions and the dictionary layouts measured |
@@ -113,4 +113,4 @@ Tracked as issues — [all open](https://github.com/litkhai/clickstack-hyperdx-h
 - [Dashboard skills design](https://github.com/litkhai/clickstack-hyperdx-hols/issues/5)
 - [labs/elastic-migration/: three parts](https://github.com/litkhai/clickstack-hyperdx-hols/issues/19) — still outstanding: ingest from [Logstash](https://github.com/litkhai/clickstack-hyperdx-hols/issues/59)
 - Found while building the data path, not blocking:
-  [translation is not a tracked run stage](https://github.com/litkhai/clickstack-hyperdx-hols/issues/33)
+  [export.py fails on a one-shard index](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)
