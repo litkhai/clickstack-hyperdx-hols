@@ -609,6 +609,11 @@ migration target). Against the 300,000-document seed and a 4-chunk plan:
 | state against a regenerated plan | refused, naming both `generated_at` timestamps |
 | lock held by a live process | refused, naming the pid, host and `--force-unlock` |
 
+`--translate` adds two stages after `verified`, `translated` and `reconciled`. They run
+`idmap/translate.sql` per chunk and check that every raw `_id` landed in `user_logs` or in
+the quarantine. `--retranslate` re-runs only the chunks with rows held in quarantine (#33).
+Details and the run: [idmap/README.md](idmap/README.md).
+
 ### `idmap/`: when the two systems disagree about identity
 
 A separate problem from moving the rows, and the one with no official
@@ -1232,6 +1237,11 @@ OOM으로 죽은 실행은 자기 잠금을 해제할 수 없고 바로 그것�
 | 중복 감지 | 한 청크의 part를 의도적으로 재적재: 메모에 중복 149,916건을 명시하고, distinct `_id`가 맞으므로 여전히 `verified` -- 문서화된 최소 한 번 의미를 눈에 보이게 만든 것 |
 | 다시 만든 계획에 대한 상태 파일 | 양쪽 `generated_at`을 짚어 거부 |
 | 살아 있는 프로세스가 쥔 잠금 | pid·호스트와 `--force-unlock`을 알려주며 거부 |
+
+`--translate`는 `verified` 뒤에 `translated`와 `reconciled` 두 단계를 더합니다. 청크마다
+`idmap/translate.sql`을 돌리고, 원본의 모든 `_id`가 `user_logs`나 격리 테이블에 들어갔는지
+확인합니다. `--retranslate`는 격리된 행이 있는 청크만 다시 돌립니다(#33). 자세한 내용과
+실행 결과: [idmap/README.md](idmap/README.md).
 
 ### `idmap/`: 두 시스템이 동일성에 대해 다를 때
 

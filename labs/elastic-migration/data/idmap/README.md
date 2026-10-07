@@ -133,6 +133,65 @@ costs and not what it answers.
 | `translate_join.sql` | the same translation, via a spilling `JOIN`, no dictionary |
 | `test_cases.py` | the case matrix above, executable |
 | `bench.py` | the same work four ways, with memory and wall clock |
+| `seed_demo.py` | the demo for `run.py --translate` below: an Elasticsearch index and the maps, with ids held back |
+
+### As stages of a run: `run.py --translate`
+
+`run.py --translate` translates each chunk as it loads (#33), so the
+translation is tracked like the load: per chunk, with retries, a resume and
+`--status`. Two stages follow `verified`:
+
+    pending -> exported -> loaded -> verified -> translated -> reconciled
+
+- **After `verified`, not after `loaded`.** The raw load is checked first, so
+  a reconcile failure is never a load failure in disguise.
+- **`translated`** runs `translate.sql` over the chunk's `@timestamp` range.
+  That is the predicate the chunk was verified over, passed in as
+  `$CHUNK_FILTER$`; `test_cases.py` and `bench.py` pass `1`.
+- **`reconciled`** checks the conservation law over the same range: every raw
+  `_id` is in `user_logs` or in the quarantine, and never in both. It writes
+  the quarantine count to the state file.
+- **Once per invocation, before the first chunk is translated:**
+  `preflight.sql`, then `SYSTEM RELOAD DICTIONARY`, so every chunk of the run
+  uses one version of the map. A `FAIL` stops the run there and marks no
+  chunk failed: the map is wrong, not the chunks.
+- **A failed reconcile goes back to `verified`**, so the retry translates
+  again. Counting the same output again would fail the same way.
+- **`--status`** says how many rows are held and in how many chunks.
+  `--retranslate` re-runs only the chunks whose quarantine is not empty,
+  which is what "the mapping table was fixed" needs.
+- `--translate` needs `--table user_logs_raw`, the table the SQL reads.
+
+```bash
+cd labs/elastic-migration/data
+./idmap/seed_demo.py           # ES index user-logs-demo (4,000 docs, 4 days) + database idmap_demo
+mkdir -p out-user
+./plan.py --index user-logs-demo --target-rows 1000 --out-root out-user --out out-user/plan.json
+export CH_TARGET_URL=http://localhost:8124 CH_TARGET_DATABASE=idmap_demo    # where load.sh loads
+./run.py --plan out-user/plan.json --table user_logs_raw \
+    --ch-url http://localhost:8124 --ch-database idmap_demo --translate
+./run.py --plan out-user/plan.json --status
+./idmap/seed_demo.py --late    # the held-back mapping rows arrive
+./run.py --plan out-user/plan.json --table user_logs_raw \
+    --ch-url http://localhost:8124 --ch-database idmap_demo --retranslate
+```
+
+`seed_demo.py` holds 4 ids back from the maps, so their rows fall in 2 of the
+4 days. It creates the index with 2 shards: with one, `plan.py` recommends 1
+slice and Elasticsearch rejects `slice.max: 1` ([#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)).
+`--ambiguous` adds a second target for one `item_sn`.
+
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7 (the pinned
+migration target), 2026-10-07.
+
+| What was checked | Result |
+|---|---|
+| `--translate`, 4 chunks of 1,000 rows | 4/4 reconciled; `139 rows held in quarantine, 2 of 4 chunks affected` (70 rows on 2026-10-02, 69 on 2026-10-04) |
+| `seed_demo.py --late`, then `--retranslate` | only chunks 0001 and 0003 re-ran (2 translations each, the other chunks 1); nothing held; 4,000 distinct raw `_id` = 4,000 in `user_logs` + 0 in quarantine |
+| an ambiguous map (`--ambiguous`) | exit 1 on `FAIL item_sn: ambiguous source ids: 1 (1001)` when the first chunk reached `verified`, before anything was translated; `user_logs` empty; no chunk marked failed |
+| `--translate --table logs_demo` | refused, exit 2 |
+| fault: the quarantine `INSERT` removed from `translate.sql` | chunks 0001 and 0003 failed reconcile (`user_logs has 930 and the quarantine 0 (-70)`) and stopped at `verified`; with the file restored, `--only 0001,0003 --translate` reconciled both |
+| `test_cases.py` with the placeholder | 70 passed, 0 failed |
 
 ### Check the mapping table before translating
 
@@ -441,6 +500,65 @@ cd labs/elastic-migration/data/idmap
 | `translate_join.sql` | 같은 변환을 스필하는 `JOIN`으로, 딕셔너리 없이 |
 | `test_cases.py` | 위 매트릭스, 실행 가능한 형태 |
 | `bench.py` | 같은 작업을 네 방식으로, 메모리와 소요 시간 측정 |
+| `seed_demo.py` | 아래 `run.py --translate` 데모: Elasticsearch 인덱스와 매핑, id 일부를 빼 둔 상태 |
+
+### 실행의 단계로: `run.py --translate`
+
+`run.py --translate`는 청크를 적재하는 대로 청크마다 번역합니다(#33). 그래서
+번역도 적재처럼 추적됩니다. 청크 단위이고, 재시도와 재개, `--status`가 있습니다.
+`verified` 뒤에 두 단계가 붙습니다.
+
+    pending -> exported -> loaded -> verified -> translated -> reconciled
+
+- **`loaded`가 아니라 `verified` 뒤입니다.** 원본 적재를 먼저 확인하므로,
+  reconcile 실패가 사실은 적재 실패인 경우는 생기지 않습니다.
+- **`translated`**는 청크의 `@timestamp` 범위에 `translate.sql`을 돌립니다.
+  청크를 검증할 때 쓴 바로 그 조건이며 `$CHUNK_FILTER$`로 넘어갑니다.
+  `test_cases.py`와 `bench.py`는 `1`을 넘깁니다.
+- **`reconciled`**는 같은 범위에서 보존 법칙을 확인합니다. 원본의 모든 `_id`는
+  `user_logs`나 격리 테이블 중 한쪽에 있고, 양쪽에 동시에 있지는 않아야 합니다.
+  격리된 행 수를 상태 파일에 기록합니다.
+- **실행당 한 번, 첫 청크를 번역하기 전에:** `preflight.sql`을 돌리고
+  `SYSTEM RELOAD DICTIONARY`를 실행합니다. 그래서 한 실행의 모든 청크가 같은
+  버전의 매핑으로 번역됩니다. `FAIL`이 나오면 실행은 거기서 멈추고, 어떤
+  청크도 실패로 표시하지 않습니다. 잘못된 것은 매핑이지 청크가 아니기 때문입니다.
+- **reconcile이 실패하면 `verified`로 돌아갑니다.** 그래서 재시도는 번역부터
+  다시 합니다. 같은 출력을 다시 세면 같은 이유로 실패할 뿐입니다.
+- **`--status`**는 몇 행이 몇 개 청크에 격리돼 있는지 알려 줍니다.
+  `--retranslate`는 격리 테이블이 비어 있지 않은 청크만 다시 돌립니다.
+  "매핑 테이블을 고쳤다"는 상황에 필요한 것이 바로 이것입니다.
+- `--translate`에는 SQL이 읽는 테이블인 `--table user_logs_raw`가 필요합니다.
+
+```bash
+cd labs/elastic-migration/data
+./idmap/seed_demo.py           # ES index user-logs-demo (4,000 docs, 4 days) + database idmap_demo
+mkdir -p out-user
+./plan.py --index user-logs-demo --target-rows 1000 --out-root out-user --out out-user/plan.json
+export CH_TARGET_URL=http://localhost:8124 CH_TARGET_DATABASE=idmap_demo    # where load.sh loads
+./run.py --plan out-user/plan.json --table user_logs_raw \
+    --ch-url http://localhost:8124 --ch-database idmap_demo --translate
+./run.py --plan out-user/plan.json --status
+./idmap/seed_demo.py --late    # the held-back mapping rows arrive
+./run.py --plan out-user/plan.json --table user_logs_raw \
+    --ch-url http://localhost:8124 --ch-database idmap_demo --retranslate
+```
+
+`seed_demo.py`는 매핑에서 id 4개를 빼 두므로, 그 행들은 4일 중 이틀에
+나옵니다. 인덱스는 샤드 2개로 만듭니다. 샤드가 하나면 `plan.py`가 슬라이스
+1개를 권하는데, Elasticsearch가 `slice.max: 1`을 거부하기 때문입니다
+([#93](https://github.com/litkhai/clickstack-hyperdx-hols/issues/93)). `--ambiguous`는 `item_sn` 하나에 두 번째 대상을 추가합니다.
+
+**Verified on:** Elasticsearch 8.17.0, ClickHouse 26.6.8.7(고정된 마이그레이션
+목적지), 2026-10-07.
+
+| 확인한 것 | 결과 |
+|---|---|
+| `--translate`, 1,000행짜리 청크 4개 | 4/4 reconciled, `139 rows held in quarantine, 2 of 4 chunks affected`(2026-10-02에 70행, 2026-10-04에 69행) |
+| `seed_demo.py --late` 뒤 `--retranslate` | 청크 0001과 0003만 다시 돌았음(각각 번역 2회, 나머지 청크는 1회). 격리된 행 없음. 원본 distinct `_id` 4,000 = `user_logs` 4,000 + 격리 0 |
+| 모호한 매핑(`--ambiguous`) | 첫 청크가 `verified`에 이른 시점, 아무것도 번역하기 전에 `FAIL item_sn: ambiguous source ids: 1 (1001)`로 종료 코드 1. `user_logs`는 비어 있고 실패로 표시된 청크 없음 |
+| `--translate --table logs_demo` | 거부, 종료 코드 2 |
+| 고장: `translate.sql`에서 격리 `INSERT` 제거 | 청크 0001과 0003이 reconcile에 실패하고(`user_logs has 930 and the quarantine 0 (-70)`) `verified`에서 멈춤. 파일을 되돌린 뒤 `--only 0001,0003 --translate`로 둘 다 reconciled |
+| 자리표시자를 넣은 `test_cases.py` | 70 통과, 0 실패 |
 
 ### 변환 전에 매핑 테이블을 검사하세요
 
