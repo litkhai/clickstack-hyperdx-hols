@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "멀티 서비스 이커머스 데모로 보는 ClickStack 서비스 맵"
+summary_ko: "샘플 이커머스 앱과 결제·재고 서비스의 트레이스·로그·지표를 OpenTelemetry Collector로 ClickHouse Cloud의 ClickStack 호환 스키마에 넣고, HyperDX 서비스 맵으로 서비스 의존성을 봅니다."
+title_en: "ClickStack service map with a multi-service e-commerce demo"
+summary_en: "Send traces, logs and metrics from a sample e-commerce app and its payment and inventory services through an OpenTelemetry collector into a ClickStack-compatible schema on ClickHouse Cloud, and view dependencies in the HyperDX service map."
+category: third-party
+tags: [clickstack, observability, opentelemetry]

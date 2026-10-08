@@ -1,4 +1,4 @@
-<!-- Generated from khai-workbench domains/clickhouse/tools/lab.schema.md @e1e87f4 — edit there, not here (sync.py). -->
+<!-- Generated from khai-workbench domains/clickhouse/tools/lab.schema.md @6baf31f — edit there, not here (sync.py). -->
 # lab.yaml — the lab contract
 
 [English](#english) | [한국어](#한국어)
@@ -39,14 +39,15 @@ then lists the lab but cannot run it (no `clickhouse` key).
 | `summary_ko` | one-line summary, Korean | yes |
 | `category` | one of `cloud`, `feature`, `case-study`, `core-architecture`, `third-party`, `competition`, `customer-story` — the site's article categories | yes |
 | `title_en`, `summary_en` | English title and summary | no |
+| `tags` | 1–5 topic keys, `[a, b]`, from the notes site's list: `mergetree`, `index`, `projection`, `materialized-view`, `ingestion`, `updates-deletes`, `join`, `performance`, `replication`, `cloud-architecture`, `cloud-operations`, `migration`, `clickpipes`, `kafka`, `postgres`, `mysql`, `data-lake`, `vector-search`, `full-text-search`, `geo`, `observability`, `clickstack`, `opentelemetry`, `timeseries`, `llm`, `langfuse`, `librechat`, `ai-agents`, `benchmark`, `roadmap` | no |
 
-Each published entry carries `path`, the publishing keys that are set, the runner keys
+Each published entry carries `path`, the publishing keys that are set (`tags` as a list), the runner keys
 `target` · `tier` · `clickhouse` · `verified_on` that are set, `readme_ko` / `readme_en` (the
 `## 한국어` / `## English` halves of the lab's `README.md` on GitHub — one bilingual README per
 lab, not a separate `README.ko.md`) and `pages` (only from a Pages builder that has a page for
 the lab). `generated` changes only when the published list changes, so a re-run is a no-op.
 `labs_json.py` writes nothing and fails on a `web` value other than `true`/`false`, an unknown
-`category`, or a published lab without a required key — the same entries the site would reject.
+`category`, an unknown tag or more than five, or a published lab without a required key — the same entries the site would reject.
 
 ```bash
 tools/labs_json.py            # write docs/labs.json
@@ -91,13 +92,14 @@ Workshop profiles that include labs follow this contract; they do not define the
 | `summary_ko` | 한 줄 요약(한국어) | 예 |
 | `category` | `cloud`, `feature`, `case-study`, `core-architecture`, `third-party`, `competition`, `customer-story` 중 하나 — 사이트 글 분류와 같다 | 예 |
 | `title_en`, `summary_en` | 영어 제목과 요약 | 아니오 |
+| `tags` | 주제 키 1~5개, `[a, b]`, 노트 사이트 목록에서: `mergetree`, `index`, `projection`, `materialized-view`, `ingestion`, `updates-deletes`, `join`, `performance`, `replication`, `cloud-architecture`, `cloud-operations`, `migration`, `clickpipes`, `kafka`, `postgres`, `mysql`, `data-lake`, `vector-search`, `full-text-search`, `geo`, `observability`, `clickstack`, `opentelemetry`, `timeseries`, `llm`, `langfuse`, `librechat`, `ai-agents`, `benchmark`, `roadmap` | 아니오 |
 
-게시된 항목에는 `path`, 설정된 게시 키, 설정된 러너 키 `target` · `tier` · `clickhouse` ·
+게시된 항목에는 `path`, 설정된 게시 키(`tags`는 목록), 설정된 러너 키 `target` · `tier` · `clickhouse` ·
 `verified_on`, `readme_ko` / `readme_en`(GitHub에서 실습 `README.md`의 `## 한국어` /
 `## English` 절 — 실습마다 이중 언어 README 하나이고 `README.ko.md`는 따로 없다), `pages`(그
 실습의 페이지가 있는 Pages 빌더가 만들 때만)가 들어간다. `generated`는 게시 목록이 바뀔 때만
 바뀌므로 다시 돌려도 그대로다. `web` 값이 `true`/`false`가 아니거나, `category`가 목록에
-없거나, 게시할 실습에 필수 키가 없으면 `labs_json.py`는 아무것도 쓰지 않고 실패한다 — 사이트가
+없거나, 목록에 없는 태그나 여섯 개 이상의 태그가 있거나, 게시할 실습에 필수 키가 없으면 `labs_json.py`는 아무것도 쓰지 않고 실패한다 — 사이트가
 거부할 항목과 같다.
 
 ```bash

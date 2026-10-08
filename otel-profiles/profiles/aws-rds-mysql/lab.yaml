@@ -5,3 +5,4 @@ summary_ko: "mysql 수신기와 CloudWatch 로그·지표를 사이드카 OpenTe
 title_en: "Monitoring Amazon RDS for MySQL with ClickStack"
 summary_en: "A profile that sends RDS MySQL engine metrics and CloudWatch logs and metrics to ClickStack through a sidecar OpenTelemetry collector."
 category: third-party
+tags: [mysql, opentelemetry, clickstack, observability]

@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "CH2OTEL: ClickHouse Cloud 시스템 로그를 OpenTelemetry 형식으로"
+summary_ko: "리프레시 머티리얼라이즈드 뷰로 part_log, query_views_log, view_refreshes 같은 ClickHouse Cloud 시스템 테이블을 OpenTelemetry 표준 로그 테이블로 바꿉니다. 컬렉터 없이 서비스 안에서 돕니다."
+title_en: "CH2OTEL: ClickHouse Cloud system logs in OpenTelemetry format"
+summary_en: "Convert ClickHouse Cloud system tables such as part_log, query_views_log and view_refreshes into OpenTelemetry-standard log tables with refreshable materialized views, inside the service and without a collector."
+category: cloud
+tags: [observability, opentelemetry, materialized-view, cloud-operations]

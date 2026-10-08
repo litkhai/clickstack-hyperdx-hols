@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Generated from khai-workbench domains/clickhouse/tools/labs_json.py @e1e87f4 — edit there, not here (sync.py).
+# Generated from khai-workbench domains/clickhouse/tools/labs_json.py @6baf31f — edit there, not here (sync.py).
 """labs_json — write docs/labs.json, the labs this repository publishes to the notes site.
 
     tools/labs_json.py            write docs/labs.json
@@ -19,6 +19,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = "docs/labs.json"
 CATEGORIES = ("cloud", "feature", "case-study", "core-architecture",
               "third-party", "competition", "customer-story")
+# Topic tags: the notes site's list (src/data/tags.json there, #145); its sync rejects any other key.
+TAGS = ("mergetree", "index", "projection", "materialized-view", "ingestion", "updates-deletes",
+        "join", "performance", "replication", "cloud-architecture", "cloud-operations",
+        "migration", "clickpipes", "kafka", "postgres", "mysql", "data-lake", "vector-search",
+        "full-text-search", "geo", "observability", "clickstack", "opentelemetry", "timeseries",
+        "llm", "langfuse", "librechat", "ai-agents", "benchmark", "roadmap")
+MAX_TAGS = 5
 REQUIRED = ("title_ko", "summary_ko", "category")
 # Order of the keys in each published entry, after `path`.
 KEYS = ("title_ko", "summary_ko", "title_en", "summary_en", "category",
@@ -61,6 +68,14 @@ def build(root=ROOT, page_url=None):
             errors.append("%s: web must be true or false, not %r" % (path, web))
         if meta.get("category") and meta["category"] not in CATEGORIES:
             errors.append("%s: unknown category %r" % (path, meta["category"]))
+        tags = meta.get("tags", [])
+        if isinstance(tags, str):
+            tags = [tags] if tags else []
+        bad = [t for t in tags if t not in TAGS]
+        if bad:
+            errors.append("%s: unknown tags %s" % (path, ", ".join(bad)))
+        if len(tags) > MAX_TAGS:
+            errors.append("%s: at most %d tags, not %d" % (path, MAX_TAGS, len(tags)))
         if web != "true":
             continue
         missing = [k for k in REQUIRED if not meta.get(k)]
@@ -69,6 +84,8 @@ def build(root=ROOT, page_url=None):
             continue
         lab = {"path": path}
         lab.update((k, meta[k]) for k in KEYS if isinstance(meta.get(k), str) and meta[k])
+        if tags:
+            lab["tags"] = tags
         if (f.parent / "README.md").exists():
             lab["readme_ko"] = "%s/%s/README.md#한국어" % (blob, path)
             lab["readme_en"] = "%s/%s/README.md#english" % (blob, path)
