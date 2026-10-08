@@ -7,6 +7,8 @@
 
 ## English
 
+> **Related notes** (Korean): [OTel Collector 하나로 Kafka, MySQL, MSSQL, Prometheus, 클라우드 로그를 ClickHouse Cloud에 통합하기](https://clickhouse.litkhai.dev/articles/case-study/otel-collector-kafka-mysql-mssql-prometheus-clickhouse-cloud/)
+
 MySQL on Amazon RDS: engine metrics straight from the instance, everything
 else — instance metrics, Enhanced Monitoring, error and slow query logs —
 from CloudWatch, since RDS gives the collector no filesystem to read.
@@ -102,6 +104,8 @@ actually happens.
 ---
 
 ## 한국어
+
+> **관련 글**: [OTel Collector 하나로 Kafka, MySQL, MSSQL, Prometheus, 클라우드 로그를 ClickHouse Cloud에 통합하기](https://clickhouse.litkhai.dev/articles/case-study/otel-collector-kafka-mysql-mssql-prometheus-clickhouse-cloud/)
 
 **Tier B** — 사이드카 컬렉터가 필요합니다. ClickStack 자체 빌드에는 `mysql`도
 `awscloudwatch`도 없습니다.

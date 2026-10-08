@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "멀티 클라우드 WAF 텔레메트리 관측성 워크숍"
+summary_ko: "AWS WAF, Azure WAF, GCP Cloud Armor 뒤의 마이크로서비스 이커머스를 모사해 OWASP 기반 공격 트래픽을 만들고, ClickHouse Cloud와 HyperDX에서 탐지 쿼리로 분석합니다."
+title_en: "WAF observability workshop on a multi-cloud microservice platform"
+summary_en: "Simulate a retail platform behind AWS WAF, Azure WAF and GCP Cloud Armor, generate OWASP-based attack traffic with OpenTelemetry traces, logs and metrics, and analyse it in ClickHouse Cloud and HyperDX."
+category: case-study
+tags: [observability, clickstack, opentelemetry]

@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "머신 종류별 OpenTelemetry 컬렉터 프로필"
+summary_ko: "Linux 호스트, NVIDIA GPU, 베어메탈 BMC, KVM, vSphere, MySQL, RDS MySQL처럼 머신 종류마다 필요한 수신기를 서로 합쳐지는 컬렉터 설정 조각으로 모아 ClickStack으로 보냅니다."
+title_en: "OpenTelemetry collector profiles by machine class"
+summary_en: "Composable OpenTelemetry collector fragments, one per class of machine (Linux host, NVIDIA GPU, bare metal with a BMC, KVM, vSphere, MySQL, RDS MySQL), written to merge into ClickStack's ingestion."
+category: third-party
+tags: [opentelemetry, clickstack, observability]

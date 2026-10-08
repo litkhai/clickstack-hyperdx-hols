@@ -7,6 +7,8 @@ Logs run inside ClickStack; metrics need the sidecar.
 
 ## English
 
+> **Related notes** (Korean): [OTel Collector 하나로 Kafka, MySQL, MSSQL, Prometheus, 클라우드 로그를 ClickHouse Cloud에 통합하기](https://clickhouse.litkhai.dev/articles/case-study/otel-collector-kafka-mysql-mssql-prometheus-clickhouse-cloud/)
+
 Self-managed MySQL: engine metrics via the `mysql` receiver, error and slow
 query logs via `filelog`. Two tiers in one profile because the two signals
 genuinely come from different places — see
@@ -133,6 +135,8 @@ so there is nothing generic to ship.
 ---
 
 ## 한국어
+
+> **관련 글**: [OTel Collector 하나로 Kafka, MySQL, MSSQL, Prometheus, 클라우드 로그를 ClickHouse Cloud에 통합하기](https://clickhouse.litkhai.dev/articles/case-study/otel-collector-kafka-mysql-mssql-prometheus-clickhouse-cloud/)
 
 **Tier A + Tier B** — `custom.config.yaml`과 `sidecar.config.yaml`을 모두
 제공합니다. 로그는 ClickStack 내부에서, 지표는 사이드카가 필요합니다.

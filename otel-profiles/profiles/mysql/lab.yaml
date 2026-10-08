@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "셀프 관리 MySQL 모니터링 프로필"
+summary_ko: "엔진 지표는 사이드카 OpenTelemetry Collector의 mysql 수신기로, 에러·슬로 쿼리 로그는 ClickStack 컬렉터의 filelog로 수집해 ClickStack에 보내는 프로필입니다."
+title_en: "Monitoring self-managed MySQL with ClickStack"
+summary_en: "A profile that collects MySQL engine metrics with the mysql receiver in a sidecar collector, and error and slow query logs with filelog in ClickStack's own collector."
+category: third-party
+tags: [mysql, opentelemetry, clickstack, observability]

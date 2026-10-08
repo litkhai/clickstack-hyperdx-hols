@@ -4,6 +4,8 @@
 
 ## English
 
+> **Related notes** (Korean): [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/) · [OTel Collector 하나로 Kafka, MySQL, MSSQL, Prometheus, 클라우드 로그를 ClickHouse Cloud에 통합하기](https://clickhouse.litkhai.dev/articles/case-study/otel-collector-kafka-mysql-mssql-prometheus-clickhouse-cloud/)
+
 Composable OpenTelemetry collector configuration, one fragment per class of
 machine. ClickStack ingests everything through OTel, so what a GPU node, a
 bare-metal server with a BMC, a KVM hypervisor and a vSphere cluster each need
@@ -114,6 +116,8 @@ stability, and the `vcenter` receiver is alpha — pin your sidecar image.
 ---
 
 ## 한국어
+
+> **관련 글**: [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/) · [OTel Collector 하나로 Kafka, MySQL, MSSQL, Prometheus, 클라우드 로그를 ClickHouse Cloud에 통합하기](https://clickhouse.litkhai.dev/articles/case-study/otel-collector-kafka-mysql-mssql-prometheus-clickhouse-cloud/)
 
 장비군별로 하나씩 나눈, 조합 가능한 OpenTelemetry 컬렉터 설정입니다. ClickStack은
 모든 것을 OTel로 입수하므로, GPU 노드·BMC 달린 베어메탈·KVM 하이퍼바이저·vSphere

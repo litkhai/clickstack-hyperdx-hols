@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "Terraform으로 관리하는 ClickStack 소스·대시보드·알림"
+summary_ko: "ClickHouse Terraform 프로바이더의 ClickStack 리소스(베타)로 소스, 대시보드, 알림, 웹훅을 코드로 정의하고, 한 구성을 셀프호스팅 ClickStack과 ClickHouse Cloud 양쪽에 적용합니다."
+title_en: "ClickStack sources, dashboards and alerts as Terraform"
+summary_en: "Define ClickStack sources, dashboards, alerts and webhooks with the ClickHouse Terraform provider's beta ClickStack resources, as one configuration for both self-hosted ClickStack and ClickHouse Cloud."
+category: third-party
+tags: [clickstack, observability, cloud-operations]

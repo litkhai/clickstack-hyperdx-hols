@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "Elastic에서 ClickStack으로 마이그레이션"
+summary_ko: "Elastic 이전을 수집(ingest 파이프라인·Filebeat·Logstash), 데이터(매핑과 인덱스), 대시보드(Grafana) 세 부분으로 나눠 각각 컬렉터 설정, ClickHouse DDL, ClickHouse 대시보드로 변환합니다."
+title_en: "Migrating from Elastic to ClickStack"
+summary_en: "Split an Elastic migration into ingest, data and dashboards, and convert each on its own: ingest pipelines and Beats or Logstash into collector config, mappings into ClickHouse DDL and a load, Grafana dashboards onto ClickHouse."
+category: third-party
+tags: [migration, clickstack, observability]
