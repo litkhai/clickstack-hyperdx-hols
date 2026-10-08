@@ -6,6 +6,8 @@
 
 ## English
 
+> **Related notes** (Korean): [CH2OTEL: ClickHouse Cloud 시스템 메트릭을 OpenTelemetry 표준으로 변환하기](https://clickhouse.litkhai.dev/articles/case-study/ch2otel-clickhouse-cloud-opentelemetry/)
+
 Automatically convert ClickHouse Cloud system metrics and logs into OpenTelemetry standard format using Refreshable Materialized Views (RMV).
 
 ### 🎯 Purpose
@@ -163,6 +165,8 @@ clickhouse-client --host=$CH_HOST --user=$CH_USER --password=$CH_PASSWORD --secu
 ---
 
 ## 한국어
+
+> **관련 글**: [CH2OTEL: ClickHouse Cloud 시스템 메트릭을 OpenTelemetry 표준으로 변환하기](https://clickhouse.litkhai.dev/articles/case-study/ch2otel-clickhouse-cloud-opentelemetry/)
 
 Refreshable Materialized View (RMV)를 사용하여 ClickHouse Cloud 시스템 메트릭과 로그를 OpenTelemetry 표준 형식으로 자동 변환합니다.
 

@@ -4,6 +4,8 @@
 
 ## English
 
+> **Related notes** (Korean): [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
+
 A team moving off an in-house or commercial APM does not judge the replacement by its feature list.
 It judges it by whether **the workflows it runs every day** still work: finding the SQL behind a slow
 transaction, telling a bad deploy from a good one, seeing the top errors as issues, getting an incident
@@ -247,6 +249,8 @@ labs/apm-workflows/
 ---
 
 ## 한국어
+
+> **관련 글**: [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
 
 사내 APM이나 상용 APM에서 옮겨 가는 팀은 대체 제품을 기능 목록으로 판단하지 않습니다. **매일 쓰는 업무 흐름**이
 그대로 되는지로 판단합니다. 느린 트랜잭션 뒤의 SQL 찾기, 나쁜 배포와 좋은 배포 구분, 상위 오류를 이슈로 보기,

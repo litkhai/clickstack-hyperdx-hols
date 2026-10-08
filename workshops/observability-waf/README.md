@@ -1,5 +1,7 @@
 # WAF Observability Workshop with Multi-Cloud MSA
 
+> **Related notes · 관련 글**: [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
+
 A comprehensive hands-on workshop for generating and analyzing Web Application Firewall (WAF) telemetry in a realistic multi-cloud microservices architecture using ClickHouse Cloud and HyperDX.
 
 [한글 문서 보기](#한국어-문서) | [View Korean Documentation](#한국어-문서)

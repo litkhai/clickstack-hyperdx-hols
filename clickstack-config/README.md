@@ -4,6 +4,8 @@
 
 ## English
 
+> **Related notes** (Korean): [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
+
 Sources, dashboards, alerts and webhooks as Terraform, for both targets in `_base/`. This is
 the shared asset the roadmap's `labs/dashboards-alerts` and `labs/clickstack-cloud` slots will
 both build on -- clicking through the UI is not reproducible across a workshop room.
@@ -130,6 +132,8 @@ not a screenshot. See this PR's description for how far this initial version act
 ---
 
 ## 한국어
+
+> **관련 글**: [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
 
 `_base/`의 두 대상 모두를 위한, Terraform으로 작성한 소스·대시보드·알림·웹훅입니다. 로드맵의
 `labs/dashboards-alerts`와 `labs/clickstack-cloud` 슬롯이 함께 사용할 공통 자산입니다 -- UI를

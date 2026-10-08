@@ -4,6 +4,8 @@
 
 ## English
 
+> **Related notes** (Korean): [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
+
 An Elastic migration splits into three parts, and which one dominates varies
 enormously between deployments. A team that ran its own pipeline into
 Elasticsearch has no ingest work at all; a team on Elastic Agent has a great
@@ -112,6 +114,8 @@ rather than worked around.
 ---
 
 ## 한국어
+
+> **관련 글**: [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
 
 Elastic 마이그레이션은 세 부분으로 나뉘고, 어느 쪽이 대부분을 차지하는지는 환경마다
 크게 다릅니다. 자체 파이프라인으로 Elasticsearch에 넣던 팀은 입수 작업이 아예 없고,
