@@ -14,7 +14,7 @@ Automatically convert ClickHouse Cloud system metrics and logs into OpenTelemetr
 
 CH2OTEL provides seamless integration between ClickHouse Cloud and OTEL-compatible observability tools:
 - **Automatic Conversion** - Transform system metrics to OTEL format
-- **Standards Compliant** - Full OpenTelemetry Logs, Traces, Metrics support
+- **Standards Compliant** - OpenTelemetry Logs and Metrics tables (the Traces table is created but not yet filled)
 - **Self-Service** - No collector required, runs entirely within CHC
 - **Secure** - Sensitive information managed separately
 
@@ -66,12 +66,15 @@ Collects logs from ClickHouse system tables and converts to OTEL format:
 
 #### 2. OTEL Standard Tables
 
-- `otel_logs` - OTEL standard logs
-- `otel_traces` - OTEL standard traces (v1.1 planned)
-- `otel_metrics_gauge` - Gauge metrics (v1.1 planned)
-- `otel_metrics_sum` - Sum metrics (v1.1 planned)
-- `otel_metrics_histogram` - Histogram metrics (v1.1 planned)
-- `hyperdx_sessions` - HyperDX session data (v1.1 planned)
+- `otel_logs` - OTEL standard logs (`rmv_part_logs`, `rmv_mview_logs`, `rmv_status_logs`, APPEND)
+- `otel_metrics_gauge` - Gauge metrics (`rmv_otel_gauge`, from `system.parts` and `system.view_refreshes`)
+- `otel_metrics_sum` - Sum metrics (`rmv_otel_sum`, from `system.view_refreshes` and `system.parts`)
+- `otel_metrics_histogram` - Histogram metrics (`rmv_otel_histogram`, RMV refresh durations from `system.view_refreshes`)
+- `otel_traces` - OTEL standard traces (table only; Traces RMV planned)
+- `otel_metrics_summary`, `otel_metrics_exponentialhistogram` - created for schema completeness, not filled
+- `hyperdx_sessions` - HyperDX session data (table only; Sessions RMV planned)
+
+The three metric RMVs have no `APPEND`, so each refresh replaces the metric tables with the latest snapshot.
 
 #### 3. Automatic Data Management
 
@@ -146,9 +149,9 @@ clickhouse-client --host=$CH_HOST --user=$CH_USER --password=$CH_PASSWORD --secu
 
 ### 🗺️ Roadmap
 
-#### v1.1 (Planned)
+#### Next
 - [ ] Traces RMV (rmv_pipeline_traces)
-- [ ] Metrics RMVs (gauge, sum, histogram)
+- [x] Metrics RMVs (gauge, sum, histogram) — in `sql/ch2otel-template.sql` since 2026-01-14
 - [ ] Sessions RMV (rmv_pipeline_sessions)
 
 #### v2.0 (Planned)
@@ -174,7 +177,7 @@ Refreshable Materialized View (RMV)를 사용하여 ClickHouse Cloud 시스템 �
 
 CH2OTEL은 ClickHouse Cloud와 OTEL 호환 관측성 도구 간의 원활한 통합을 제공합니다:
 - **자동 변환** - 시스템 메트릭을 OTEL 형식으로 변환
-- **표준 준수** - OpenTelemetry Logs, Traces, Metrics 완전 지원
+- **표준 준수** - OpenTelemetry Logs·Metrics 테이블 (Traces 테이블은 만들어지지만 아직 채우지 않음)
 - **자기 서비스** - Collector 불필요, CHC 내부에서 완전 동작
 - **안전** - 민감 정보 분리 관리
 
@@ -226,12 +229,15 @@ ClickHouse 시스템 테이블에서 로그를 수집하고 OTEL 형식으로 �
 
 #### 2. OTEL 표준 테이블
 
-- `otel_logs` - OTEL 표준 로그
-- `otel_traces` - OTEL 표준 트레이스 (v1.1 계획)
-- `otel_metrics_gauge` - Gauge 메트릭 (v1.1 계획)
-- `otel_metrics_sum` - Sum 메트릭 (v1.1 계획)
-- `otel_metrics_histogram` - Histogram 메트릭 (v1.1 계획)
-- `hyperdx_sessions` - HyperDX 세션 데이터 (v1.1 계획)
+- `otel_logs` - OTEL 표준 로그 (`rmv_part_logs`, `rmv_mview_logs`, `rmv_status_logs`, APPEND)
+- `otel_metrics_gauge` - Gauge 메트릭 (`rmv_otel_gauge`, `system.parts`·`system.view_refreshes` 기반)
+- `otel_metrics_sum` - Sum 메트릭 (`rmv_otel_sum`, `system.view_refreshes`·`system.parts` 기반)
+- `otel_metrics_histogram` - Histogram 메트릭 (`rmv_otel_histogram`, `system.view_refreshes`의 RMV refresh 소요 시간)
+- `otel_traces` - OTEL 표준 트레이스 (테이블만 생성, Traces RMV 계획)
+- `otel_metrics_summary`, `otel_metrics_exponentialhistogram` - 스키마 완비용으로 생성, 채우지 않음
+- `hyperdx_sessions` - HyperDX 세션 데이터 (테이블만 생성, Sessions RMV 계획)
+
+메트릭 RMV 세 개는 `APPEND`가 없어서, refresh할 때마다 메트릭 테이블을 최신 스냅샷으로 교체합니다.
 
 #### 3. 자동 데이터 관리
 
@@ -306,9 +312,9 @@ clickhouse-client --host=$CH_HOST --user=$CH_USER --password=$CH_PASSWORD --secu
 
 ### 🗺️ 로드맵
 
-#### v1.1 (계획)
+#### 다음 단계
 - [ ] Traces RMV (rmv_pipeline_traces)
-- [ ] Metrics RMVs (gauge, sum, histogram)
+- [x] Metrics RMVs (gauge, sum, histogram) — 2026-01-14부터 `sql/ch2otel-template.sql`에 포함
 - [ ] Sessions RMV (rmv_pipeline_sessions)
 
 #### v2.0 (계획)
@@ -324,7 +330,7 @@ clickhouse-client --host=$CH_HOST --user=$CH_USER --password=$CH_PASSWORD --secu
 
 ---
 
-**Version**: 1.0.0 | **Last Updated**: 2025-12-08 | **License**: MIT
+**Version**: 1.0.0 (as in `sql/ch2otel-template.sql`) | **Last Updated**: 2026-10-08 | **License**: MIT
 
 ## License
 
