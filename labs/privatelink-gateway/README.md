@@ -77,6 +77,59 @@ Every check has a positive and a negative control. Data checks are SQL against
 V7 is the outage the topology must survive. The central VPC's one endpoint is the only way out, so
 anything that breaks it stops every team at once.
 
+### Option: a Kafka buffer
+
+The gateway's file-storage queue covers a short outage and a restart (V7). It lives on one node, so it
+does not cover the loss of that node, an outage longer than its disk holds, replaying data, or a second
+consumer. If any of those becomes a requirement, put Kafka (Amazon MSK) in the central VPC.
+
+```
+service VPCs ─→ Transit Gateway ─→ central VPC
+                                   internal NLB :4317/:4318
+                                     → ingest collector    OTLP in → kafka exporter (otlp_proto)
+                                     → MSK                 otlp_spans · otlp_logs · otlp_metrics
+                                     → consumer collectors kafka receiver → clickhouse exporter
+                                     → interface VPC endpoint → PrivateLink → ClickHouse Cloud
+```
+
+Apps keep the same OTLP endpoint, and the only connection to ClickHouse Cloud is still the one the
+VPC opens. What the components' READMEs say (contrib `main`, read 2026-10-14; check against the
+version you run):
+
+- The Kafka exporter and receiver are beta for traces, metrics and logs. Encoding defaults to
+  `otlp_proto`, and topics default to `otlp_spans`, `otlp_logs` and `otlp_metrics`.
+- The receiver's `message_marking.after` defaults to `false`: a message is marked consumed *before*
+  the pipeline runs, so a consumer that dies mid-export loses it. Set it to `true` for at-least-once,
+  which means duplicates after a restart.
+- `initial_offset` defaults to `latest`, and `group_id` to `otel-collector`.
+
+**Not the first choice: ClickPipes pulling from MSK.** ClickPipes can read MSK privately through a
+reverse private endpoint over MSK multi-VPC connectivity, which is not cross-region
+([ClickPipes PrivateLink](https://clickhouse.com/docs/integrations/clickpipes/aws-privatelink), read 2026-10-14).
+That removes the consumer collectors, at two costs:
+
+- It adds a second private connection, opened from the ClickHouse side into the MSK cluster, which the
+  private-only policy has to approve separately.
+- The [ClickPipes Kafka reference](https://clickhouse.com/docs/integrations/clickpipes/kafka/reference)
+  lists JSON, AvroConfluent and Protobuf, does not mention OTLP, and nests Tuple and Array one level deep
+  only. OTLP JSON nests deeper (resource → scope → record), so it would land raw and need materialized
+  views into the `otel_*` schema. That is unmeasured and kept as a hypothesis (K7).
+
+**Kafka checks** (run after V1–V9, on the same environment plus MSK):
+
+| # | What | Positive | Negative |
+|---|---|---|---|
+| K1 | Same data through Kafka | V5 through the Kafka path: N per signal for one `run_id` | a `run_id` never sent counts 0 |
+| K2 | Outage longer than the gateway's disk would hold | ClickHouse unreachable for an hour: consumer lag grows, then drains on restore, and the count reaches N | V7's file-storage gateway, same outage: record what it kept and what it lost |
+| K3 | Consumer dies mid-export | `message_marking.after: true`, kill the consumer while it exports: the count reaches at least N. Record the duplicates (count − `uniqExact` of the record key) | `message_marking.after: false`, same kill: the count stays below N |
+| K4 | Replay | reset the consumer group to `earliest` into a separate database: its counts equal the original's for the `run_id` | a consumer group with `initial_offset: latest` started after the send reads nothing of it |
+| K5 | Losing one consumer | two consumers in the group, stop one: rebalance, the count reaches N | — (K3 covers loss) |
+| K6 | Spike | a burst above the insert rate: lag grows, then drains. Record peak lag and the time to drain | the same burst without Kafka (V8's gateway): record where it queues or drops |
+| K7 | ClickPipes variant (hypothesis) | `otlp_json` topics through a ClickPipe over the reverse private endpoint into a raw table, then materialized views into `otel_*`: counts equal K1's | — run only if K1–K6 make Kafka a requirement |
+
+Kafka is worth it when K2, K3 or K4 meets a requirement the gateway's file-storage queue cannot
+(V7). Otherwise it is one more cluster to run.
+
 ### Test environment
 
 The smallest build that answers the checks. Everything is in one region, the same as the Cloud service.
@@ -89,6 +142,7 @@ A cross-region endpoint is a separate question.
 | Service VPC, same account | `telemetrygen`, an agent collector, one Prometheus exporter | V5, V6 |
 | Service VPC, second account | `telemetrygen` only | V4: the Transit Gateway shared across accounts. One account proves the routing but not the sharing |
 | Transit Gateway | attachments for the three VPCs | V4 |
+| MSK, Kafka checks only | the smallest provisioned cluster in the central VPC, an ingest collector, two consumer collectors | K1–K6. K7 adds a ClickPipe and its reverse private endpoint |
 
 Collector images and `telemetrygen` are pinned when the lab is built and recorded in every result line,
 with the ClickHouse version the service reports.
@@ -101,6 +155,7 @@ page, for the hours the run needs:
 - the Transit Gateway (per attachment-hour and per GB processed)
 - the EC2 instances
 - cross-AZ transfer
+- for the Kafka checks: MSK broker-hours and storage. For K7: ClickPipes compute
 
 No figures are given here until that estimate is made. Nothing is launched without the owner's go-ahead.
 
@@ -187,6 +242,64 @@ gateway Collector **하나**와 AWS PrivateLink endpoint **하나**를 거쳐 Cl
 V7은 이 구성이 반드시 견뎌야 하는 장애입니다. 중앙 VPC의 endpoint 하나가 유일한 출구이므로,
 여기가 끊기면 모든 팀이 한꺼번에 멈춥니다.
 
+### 선택지: Kafka 버퍼
+
+gateway의 file storage queue는 짧은 장애와 재시작을 감당합니다(V7). 하지만 queue가 노드 하나에 있어서,
+다음 경우는 감당하지 못합니다.
+- 그 노드 자체를 잃는 경우
+- 디스크에 담을 수 있는 양보다 오래 끊기는 장애
+- 데이터를 다시 적재(replay)해야 하는 경우
+- 같은 데이터를 다른 소비자에게도 보내야 하는 경우
+
+이 중 하나라도 요구 사항이 되면 중앙 VPC에 Kafka(Amazon MSK)를 둡니다.
+
+```
+서비스 VPC ─→ Transit Gateway ─→ 중앙 VPC
+                                 내부 NLB :4317/:4318
+                                   → ingest Collector     OTLP 수신 → kafka exporter (otlp_proto)
+                                   → MSK                  otlp_spans · otlp_logs · otlp_metrics
+                                   → consumer Collector   kafka receiver → clickhouse exporter
+                                   → interface VPC endpoint → PrivateLink → ClickHouse Cloud
+```
+
+앱은 같은 OTLP endpoint로 계속 보내면 되고, ClickHouse Cloud로 가는 연결도 여전히 VPC에서 시작하는
+하나뿐입니다. 각 컴포넌트 README의 내용은 이렇습니다. contrib `main` 기준이고 2026-10-14에 읽었으므로,
+실제로 돌리는 버전과 대조해야 합니다.
+
+- Kafka exporter와 receiver는 traces, metrics, logs 모두 beta입니다. encoding 기본값은
+  `otlp_proto`이고, topic 기본값은 `otlp_spans`, `otlp_logs`, `otlp_metrics`입니다.
+- receiver의 `message_marking.after` 기본값은 `false`입니다. pipeline이 돌기 *전에* 메시지를 소비한
+  것으로 표시하므로, export 도중 consumer가 죽으면 그 메시지는 유실됩니다. `true`로 두면
+  at-least-once가 되고, 대신 재시작 뒤에 중복이 생깁니다.
+- `initial_offset` 기본값은 `latest`이고, `group_id` 기본값은 `otel-collector`입니다.
+
+**1순위가 아닌 방식: ClickPipes가 MSK에서 가져오기.** ClickPipes는 MSK multi-VPC connectivity 위의
+reverse private endpoint로 MSK를 private하게 읽을 수 있습니다. 이 방식은 cross-region을 지원하지 않습니다
+([ClickPipes PrivateLink](https://clickhouse.com/docs/integrations/clickpipes/aws-privatelink), 2026-10-14 읽음).
+consumer Collector가 필요 없어지는 대신 대가가 두 가지 있습니다.
+
+- ClickHouse 쪽에서 MSK cluster로 여는 두 번째 private 연결이 생깁니다. private-only 정책에서 따로
+  승인을 받아야 합니다.
+- [ClickPipes Kafka reference](https://clickhouse.com/docs/integrations/clickpipes/kafka/reference)에는
+  지원 형식으로 JSON, AvroConfluent, Protobuf만 나오고 OTLP는 언급이 없습니다. Tuple과 Array도 한 단계만
+  중첩할 수 있습니다. OTLP JSON은 resource → scope → record로 더 깊이 중첩되므로, 원본 그대로 적재한 뒤
+  materialized view로 `otel_*` 스키마에 풀어야 합니다. 측정하지 않은 내용이라 가설로 둡니다(K7).
+
+**Kafka 검증 항목** (V1–V9를 마친 뒤, 같은 환경에 MSK를 더해서 실행):
+
+| # | 무엇 | Positive | Negative |
+|---|---|---|---|
+| K1 | Kafka 경로에서도 같은 데이터 | V5를 Kafka 경로로 실행: 한 `run_id`에 신호별 N개 | 보낸 적 없는 `run_id`는 0개 |
+| K2 | gateway 디스크가 담을 수 있는 시간보다 긴 장애 | ClickHouse를 한 시간 끊는다. consumer lag이 쌓였다가 복구 뒤에 해소되고, count가 N에 이른다 | V7의 file storage gateway로 같은 장애를 겪게 한다. 남긴 것과 잃은 것을 기록 |
+| K3 | export 도중 consumer가 죽음 | `message_marking.after: true`로 두고 export 중에 consumer를 죽이면, count가 N 이상이다. 중복 수를 기록(count − record key의 `uniqExact`) | `message_marking.after: false`로 같은 실험을 하면 count가 N에 못 미친다 |
+| K4 | replay | consumer group을 `earliest`로 되돌려 별도 데이터베이스에 적재하면, 그 `run_id`의 count가 원본과 같다 | 전송 뒤에 `initial_offset: latest`로 시작한 consumer group은 그 데이터를 하나도 읽지 않는다 |
+| K5 | consumer 하나를 잃음 | group에 consumer 둘을 두고 하나를 멈추면, rebalance 뒤 count가 N에 이른다 | — (유실은 K3에서 확인) |
+| K6 | 피크 | insert 속도보다 빠르게 몰아서 보내면 lag이 쌓였다가 해소된다. 최대 lag과 해소 시간을 기록 | Kafka 없이(V8의 gateway) 같은 피크를 보낸다. 어디에 쌓이거나 버려지는지 기록 |
+| K7 | ClickPipes 방식 (가설) | `otlp_json` topic을 reverse private endpoint 위의 ClickPipe로 raw 테이블에 넣고, materialized view로 `otel_*`에 풀면 count가 K1과 같다 | — K1–K6 결과로 Kafka가 요구 사항이 될 때만 실행 |
+
+K2, K3, K4 중 하나가 gateway의 file storage queue(V7)로는 안 되는 요구 사항을 채운다면 Kafka를 둘
+가치가 있습니다. 그렇지 않으면 운영할 클러스터가 하나 늘어날 뿐입니다.
+
 ### 테스트 환경
 
 검증 항목에 답할 수 있는 가장 작은 구성입니다. 모든 것을 Cloud 서비스와 같은 리전 하나에 둡니다.
@@ -199,6 +312,7 @@ cross-region endpoint는 별도의 주제입니다.
 | 서비스 VPC (같은 계정) | `telemetrygen`, agent Collector, Prometheus exporter 1개 | V5, V6 |
 | 서비스 VPC (두 번째 계정) | `telemetrygen`만 | V4: 계정 간에 공유한 Transit Gateway. 계정 하나로는 라우팅은 확인되지만 공유는 확인되지 않는다 |
 | Transit Gateway | 세 VPC의 attachment | V4 |
+| MSK (Kafka 검증에만) | 중앙 VPC의 가장 작은 provisioned cluster, ingest Collector, consumer Collector 둘 | K1–K6. K7에는 ClickPipe와 그 reverse private endpoint를 더함 |
 
 Collector 이미지와 `telemetrygen`은 실습을 만들 때 버전을 고정합니다. 결과 줄마다 그 버전과
 서비스가 보고하는 ClickHouse 버전을 함께 기록합니다.
@@ -211,6 +325,7 @@ Collector 이미지와 `telemetrygen`은 실습을 만들 때 버전을 고정�
 - Transit Gateway(attachment-시간당, 처리 GB당)
 - EC2 인스턴스
 - AZ 간 전송
+- Kafka 검증용: MSK broker-시간과 스토리지. K7은 ClickPipes compute 추가
 
 추정하기 전에는 여기에 금액을 적지 않습니다. 소유자의 승인 없이는 아무것도 띄우지 않습니다.
 
