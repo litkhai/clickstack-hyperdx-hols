@@ -1,0 +1,47 @@
+# Gateway collector, defaults variant (V7 negative, K2 negative).
+# Same as gateway-durable.yaml except the exporter's sending_queue and retry_on_failure are left at
+# the defaults: in-memory queue (1000 requests, sizer requests, no batching) and retry for 300 s
+# (clickhouseexporter README, tag v0.155.0; the factory uses exporterhelper's default queue config
+# and configretry's default backoff). No file_storage extension.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  clickhouse:
+    endpoint: ${env:CLICKHOUSE_ENDPOINT}
+    username: ${env:CLICKHOUSE_USER}
+    password: ${env:CLICKHOUSE_PASSWORD}
+    database: otel_pl
+    create_schema: true
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [clickhouse]

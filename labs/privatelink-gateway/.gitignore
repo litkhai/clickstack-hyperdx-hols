@@ -1,0 +1,4 @@
+# Result lines carry versions and counts from a real run; commit one only when the README quotes it.
+results/*.txt
+# Security group rules a crashed check revoked, so the next run can put them back.
+results/.pending/
