@@ -9,9 +9,12 @@ ClickHouse Cloud through **one** gateway collector and **one** AWS PrivateLink e
 service closed to the public internet. The point is to measure it before a team builds it in its own
 accounts, so the configuration they are handed has been run once.
 
-> **Status (2026-10-14).** Built, not applied: Terraform, collector configs and check scripts are
-> here (see *How to run*), nothing has run on AWS or ClickHouse Cloud, so there is no
-> `Verified on …` line. Applying it needs a cost estimate and the owner's go-ahead first ([#104](https://github.com/litkhai/clickstack-hyperdx-hols/issues/104)).
+> **Last run: 2026-10-14**, `terraform apply` → `bin/setup.sh` → checks → `terraform destroy` in
+> `ap-northeast-2`, one AWS account ([Results](#results)).
+> Changed since, without a re-run: K2's wait for gw-default's queue to drain before counting, and the
+> consumers' `earliest` start in `terraform/user_data.sh.tftpl` on a freshly created cluster (the
+> second K1–K4 run used `earliest` through `bin/check.sh`), [#106](https://github.com/litkhai/clickstack-hyperdx-hols/issues/106).
+> V8's overload control ([#108](https://github.com/litkhai/clickstack-hyperdx-hols/issues/108)) and K7 have not run.
 
 ### The topology
 
@@ -54,8 +57,12 @@ topology depends on.
 The docs leave these open, and the plan measures them:
 
 - **Whether the Cloud console's SQL console and Managed ClickStack still query the service when its IP access list denies all.** The IP access list page does not say. If they don't, people need a path to the UI that the topology above does not have.
+  *Measured (V9): both still query it.*
 - **What happens to data when ClickHouse is unreachable for longer than the 300 s retry default.**
+  *Measured (V7, K2): the file-storage gateway kept everything; the default gateway lost what it was
+  sending when the 300 s ran out.*
 - **How much load one gateway collector carries.**
+  *Measured (V8): more than one `t4g.small` generator could send; the limit was not found.*
 
 ### Checks
 
@@ -68,9 +75,9 @@ Every check has a positive and a negative control. Data checks are SQL against
 | V1 | Endpoint and allow list | from the central VPC, `SELECT 1` over `privateDnsHostname:8443` succeeds | remove the endpoint ID from the service's allow list: the same query fails (record the error) |
 | V2 | DNS stays in the central VPC | `privateDnsHostname` resolves to the endpoint's private IPs in the central VPC. The NLB's DNS name resolves to private IPs from a service VPC | from a service VPC, `privateDnsHostname` does not resolve to the endpoint's IPs, so apps never need that record |
 | V3 | Public path closed | IP access list set to deny all: V1 still succeeds | the public hostname from a host on the internet fails |
-| V4 | Through Transit Gateway | `telemetrygen` in a service VPC of the *other* account sends to the NLB, and the rows arrive | remove the security-group rule for 4317: `telemetrygen` fails, and no rows with that `run_id` arrive |
+| V4 | Through Transit Gateway | `telemetrygen` in a service VPC of the *other* account sends to the NLB, and the rows arrive | remove the security-group rule for 4317: no rows with that `run_id` arrive (`telemetrygen` still exits 0, so the count is the evidence) |
 | V5 | All three signals | N traces, N logs, N metric points with one `run_id`: each table counts N for that `run_id` | a `run_id` that was never sent counts 0 in each table |
-| V6 | Prometheus path | an agent collector scrapes an exporter in a service VPC, and its series appear in `otel_metrics_gauge` / `otel_metrics_sum` | stop the exporter: no new points after the stop time |
+| V6 | Prometheus path | an agent collector scrapes an exporter in a service VPC, and its series appear in `otel_metrics_gauge` / `otel_metrics_sum` | stop the exporter: no new points with a value after the stop time (the first failed scrape writes one staleness marker per series, `Flags` bit 1) |
 | V7 | ClickHouse unreachable for longer than 300 s | gateway with a file-storage queue and a raised `max_elapsed_time`: send N during the outage, restart the gateway once mid-outage, restore. The count reaches N | the same with defaults (memory queue, 300 s): the count stays below N. Record how far below |
 | V8 | Load and delay | at a fixed rate for 10 minutes: the time from the generator's last send to the count reaching N, and the gateway's CPU and memory from its own telemetry (`:8888`) | a run at a rate the gateway cannot sustain: the queue grows (record where, and what is dropped) |
 | V9 | People can reach the UI | with the IP access list at deny all, run a query in the SQL console and open the Managed ClickStack search. Record what happens | the same with an allow entry for the tester's IP, to tell an access-list effect from anything else |
@@ -158,13 +165,28 @@ page, for the hours the run needs:
 - cross-AZ transfer
 - for the Kafka checks: MSK broker-hours and storage. For K7: ClickPipes compute
 
-No figures are given here until that estimate is made. Nothing is launched without the owner's go-ahead.
+Estimated before the 2026-10-14 run (AWS Price List API for `ap-northeast-2`, read that day):
+
+| Item | Rate | Per hour |
+|---|---|---|
+| ClickHouse, 2 compute units (2 × 8 GiB) | the pricing page lists no Scale rate for Seoul; its Enterprise rate, $0.4801 per unit-hour, as a ceiling | ≤ $0.960 |
+| Transit Gateway, 3 VPC attachments | $0.07 each | $0.210 |
+| EC2 `t4g.small` × 3 | $0.0208 each | $0.062 |
+| NLB | $0.0225 + LCU | ≈ $0.030 |
+| Interface endpoint, 2 AZs | $0.013 each | $0.026 |
+| Public IPv4 × 3 | $0.005 each | $0.015 |
+| **Base** | | **≈ $1.31** |
+| Kafka: MSK `kafka.t3.small` × 2, 2 more instances and addresses, storage | $0.0569 per broker | **≈ $0.17** more |
+
+Data processing ($0.01/GB at the endpoint, $0.02/GB at the Transit Gateway) came to cents at these
+volumes. The actual run is under [Results](#results). Nothing is
+launched without the owner's go-ahead.
 
 ### How to run
 
-Built but not applied (2026-10-14). `terraform validate` and `otelcol-contrib 0.155.0 validate` pass,
-and each failed when a fault was injected. The SQL and the V5 and V7 controls ran once against a local
-ClickHouse 26.9.7.9 container. Nothing has run on AWS or ClickHouse Cloud.
+Ran end to end on 2026-10-14 ([Results](#results)). Before that, `terraform validate` and
+`otelcol-contrib 0.155.0 validate` passed and each failed when a fault was injected, and the SQL and the
+V5 and V7 controls ran once against a local ClickHouse 26.9.7.9 container.
 
 | Path | What |
 |---|---|
@@ -198,9 +220,76 @@ Found while building, and kept in the plan:
 - **Passwords reach the instances** through user data and SSM commands. That is acceptable for a lab torn
   down the same day, not for anything kept.
 
+Found while running (2026-10-14), and fixed where it says so:
+- **ClickHouse Cloud rejects a SQL user's password without a special character** (`CREATE USER`, Code 36,
+  "contain at least 1 special character"), while the service API took the alphanumeric `default` password.
+  `bin/setup.sh` stopped there. Fixed: `random_password.ingest` now has two specials from `-_.~`.
+- **`ip_access = []` is stored as `[]` and means deny all**: the public hostname reset the connection
+  (`curl: (35)`) and, with the tester's /32 added, the same request from the same machine returned 200 (V3, V9).
+- **A revoked and re-authorized security-group rule comes back with a new ID**, so the next `terraform plan`
+  wants to create it again, and the apply would fail on a duplicate. Before each later plan the rule was
+  removed from state and imported by its new ID. `terraform destroy` is not affected ([#107](https://github.com/litkhai/clickstack-hyperdx-hols/issues/107)).
+- **`create_schema: true` measured**: the gateway restarted mid-outage failed to start 10 times
+  (`create database: failed to query server hello`) and started 15 s after the outage ended (V7).
+- **A full memory queue refuses at the receiver**: gw-default accepted exactly its 1000 requests and refused
+  the rest, so accepted never exceeds the queue. Requests waiting in the queue did not age: after a 600 s
+  outage it delivered 4910 of 5000 accepted traces. With 200 traces, all of them in flight at once, it
+  delivered none (V7). That the 300 s clock starts only when a consumer takes a request is read from these
+  numbers, not from the exporterhelper source. K2's control was rewritten to use the refused count.
+- **telemetrygen retries refused batches** past `--duration`; a synchronous send to the full gw-default held
+  past the SSM limit. K2 now runs the gateway sends detached and removes them after the send window.
+- **Kafka consumers with `initial_offset: latest` skip data on a partition with no committed offset.** The
+  topics are auto-created by the first produce, after the consumers join: K1 counted 0 of 200 per signal,
+  K3's positive lost half, and K4's original group counted 0 logs and 0 metrics while the replay group
+  (`earliest`) read 200 of each. Fixed: the default group starts from `earliest`, which applies only where
+  it has no committed offset.
+- **The Prometheus receiver writes a staleness marker per series** at the first failed scrape (363 points,
+  `Flags` bit 1, no value). V6's negative now counts only points with a value.
+- **One `t4g.small` telemetrygen tops out near 8,700 spans/s** (asked for 20,000). V8's overload control
+  needs more generators than this build has.
+
 ### Results
 
-None yet.
+Run on 2026-10-14 in `ap-northeast-2`, one AWS account. Versions, as each result line records them:
+ClickHouse Cloud **26.6.1.2326** (`SELECT version()`), a service of 2 replicas × 8 GiB with idle scaling;
+collector `otel/opentelemetry-collector-contrib:0.155.0`; `telemetrygen` v0.155.0;
+`prom/node-exporter:v1.12.1`; MSK Kafka 3.9.x on 2 × `kafka.t3.small`; Terraform 1.16.4 with
+`hashicorp/aws` 6.68.0 and `ClickHouse/clickhouse` 3.38.0. Managed ClickStack was used through the console;
+its version is not shown there and was not recorded.
+
+Verified on ClickHouse Cloud 26.6.1.2326, Managed ClickStack (version not recorded) and
+`otel/opentelemetry-collector-contrib:0.155.0`, 2026-10-14: V1–V7, V8 positive, V9, K1–K6.
+
+| # | Result | What was measured |
+|---|---|---|
+| V1 | PASS | `SELECT 1` over the private hostname from the central VPC. Endpoint ID removed from the allow list (API 200): `curl: (35) Recv failure: Connection reset by peer`. Re-added: works again |
+| V2 | PASS | central VPC: the private hostname resolves to the endpoint's two IPs. svc_a: the NLB name resolves to `10.60.x` addresses; the private hostname resolves to nothing |
+| V3 | PASS | API reports `ipAccessList: []`; PrivateLink still answers. Public hostname from the tester's machine: `curl: (35)` connection reset, and HTTP 200 once that machine's /32 was allowed (V9) |
+| V4 | PASS | 200 of 200 traces from svc_b through the Transit Gateway and the NLB. 4317 rule revoked: 0 rows (telemetrygen exit 0). Rule back: sends again |
+| V5 | PASS | one `run_id`: 200 traces (400 spans), 200 logs, 200 gauge points. A never-sent `run_id`: 0 in each |
+| V6 | PASS, second run | 240 gauge and 107 sum metric names from node-exporter. After the stop: 0 points with a value, 363 staleness markers. The first run counted the markers and failed |
+| V7 | PASS | outage 360 s. gw-durable, restarted once mid-outage: 200 of 200 (400 spans, 0 duplicates). gw-default: 0 of 200 |
+| V8 | positive PASS, negative not reached | 2000 spans/s for 600 s: 599,335 traces accepted and counted, the full count 16 s after the last send; gateway (`t4g.small`) 2–7 % CPU, 68–74 MiB container memory, peak queue 3,700 items. Asked for 20,000 spans/s: 523,139 traces in 120 s (≈ 8,700 spans/s), gateway ≈ 18 % CPU, peak queue 11,500 items, nothing refused or lost |
+| V9 | PASS | IP access list `[]`: the console's SQL console ran `SELECT version()` → `26.6.1.2326`, and Managed ClickStack searched a Logs source on `otel_pl.otel_logs`: 800 results, the same 800 rows SQL counts. With the tester's /32 allowed, the public hostname answered from that machine |
+| K1 | PASS, second run | 200 of 200 per signal through Kafka; a never-sent `run_id` 0. First run 0 of 200 per signal (`latest`, above) |
+| K2 | PASS | outage 600 s, not the planned hour. Kafka path: 12,625 of 12,625. gw-default: 5000 accepted, 70 spans refused, 4910 delivered once its queue drained (the check counted 3315, 30 s after the restore). gw-durable: 19,516 of 19,516 |
+| K3 | PASS, second run | `after: true`, both consumers killed during an outage: 4000 of 4000 spans, 0 duplicates. `after: false`: 1000 of 4000, 3000 lost |
+| K4 | PASS, second run | replay group from `earliest` into `otel_replay`: 200 traces, logs and gauge points, equal to the original. A `latest` group started after the send: 0, then read its marker |
+| K5 | PASS | consumer-1 stopped while holding unexported messages: consumer-2 delivered 2000 of 2000 after the rebalance |
+| K6 | PASS | 60 s burst through Kafka: 258,483 traces, peak backlog 129,471, the full count 92 s after the last send. The same burst at the gateway: 260,519 traces, peak queue 11,500 items, nothing refused or lost |
+| K7 | not run | hypothesis; run only if K1–K6 make Kafka a requirement |
+
+**What this says about the topology.** One PrivateLink endpoint with the IP access list at deny all
+carries all three signals from both service VPCs, and people keep the console and Managed ClickStack.
+The gateway's file-storage queue survives an outage longer than 300 s and a restart, so it, not the
+defaults, belongs in the handover. At the load one generator could make, the gateway was not the
+bottleneck, and Kafka added delay (92 s to drain a burst the gateway absorbed) without a requirement
+that the file-storage queue failed.
+
+Cost: the base build ran 06:34–09:37Z (3.05 h) and the Kafka part 07:17–09:37Z (2.33 h). At the rates
+under *Test environment* that is 3.05 × $1.31 + 2.33 × $0.17 ≈ **$4.39**, plus cents of data processing.
+The ClickHouse rate is the Enterprise ceiling and the service scaled idle when unused, so the bill
+should be lower. Destroy removed 95 resources; a search by name and tag afterwards found none left.
 
 ---
 
@@ -211,9 +300,12 @@ gateway Collector **하나**와 AWS PrivateLink endpoint **하나**를 거쳐 Cl
 서비스는 공용 인터넷에 닫아 둡니다. 다른 팀이 자기 계정에 이 구성을 만들기 전에 우리가 먼저 측정해서,
 그 팀이 받는 설정이 한 번은 실제로 돌아간 것이 되게 하려는 문서입니다.
 
-> **상태 (2026-10-14).** 만들었지만 apply하지 않았습니다. Terraform, Collector 설정, 검증 스크립트가
-> 들어 있지만(*실행 방법* 참고) AWS와 ClickHouse Cloud에서는 아무것도 실행하지 않았으므로
-> `Verified on …` 줄이 없습니다. apply하려면 먼저 비용을 추정하고 소유자의 승인을 받아야 합니다([#104](https://github.com/litkhai/clickstack-hyperdx-hols/issues/104)).
+> **마지막 실행: 2026-10-14.** `ap-northeast-2`, AWS 계정 하나에서 `terraform apply` → `bin/setup.sh` →
+> 검증 → `terraform destroy`까지 돌렸습니다([결과](#결과)).
+> 그 뒤에 바꿨지만 다시 돌리지 않은 것: K2가 gw-default의 queue가 빌 때까지 기다린 뒤 세도록 한 수정,
+> 새로 만든 cluster에서 `terraform/user_data.sh.tftpl`의 consumer가 `earliest`로 시작하는 부분(두 번째
+> K1–K4 실행은 `bin/check.sh`를 통해 `earliest`를 썼습니다), [#106](https://github.com/litkhai/clickstack-hyperdx-hols/issues/106).
+> V8의 과부하 대조([#108](https://github.com/litkhai/clickstack-hyperdx-hols/issues/108))와 K7은 실행하지 않았습니다.
 
 ### 구성
 
@@ -258,8 +350,11 @@ gateway Collector **하나**와 AWS PrivateLink endpoint **하나**를 거쳐 Cl
 문서가 답하지 않아서 이 계획으로 측정할 것은 세 가지입니다.
 
 - **IP access list가 deny all일 때 Cloud 콘솔의 SQL console과 Managed ClickStack으로 서비스를 계속 조회할 수 있는가.** IP access list 페이지에는 이 내용이 없습니다. 조회가 안 된다면, 위 구성에는 없는 UI 접근 경로를 따로 마련해야 합니다.
+  *측정 결과(V9): 둘 다 조회됩니다.*
 - **ClickHouse에 300초(retry 기본값)보다 오래 연결되지 않으면 데이터는 어떻게 되는가.**
+  *측정 결과(V7, K2): file storage gateway는 모두 지켰고, 기본값 gateway는 300초가 끝날 때 전송 중이던 것을 잃었습니다.*
 - **gateway Collector 하나가 감당하는 부하는 어느 정도인가.**
+  *측정 결과(V8): `t4g.small` 생성기 한 대가 보낼 수 있는 양보다 많습니다. 한계는 찾지 못했습니다.*
 
 ### 검증 항목
 
@@ -272,9 +367,9 @@ gateway Collector **하나**와 AWS PrivateLink endpoint **하나**를 거쳐 Cl
 | V1 | endpoint와 허용 목록 | 중앙 VPC에서 `privateDnsHostname:8443`으로 `SELECT 1`이 성공한다 | 서비스 허용 목록에서 endpoint ID를 빼면 같은 쿼리가 실패한다(오류를 기록) |
 | V2 | DNS는 중앙 VPC 안에서만 | 중앙 VPC에서 `privateDnsHostname`이 endpoint의 private IP로 풀린다. 서비스 VPC에서 NLB DNS 이름이 private IP로 풀린다 | 서비스 VPC에서는 `privateDnsHostname`이 endpoint IP로 풀리지 않는다. 앱에는 이 레코드가 필요 없다는 뜻이다 |
 | V3 | 공용 경로 차단 | IP access list를 deny all로 둔 상태에서도 V1이 성공한다 | 인터넷의 호스트에서 public 호스트명으로 접속하면 실패한다 |
-| V4 | Transit Gateway 경유 | *다른 계정*의 서비스 VPC에서 `telemetrygen`으로 NLB에 보내면 데이터가 들어온다 | 4317 security group 규칙을 빼면 `telemetrygen`이 실패하고, 그 `run_id`로는 아무것도 들어오지 않는다 |
+| V4 | Transit Gateway 경유 | *다른 계정*의 서비스 VPC에서 `telemetrygen`으로 NLB에 보내면 데이터가 들어온다 | 4317 security group 규칙을 빼면 그 `run_id`로는 아무것도 들어오지 않는다(`telemetrygen`은 그래도 exit 0이므로 count가 근거다) |
 | V5 | 세 신호 모두 | 같은 `run_id`로 trace, log, metric point를 각각 N개 보내면 각 테이블에서 그 `run_id`가 N개다 | 보낸 적 없는 `run_id`는 각 테이블에서 0개다 |
-| V6 | Prometheus 경로 | 서비스 VPC의 agent Collector가 exporter를 scrape하면 그 series가 `otel_metrics_gauge` / `otel_metrics_sum`에 들어온다 | exporter를 멈추면 멈춘 시각 이후 새 point가 없다 |
+| V6 | Prometheus 경로 | 서비스 VPC의 agent Collector가 exporter를 scrape하면 그 series가 `otel_metrics_gauge` / `otel_metrics_sum`에 들어온다 | exporter를 멈추면 멈춘 시각 이후 값이 있는 새 point가 없다(첫 실패한 scrape는 series마다 staleness marker를 하나씩 남긴다, `Flags` bit 1) |
 | V7 | ClickHouse에 300초보다 오래 연결 안 됨 | file storage queue를 쓰고 `max_elapsed_time`을 늘린 gateway로 장애 중에 N개를 보낸다. 장애 중간에 gateway를 한 번 재시작하고 연결을 복구하면 count가 N에 이른다 | 기본값(메모리 queue, 300초)으로 같은 실험을 하면 count가 N에 못 미친다. 얼마나 모자라는지 기록 |
 | V8 | 부하와 지연 | 고정 속도로 10분: 생성기의 마지막 전송부터 count가 N에 이를 때까지의 시간, 그리고 gateway 자체 텔레메트리(`:8888`)의 CPU와 메모리 | gateway가 감당하지 못하는 속도로 보내면 queue가 쌓인다(어디에 쌓이고 무엇이 버려지는지 기록) |
 | V9 | 사람이 UI에 접근 | IP access list가 deny all인 상태에서 SQL console로 쿼리하고 Managed ClickStack 검색을 연다. 결과를 기록 | 테스트하는 사람의 IP를 허용 목록에 넣고 같은 동작을 한다. access list 때문인지 다른 원인인지 가르기 위함 |
@@ -367,14 +462,27 @@ Collector 이미지와 `telemetrygen`은 실습을 만들 때 버전을 고정�
 - AZ 간 전송
 - Kafka 검증용: MSK broker-시간과 스토리지. K7은 ClickPipes compute 추가
 
-추정하기 전에는 여기에 금액을 적지 않습니다. 소유자의 승인 없이는 아무것도 띄우지 않습니다.
+2026-10-14 실행 전 추정입니다(`ap-northeast-2`의 AWS Price List API, 당일 조회).
+
+| 항목 | 단가 | 시간당 |
+|---|---|---|
+| ClickHouse 2 compute unit(2 × 8 GiB) | 가격 페이지에 서울 Scale 단가가 없어 Enterprise 단가 $0.4801/unit-시간을 상한으로 씀 | ≤ $0.960 |
+| Transit Gateway VPC attachment 3개 | 개당 $0.07 | $0.210 |
+| EC2 `t4g.small` 3대 | 대당 $0.0208 | $0.062 |
+| NLB | $0.0225 + LCU | ≈ $0.030 |
+| Interface endpoint, AZ 2개 | 개당 $0.013 | $0.026 |
+| Public IPv4 3개 | 개당 $0.005 | $0.015 |
+| **기본 구성** | | **≈ $1.31** |
+| Kafka: MSK `kafka.t3.small` 2개, 인스턴스와 주소 2개씩, 스토리지 | broker당 $0.0569 | **≈ $0.17** 추가 |
+
+데이터 처리비(endpoint $0.01/GB, Transit Gateway $0.02/GB)는 이 정도 양에서는 몇 센트였습니다. 실제
+실행 시간과 비용은 [결과](#결과)에 있습니다. 소유자의 승인 없이는 아무것도 띄우지 않습니다.
 
 ### 실행 방법
 
-만들었지만 아직 apply하지 않았습니다(2026-10-14). `terraform validate`와
-`otelcol-contrib 0.155.0 validate`는 통과했고, 일부러 고장을 넣었을 때 각각 실패하는 것도 확인했습니다.
+2026-10-14에 처음부터 끝까지 실행했습니다([결과](#결과)). 그 전에 `terraform validate`와
+`otelcol-contrib 0.155.0 validate`가 통과했고 일부러 고장을 넣었을 때 각각 실패하는 것도 확인했으며,
 SQL과 V5, V7 제어 실험은 로컬 ClickHouse 26.9.7.9 컨테이너에서 한 번 돌렸습니다.
-AWS와 ClickHouse Cloud에서는 아직 아무것도 실행하지 않았습니다.
 
 | 경로 | 내용 |
 |---|---|
@@ -411,6 +519,71 @@ SSH와 NAT는 쓰지 않습니다. 인스턴스의 public IP는 패키지와 이
 - **비밀번호가 인스턴스에 전달됩니다.** user data와 SSM 명령에 들어가기 때문입니다. 당일에 지우는
   실습이라 허용하지만, 남겨 둘 환경에서는 쓰면 안 됩니다.
 
+실행하면서 알게 된 점입니다(2026-10-14). 고친 것은 그렇게 적었습니다.
+- **ClickHouse Cloud는 특수문자가 없는 SQL 사용자 비밀번호를 거부합니다**(`CREATE USER`, Code 36,
+  "contain at least 1 special character"). 서비스 API는 영숫자로만 된 `default` 비밀번호를 받았습니다.
+  `bin/setup.sh`가 여기서 멈췄습니다. 수정: `random_password.ingest`에 `-_.~` 중 특수문자 두 개를 넣습니다.
+- **`ip_access = []`는 `[]`로 저장되고 deny all을 뜻합니다.** public 호스트명은 연결을 끊었고(`curl: (35)`),
+  테스트하는 사람의 /32를 넣자 같은 장비에서 같은 요청이 200을 받았습니다(V3, V9).
+- **회수했다가 다시 승인한 security group 규칙은 새 ID로 돌아옵니다.** 그래서 다음 `terraform plan`이
+  그 규칙을 다시 만들려 하고, apply는 중복으로 실패합니다. 이후 plan마다 그 규칙을 state에서 지우고 새
+  ID로 import했습니다. `terraform destroy`에는 영향이 없습니다([#107](https://github.com/litkhai/clickstack-hyperdx-hols/issues/107)).
+- **`create_schema: true`를 실측했습니다.** 장애 중에 재시작한 gateway는 10번 시작에 실패했고
+  (`create database: failed to query server hello`), 장애가 끝나고 15초 뒤에 떴습니다(V7).
+- **메모리 queue가 차면 receiver가 거부합니다.** gw-default는 요청 1000개를 정확히 받고 나머지를
+  거부했으므로, accepted는 queue 크기를 넘지 않습니다. queue에서 기다리는 요청은 나이를 먹지 않았습니다.
+  600초 장애 뒤 받은 5000 trace 중 4910을 전달했습니다. 한꺼번에 전송 중이던 200 trace만 있던 V7에서는
+  하나도 전달하지 못했습니다. 300초 시계가 consumer가 요청을 꺼낼 때 시작한다는 것은 이 숫자에서 읽은
+  것이지 exporterhelper 소스로 확인한 것이 아닙니다. K2의 대조 조건은 거부 건수를 쓰도록 고쳤습니다.
+- **telemetrygen은 거부된 batch를 `--duration`이 지나도 다시 보냅니다.** 가득 찬 gw-default로 동기 전송하자
+  SSM 제한 시간을 넘겼습니다. K2는 이제 gateway 전송을 분리해서 띄우고 전송 시간이 지나면 지웁니다.
+- **`initial_offset: latest`인 Kafka consumer는 commit된 offset이 없는 partition의 데이터를 건너뜁니다.**
+  topic은 consumer가 합류한 뒤 첫 produce 때 자동 생성됩니다. K1은 신호마다 200 중 0을 셌고, K3 positive는
+  절반을 잃었고, K4의 원래 group은 logs와 metrics를 0으로 셌습니다. 같은 때 replay group(`earliest`)은 각각
+  200을 읽었습니다. 수정: 기본 group은 `earliest`로 시작합니다. 이 값은 commit된 offset이 없을 때만 적용됩니다.
+- **Prometheus receiver는 첫 실패한 scrape에서 series마다 staleness marker를 남깁니다**(363 point,
+  `Flags` bit 1, 값 없음). V6 negative는 이제 값이 있는 point만 셉니다.
+- **`t4g.small` 한 대의 telemetrygen은 약 8,700 spans/s가 한계입니다**(20,000을 요청). V8의 과부하 대조에는
+  이 구성보다 많은 생성기가 필요합니다.
+
 ### 결과
 
-아직 없습니다.
+2026-10-14, `ap-northeast-2`, AWS 계정 하나에서 실행했습니다. 결과 줄마다 기록한 버전은 다음과 같습니다.
+ClickHouse Cloud **26.6.1.2326**(`SELECT version()`), replica 2개 × 8 GiB에 idle scaling을 켠 서비스,
+Collector `otel/opentelemetry-collector-contrib:0.155.0`, `telemetrygen` v0.155.0,
+`prom/node-exporter:v1.12.1`, `kafka.t3.small` 2개의 MSK Kafka 3.9.x, Terraform 1.16.4와
+`hashicorp/aws` 6.68.0, `ClickHouse/clickhouse` 3.38.0. Managed ClickStack은 콘솔에서 썼고, 화면에
+버전이 나오지 않아 기록하지 못했습니다.
+
+Verified on ClickHouse Cloud 26.6.1.2326, Managed ClickStack(버전 미기록),
+`otel/opentelemetry-collector-contrib:0.155.0`, 2026-10-14: V1–V7, V8 positive, V9, K1–K6.
+
+| # | 결과 | 측정한 것 |
+|---|---|---|
+| V1 | PASS | 중앙 VPC에서 private 호스트명으로 `SELECT 1`. 허용 목록에서 endpoint ID를 빼자(API 200) `curl: (35) Recv failure: Connection reset by peer`. 다시 넣자 복구 |
+| V2 | PASS | 중앙 VPC: private 호스트명이 endpoint IP 두 개로 풀림. svc_a: NLB 이름은 `10.60.x` 주소로 풀리고, private 호스트명은 아무것으로도 풀리지 않음 |
+| V3 | PASS | API의 `ipAccessList: []`. PrivateLink는 계속 응답. 테스트 장비에서 public 호스트명: `curl: (35)` 연결 끊김, 그 장비의 /32를 허용하자 HTTP 200(V9) |
+| V4 | PASS | svc_b에서 Transit Gateway와 NLB를 거쳐 200 trace 중 200 도착. 4317 규칙 회수: 0행(telemetrygen exit 0). 규칙 복구: 다시 전송됨 |
+| V5 | PASS | 한 `run_id`에 trace 200(span 400), log 200, gauge point 200. 보낸 적 없는 `run_id`는 모두 0 |
+| V6 | 두 번째 실행에서 PASS | node-exporter의 gauge 240종, sum 107종. 멈춘 뒤: 값이 있는 point 0, staleness marker 363. 첫 실행은 marker까지 세서 실패 |
+| V7 | PASS | 장애 360초. 장애 중 한 번 재시작한 gw-durable: 200 중 200(span 400, 중복 0). gw-default: 200 중 0 |
+| V8 | positive PASS, negative 미도달 | 2000 spans/s로 600초: 599,335 trace를 받아 모두 셈, 마지막 전송 16초 뒤 전부 도착. gateway(`t4g.small`) CPU 2–7 %, 컨테이너 메모리 68–74 MiB, queue 최대 3,700 item. 20,000 spans/s 요청: 120초에 523,139 trace(≈ 8,700 spans/s), gateway CPU ≈ 18 %, queue 최대 11,500 item, 거부·유실 없음 |
+| V9 | PASS | IP access list `[]`: 콘솔 SQL console에서 `SELECT version()` → `26.6.1.2326`, Managed ClickStack에서 `otel_pl.otel_logs` Logs source 검색 결과 800건으로 SQL count 800과 같음. 테스트 장비의 /32를 허용하자 그 장비에서 public 호스트명이 응답 |
+| K1 | 두 번째 실행에서 PASS | Kafka 경로로 신호마다 200 중 200, 보낸 적 없는 `run_id`는 0. 첫 실행은 신호마다 200 중 0(위의 `latest`) |
+| K2 | PASS | 장애 600초(계획한 한 시간이 아님). Kafka 경로: 12,625 중 12,625. gw-default: 5000 받음, span 70 거부, queue가 빈 뒤 4910 전달(체크는 복구 30초 뒤에 세어 3315). gw-durable: 19,516 중 19,516 |
+| K3 | 두 번째 실행에서 PASS | `after: true`, 장애 중 consumer 둘을 죽임: span 4000 중 4000, 중복 0. `after: false`: 4000 중 1000, 3000 유실 |
+| K4 | 두 번째 실행에서 PASS | `earliest`로 `otel_replay`에 replay: trace, log, gauge point 각 200으로 원본과 같음. 전송 뒤 시작한 `latest` group: 0, 그 뒤 marker는 읽음 |
+| K5 | PASS | 아직 export하지 않은 메시지를 가진 consumer-1을 멈춤: rebalance 뒤 consumer-2가 2000 중 2000 전달 |
+| K6 | PASS | Kafka 경로로 60초 burst: 258,483 trace, backlog 최대 129,471, 마지막 전송 92초 뒤 전부 도착. 같은 burst를 gateway로: 260,519 trace, queue 최대 11,500 item, 거부·유실 없음 |
+| K7 | 실행 안 함 | 가설. K1–K6 결과로 Kafka가 요구 사항이 될 때만 실행 |
+
+**이 구성에 대해 말해 주는 것.** IP access list를 deny all로 둔 PrivateLink endpoint 하나로 두 서비스 VPC의
+세 신호를 모두 받을 수 있고, 사람은 콘솔과 Managed ClickStack을 계속 쓸 수 있습니다. gateway의 file storage
+queue는 300초보다 긴 장애와 재시작을 견디므로, 넘겨줄 설정은 기본값이 아니라 이것이어야 합니다. 생성기
+한 대가 낼 수 있는 부하에서 gateway는 병목이 아니었습니다. Kafka는 지연만 더했고(gateway가 흡수한 burst를
+비우는 데 92초), file storage queue가 채우지 못한 요구 사항은 나오지 않았습니다.
+
+비용: 기본 구성은 06:34–09:37Z(3.05시간), Kafka 부분은 07:17–09:37Z(2.33시간) 떠 있었습니다. *테스트 환경*의
+단가로 3.05 × $1.31 + 2.33 × $0.17 ≈ **$4.39**이고, 데이터 처리비 몇 센트가 더해집니다. ClickHouse 단가는
+Enterprise 상한이고 쓰지 않을 때 서비스가 idle로 줄었으므로 실제 청구는 이보다 낮아야 합니다. destroy는
+리소스 95개를 지웠고, 그 뒤 이름과 태그로 찾았을 때 남은 것은 없었습니다.

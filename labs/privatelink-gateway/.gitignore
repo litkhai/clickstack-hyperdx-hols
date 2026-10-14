@@ -2,3 +2,5 @@
 results/*.txt
 # Security group rules a crashed check revoked, so the next run can put them back.
 results/.pending/
+# A saved plan embeds the full state; the README saves it as tf.plan, which the root *.tfplan rule misses.
+terraform/tf.plan

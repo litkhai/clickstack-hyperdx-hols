@@ -268,11 +268,15 @@ check_V6() {
     stop_ts=$(ssm_run "$AGENT" 'docker stop node-exporter >/dev/null; date +%s.%N' 60 | tr -d '[:space:]')
     echo "node-exporter stopped at $stop_ts; waiting 60 s"
     sleep 60
-    late=$(ch_sql "SELECT count() FROM $DB.otel_metrics_gauge WHERE ResourceAttributes['verify.run_id'] = '$rid' AND MetricName LIKE 'node_%' AND TimeUnix > toDateTime64($stop_ts, 9)" | tr -d '[:space:]')
+    # The first failed scrape writes one staleness marker per series (Flags bit 1, NoRecordedValue):
+    # 363 such points at the first scrape after the stop on 2026-10-14, no value. Only points that
+    # carry a value count as new data.
+    late=$(ch_sql "SELECT count() FROM $DB.otel_metrics_gauge WHERE ResourceAttributes['verify.run_id'] = '$rid' AND MetricName LIKE 'node_%' AND TimeUnix > toDateTime64($stop_ts, 9) AND bitAnd(Flags, 1) = 0" | tr -d '[:space:]')
+    info "staleness markers (Flags & 1) after the stop: $(ch_sql "SELECT count() FROM $DB.otel_metrics_gauge WHERE ResourceAttributes['verify.run_id'] = '$rid' AND MetricName LIKE 'node_%' AND TimeUnix > toDateTime64($stop_ts, 9) AND bitAnd(Flags, 1) = 1" | tr -d '[:space:]')"
     if [ "${late:-x}" = "0" ]; then
-        pass "negative: no node_* points after the stop time ($stop_ts)"
+        pass "negative: no node_* points with a value after the stop time ($stop_ts)"
     else
-        fail "negative: ${late:-?} node_* points after the stop time ($stop_ts)"
+        fail "negative: ${late:-?} node_* points with a value after the stop time ($stop_ts)"
     fi
     info "the scraper's own series after the stop (up, scrape_*): $(ch_sql "SELECT count() FROM $DB.otel_metrics_gauge WHERE ResourceAttributes['verify.run_id'] = '$rid' AND MetricName = 'up' AND TimeUnix > toDateTime64($stop_ts, 9)" | tr -d '[:space:]') up points, value 0 expected"
     ssm_run "$AGENT" 'docker start node-exporter' 60 >/dev/null
@@ -407,10 +411,14 @@ check_V8() {
 # Kafka checks. The consumer host runs consumer-1 and consumer-2 (group otel-pl, marking after).
 cons_run() { ssm_run "$CONS" "/opt/otel/run-consumer.sh $1 $2 $3 $4 $5 $6 >/dev/null && echo started $1" 120 >/dev/null; }
 cons_rm() { ssm_run "$CONS" "docker rm -f $* >/dev/null 2>&1; echo removed $*" 60 >/dev/null; }
+# earliest: with latest, a restart of the group read nothing of a partition that had no committed
+# offset yet. On 2026-10-14 K1 lost all of its data (topics auto-created after the consumers joined),
+# K3's positive lost half, and K4's original counted 0 logs and 0 metrics while the replay group read
+# 200 of each. earliest applies only where the group has no committed offset, so it never re-reads.
 cons_defaults() {
     cons_rm consumer-unsafe consumer-replay consumer-latest
-    cons_run consumer-1 otel-pl latest true otel_pl 8881
-    cons_run consumer-2 otel-pl latest true otel_pl 8882
+    cons_run consumer-1 otel-pl earliest true otel_pl 8881
+    cons_run consumer-2 otel-pl earliest true otel_pl 8882
 }
 # kafka_send <run_id> <n traces> [flags]: n traces through the NLB's Kafka listener, rate limited so the
 # generator does not drop (see the TG_RATE note in lib.sh). The truth for "how many" is the ingest
@@ -437,6 +445,13 @@ check_K1() {
     done
 }
 
+# 0 when gw-default's traces queue (host port 28888) holds nothing
+gw_default_queue_empty() {
+    local q
+    q=$(ssm_run "$GW" "curl -s --max-time 5 localhost:28888/metrics | awk '/^otelcol_exporter_queue_size/ && /data_type=\"traces\"/ {print \$NF}'" 60 | tr -d '[:space:]')
+    [ "${q:-x}" = "0" ]
+}
+
 check_K2() {
     need_kafka
     local rate="${K2_RATE:-10000}" secs="${K2_SECS:-10}" batch="${K2_BATCH:-10}" out="${K2_OUTAGE_S:-600}"
@@ -448,19 +463,26 @@ check_K2() {
     if [ "$(ch_sql "SELECT 1" 60 2>/dev/null | tr -d '[:space:]')" != "1" ]; then fail "ClickHouse not reachable before the outage"; return; fi
     rk=$(new_run_id k2k-); rf=$(new_run_id k2f-); rd=$(new_run_id k2d-)
     add_cleanup 'sg_restore_all; outage_unblock'
-    k0=$(kafka_accepted); f0=$(accepted_spans "$GW" 28888); d0=$(accepted_spans "$GW" 8888)
+    k0=$(kafka_accepted); f0=$(accepted_spans "$GW" 28888); d0=$(accepted_spans "$GW" 8888); fr0=$(refused_spans "$GW" 28888)
     outage_block || { fail "could not take ClickHouse away"; return; }
     t0=$(date +%s)
     TG_RATE=$rate tg_send "$AGENT" traces "$NLB:14317" "$rk" 0 --duration "${secs}s" --batch-size "$batch" >/dev/null || { fail "send through Kafka failed"; return; }
-    TG_RATE=$rate tg_send "$GW" traces localhost:24317 "$rf" 0 --duration "${secs}s" --batch-size "$batch" >/dev/null || { fail "send to gw-default failed"; return; }
-    TG_RATE=$rate tg_send "$GW" traces localhost:4317 "$rd" 0 --duration "${secs}s" --batch-size "$batch" >/dev/null || { fail "send to gw-durable failed"; return; }
+    # Detached, then removed after the send window: once gw-default's queue is full its receiver refuses,
+    # and telemetrygen keeps retrying the refused batches past --duration, which held a synchronous send
+    # beyond the SSM limit on 2026-10-14. What counts is what each receiver accepted, read below.
+    add_cleanup "ssm_run '$GW' 'docker rm -f tg-k2f tg-k2d' 60"
+    tg_start "$GW" tg-k2f traces localhost:24317 "$rf" --traces 0 --rate "$rate" --duration "${secs}s" --batch-size "$batch" >/dev/null || { fail "send to gw-default failed to start"; return; }
+    tg_start "$GW" tg-k2d traces localhost:4317 "$rd" --traces 0 --rate "$rate" --duration "${secs}s" --batch-size "$batch" >/dev/null || { fail "send to gw-durable failed to start"; return; }
+    sleep $(( secs + 20 ))
+    ssm_run "$GW" 'docker rm -f tg-k2f tg-k2d >/dev/null 2>&1; echo removed' 60 >/dev/null
     acc_k=$(( ( $(kafka_accepted) - k0 ) / SPT )); acc_f=$(( ( $(accepted_spans "$GW" 28888) - f0 ) / SPT )); acc_d=$(( ( $(accepted_spans "$GW" 8888) - d0 ) / SPT ))
     echo "accepted during the outage: Kafka path $acc_k traces, gw-default $acc_f, gw-durable $acc_d"
-    # The generator rarely reaches the nominal rate (a local run reached about 40% of it), so what counts is
-    # the number of requests gw-default really received: its accepted spans over the spans per request.
-    reqs=$(( acc_f * SPT / batch ))
-    echo "gw-default received about $reqs requests"
-    if [ "$reqs" -le 1100 ]; then fail "gw-default received only about $reqs requests, not above its queue_size of 1000" "raise K2_RATE or K2_SECS"; return; fi
+    # A full memory queue makes the receiver refuse, so accepted never exceeds the queue: on 2026-10-14
+    # gw-default accepted exactly 1000 requests of 10 spans and refused the rest. The proof of overflow is
+    # the refused count, not the accepted one.
+    reqs=$(( acc_f * SPT / batch )); fref=$(( $(refused_spans "$GW" 28888) - fr0 ))
+    info "gw-default accepted about $reqs requests ($acc_f traces) and refused $fref spans during the outage"
+    if [ "$fref" -le 0 ]; then fail "gw-default refused nothing, so its queue of 1000 requests never filled" "raise K2_RATE or K2_SECS"; return; fi
     hold_until "$t0" "$out"
     outage_unblock || { fail "ClickHouse unreachable after unblock"; return; }
     if wait_n traces "$rk" "$acc_k" 1200; then
@@ -468,7 +490,10 @@ check_K2() {
     else
         fail "positive: the Kafka path delivered $LAST_N of $acc_k" "run_id $rk"
     fi
-    sleep 30
+    # Count only after gw-default's queue has drained: on 2026-10-14 it held 3315 of 5000 traces 30 s after
+    # the restore and 4910 once its queue was empty. Requests waiting in the queue had not started their
+    # 300 s retry clock; only the ones being sent did.
+    wait_for "gw-default traces queue empty" 600 15 gw_default_queue_empty || true
     LAST_N=$(n_of traces "$rf")
     enq=$(ssm_run "$GW" "curl -s --max-time 5 localhost:28888/metrics | awk '/^otelcol_exporter_enqueue_failed_spans/ {s+=\$NF} END {printf \"%d\", s+0}'" 60 | tr -d '[:space:]')
     if [ "$LAST_N" -lt "$acc_f" ]; then

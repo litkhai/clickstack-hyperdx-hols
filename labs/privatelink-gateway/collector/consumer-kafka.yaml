@@ -5,7 +5,7 @@
 # retry_on_failure.max_elapsed_time: 0 = retries never stop).
 #
 # One file, four variants through the environment (bin/check.sh starts them):
-#   consumer-1, consumer-2   GROUP_ID=otel-pl      INITIAL_OFFSET=latest   MARKING_AFTER=true   CH_DATABASE=otel_pl
+#   consumer-1, consumer-2   GROUP_ID=otel-pl      INITIAL_OFFSET=earliest MARKING_AFTER=true   CH_DATABASE=otel_pl
 #   consumer-unsafe (K3 -)   GROUP_ID=otel-pl-unsafe INITIAL_OFFSET=latest MARKING_AFTER=false  CH_DATABASE=otel_pl
 #   consumer-replay (K4 +)   GROUP_ID=<new>        INITIAL_OFFSET=earliest MARKING_AFTER=true   CH_DATABASE=otel_replay
 #   consumer-latest (K4 -)   GROUP_ID=<new>        INITIAL_OFFSET=latest   MARKING_AFTER=true   CH_DATABASE=<own>

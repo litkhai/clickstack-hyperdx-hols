@@ -39,7 +39,7 @@ variable "num_replicas" {
 }
 
 variable "min_replica_memory_gb" {
-  description = "Lower end of per-replica memory in GiB. 8 is a guess at the smallest size the API accepts: not confirmed, the first plan against the API decides."
+  description = "Lower end of per-replica memory in GiB. 8 was accepted by the API on 2026-10-14; smaller sizes were not tried."
   type        = number
   default     = 8
 }
@@ -63,7 +63,7 @@ variable "enable_kafka" {
 }
 
 variable "kafka_instance_type" {
-  description = "MSK broker type. kafka.t3.small is the smallest provisioned broker listed in the MSK best-practices page; whether it accepts var.kafka_version is not confirmed."
+  description = "MSK broker type. kafka.t3.small is the smallest provisioned broker listed in the MSK best-practices page; it accepted 3.9.x on 2026-10-14."
   type        = string
   default     = "kafka.t3.small"
 }

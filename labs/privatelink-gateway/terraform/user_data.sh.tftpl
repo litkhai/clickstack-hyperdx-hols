@@ -5,8 +5,8 @@
 set -euo pipefail
 exec > >(tee /var/log/lab-user-data.log) 2>&1
 
-# Package name "docker" on Amazon Linux 2023 is not confirmed from the AL2023 user guide pages read;
-# the first boot's /var/log/lab-user-data.log will show whether dnf found it.
+# Package name "docker" on Amazon Linux 2023: dnf found and installed it on every instance's first
+# boot on 2026-10-14 (/var/log/lab-user-data.log).
 dnf install -y docker
 systemctl enable --now docker
 install -d -m 755 /opt/otel
@@ -134,6 +134,10 @@ docker run -d --name "$name" --restart unless-stopped \
   ${collector_image} --config /etc/otelcol/config.yaml
 EOF_RUN
 chmod 755 /opt/otel/run-consumer.sh
-/opt/otel/run-consumer.sh consumer-1 otel-pl latest true otel_pl 8881
-/opt/otel/run-consumer.sh consumer-2 otel-pl latest true otel_pl 8882
+# earliest, not latest: the topics are auto-created by the first produce, after these consumers
+# start. With latest, the group's first join landed after K1's messages were written and read none of
+# them (2026-10-14, MSK 3.9.x, collector 0.155.0). earliest applies only while the group has no
+# committed offset, so a restart does not re-read.
+/opt/otel/run-consumer.sh consumer-1 otel-pl earliest true otel_pl 8881
+/opt/otel/run-consumer.sh consumer-2 otel-pl earliest true otel_pl 8882
 %{ endif ~}
