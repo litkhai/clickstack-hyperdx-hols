@@ -9,8 +9,9 @@ ClickHouse Cloud through **one** gateway collector and **one** AWS PrivateLink e
 service closed to the public internet. The point is to measure it before a team builds it in its own
 accounts, so the configuration they are handed has been run once.
 
-> **Status (2026-10-14).** Plan only. Nothing here has been built or run, so there is no
-> `Verified on …` line. Building it needs a cost estimate and the owner's go-ahead first ([#104](https://github.com/litkhai/clickstack-hyperdx-hols/issues/104)).
+> **Status (2026-10-14).** Built, not applied: Terraform, collector configs and check scripts are
+> here (see *How to run*), nothing has run on AWS or ClickHouse Cloud, so there is no
+> `Verified on …` line. Applying it needs a cost estimate and the owner's go-ahead first ([#104](https://github.com/litkhai/clickstack-hyperdx-hols/issues/104)).
 
 ### The topology
 
@@ -159,6 +160,44 @@ page, for the hours the run needs:
 
 No figures are given here until that estimate is made. Nothing is launched without the owner's go-ahead.
 
+### How to run
+
+Built but not applied (2026-10-14). `terraform validate` and `otelcol-contrib 0.155.0 validate` pass,
+and each failed when a fault was injected. The SQL and the V5 and V7 controls ran once against a local
+ClickHouse 26.9.7.9 container. Nothing has run on AWS or ClickHouse Cloud.
+
+| Path | What |
+|---|---|
+| `terraform/` | the ClickHouse service and `ip_access`, three VPCs and the Transit Gateway, the endpoint and its private hosted zone, the NLB, EC2 with SSM, and MSK behind `enable_kafka` |
+| `collector/` | `gateway-durable` (file-storage queue, long retry), `gateway-default` (defaults), `agent`, `ingest-kafka`, `consumer-kafka` — `otel/opentelemetry-collector-contrib:0.155.0` |
+| `bin/` | `setup.sh` (ingest user and databases), `check.sh <V1…V8, K1…K6>`, `outage.sh block/unblock` |
+
+```bash
+export AWS_PROFILE=<profile>
+export CLICKHOUSE_CLOUD_API_KEY=<key>
+export CLICKHOUSE_CLOUD_API_SECRET=<secret>
+export CLICKHOUSE_ORG_ID=<org id>
+cd labs/privatelink-gateway/terraform
+cp terraform.tfvars.example terraform.tfvars    # set clickhouse_org_id
+terraform init && terraform plan -out=tf.plan && terraform apply tf.plan
+cd ../bin && ./setup.sh && ./check.sh V1        # … V8, then enable_kafka = true and K1 … K6
+cd ../terraform && terraform destroy
+```
+
+All SQL runs on the gateway through SSM, because the service accepts nothing from the public internet.
+There is no SSH and no NAT. Instances take a public IP only to pull packages and images.
+
+Found while building, and kept in the plan:
+- **`create_schema: true` stops a collector from starting while ClickHouse is unreachable.** In V7 a
+  gateway restarted mid-outage cannot accept OTLP until the outage ends; its persisted queue still
+  replays afterwards. A production gateway should create the schema once and run with `create_schema: false`.
+- **A generator's own count is not evidence.** `telemetrygen` v0.155.0 emits two spans per trace even with
+  `--child-spans 0`, counts `--rate` per worker, and at an unthrottled rate reported far more traces than
+  arrived at a gateway that refused nothing. The checks count what the receiver accepted.
+- **One AWS account.** V4 proves Transit Gateway routing between VPCs, not sharing it across accounts.
+- **Passwords reach the instances** through user data and SSM commands. That is acceptable for a lab torn
+  down the same day, not for anything kept.
+
 ### Results
 
 None yet.
@@ -172,8 +211,9 @@ gateway Collector **하나**와 AWS PrivateLink endpoint **하나**를 거쳐 Cl
 서비스는 공용 인터넷에 닫아 둡니다. 다른 팀이 자기 계정에 이 구성을 만들기 전에 우리가 먼저 측정해서,
 그 팀이 받는 설정이 한 번은 실제로 돌아간 것이 되게 하려는 문서입니다.
 
-> **상태 (2026-10-14).** 계획만 있습니다. 아직 아무것도 만들거나 실행하지 않았으므로
-> `Verified on …` 줄이 없습니다. 만들려면 먼저 비용을 추정하고 소유자의 승인을 받아야 합니다([#104](https://github.com/litkhai/clickstack-hyperdx-hols/issues/104)).
+> **상태 (2026-10-14).** 만들었지만 apply하지 않았습니다. Terraform, Collector 설정, 검증 스크립트가
+> 들어 있지만(*실행 방법* 참고) AWS와 ClickHouse Cloud에서는 아무것도 실행하지 않았으므로
+> `Verified on …` 줄이 없습니다. apply하려면 먼저 비용을 추정하고 소유자의 승인을 받아야 합니다([#104](https://github.com/litkhai/clickstack-hyperdx-hols/issues/104)).
 
 ### 구성
 
@@ -328,6 +368,48 @@ Collector 이미지와 `telemetrygen`은 실습을 만들 때 버전을 고정�
 - Kafka 검증용: MSK broker-시간과 스토리지. K7은 ClickPipes compute 추가
 
 추정하기 전에는 여기에 금액을 적지 않습니다. 소유자의 승인 없이는 아무것도 띄우지 않습니다.
+
+### 실행 방법
+
+만들었지만 아직 apply하지 않았습니다(2026-10-14). `terraform validate`와
+`otelcol-contrib 0.155.0 validate`는 통과했고, 일부러 고장을 넣었을 때 각각 실패하는 것도 확인했습니다.
+SQL과 V5, V7 제어 실험은 로컬 ClickHouse 26.9.7.9 컨테이너에서 한 번 돌렸습니다.
+AWS와 ClickHouse Cloud에서는 아직 아무것도 실행하지 않았습니다.
+
+| 경로 | 내용 |
+|---|---|
+| `terraform/` | ClickHouse 서비스와 `ip_access`, VPC 셋과 Transit Gateway, endpoint와 private hosted zone, NLB, SSM을 쓰는 EC2, `enable_kafka`로 켜는 MSK |
+| `collector/` | `gateway-durable`(file storage queue, 긴 retry), `gateway-default`(기본값), `agent`, `ingest-kafka`, `consumer-kafka` — `otel/opentelemetry-collector-contrib:0.155.0` |
+| `bin/` | `setup.sh`(수집 사용자와 데이터베이스), `check.sh <V1…V8, K1…K6>`, `outage.sh block/unblock` |
+
+```bash
+export AWS_PROFILE=<profile>
+export CLICKHOUSE_CLOUD_API_KEY=<key>
+export CLICKHOUSE_CLOUD_API_SECRET=<secret>
+export CLICKHOUSE_ORG_ID=<org id>
+cd labs/privatelink-gateway/terraform
+cp terraform.tfvars.example terraform.tfvars    # clickhouse_org_id 입력
+terraform init && terraform plan -out=tf.plan && terraform apply tf.plan
+cd ../bin && ./setup.sh && ./check.sh V1        # … V8, 그다음 enable_kafka = true로 K1 … K6
+cd ../terraform && terraform destroy
+```
+
+서비스가 공용 인터넷에서 오는 연결을 받지 않으므로, SQL은 모두 SSM을 거쳐 gateway에서 실행합니다.
+SSH와 NAT는 쓰지 않습니다. 인스턴스의 public IP는 패키지와 이미지를 받는 데만 씁니다.
+
+만들면서 알게 된 점입니다. 계획에도 반영해 둡니다.
+- **`create_schema: true`이면 ClickHouse에 연결되지 않는 동안 Collector가 시작되지 않습니다.**
+  V7에서 장애 중에 재시작한 gateway는 장애가 끝날 때까지 OTLP를 받지 못합니다. 그래도 디스크에
+  저장한 queue는 복구 뒤에 다시 보냅니다. 운영 gateway는 스키마를 한 번 만들어 두고 `create_schema: false`로 돌려야 합니다.
+- **생성기가 보고하는 건수는 근거가 되지 않습니다.** `telemetrygen` v0.155.0은 다음처럼 동작합니다.
+  - `--child-spans 0`이어도 trace 하나에 span을 두 개 만듭니다.
+  - `--rate`를 worker마다 따로 셉니다.
+  - 속도 제한 없이 돌리면, 거부한 것이 없는 gateway에 실제로 도착한 것보다 훨씬 많은 trace를 보냈다고 보고합니다.
+
+  그래서 검증은 receiver가 실제로 받은 건수를 셉니다.
+- **AWS 계정이 하나입니다.** V4는 VPC 사이의 Transit Gateway 라우팅을 확인할 뿐, 계정 간 공유는 확인하지 않습니다.
+- **비밀번호가 인스턴스에 전달됩니다.** user data와 SSM 명령에 들어가기 때문입니다. 당일에 지우는
+  실습이라 허용하지만, 남겨 둘 환경에서는 쓰면 안 됩니다.
 
 ### 결과
 
