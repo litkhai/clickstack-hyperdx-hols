@@ -17,6 +17,7 @@ Observability on ClickHouse: OpenTelemetry ingestion, the ClickStack/HyperDX UI,
 | [labs/ch2otel](labs/ch2otel/) | ClickHouse system metrics to OpenTelemetry, viewed in HyperDX |
 | [labs/elastic-migration](labs/elastic-migration/) | Migrating from Elastic: ingest, data, dashboards |
 | [labs/apm-workflows](labs/apm-workflows/) | The workflows an APM team relies on, on Managed ClickStack: slow transaction → the SQL behind it, with an in-database telemetry generator |
+| [labs/privatelink-gateway](labs/privatelink-gateway/) | Validation plan, not run yet: OTel from many VPCs across accounts through one gateway collector and one PrivateLink endpoint to a Cloud service closed to the internet |
 
 ### 🎓 Workshops (`workshops/`)
 
@@ -99,6 +100,7 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 | [labs/ch2otel](labs/ch2otel/) | ClickHouse 시스템 지표를 OpenTelemetry로 변환해 HyperDX에서 조회 |
 | [labs/elastic-migration](labs/elastic-migration/) | Elastic에서 이전: 입수, 데이터, 대시보드 |
 | [labs/apm-workflows](labs/apm-workflows/) | APM 팀이 매일 쓰는 업무 흐름을 Managed ClickStack에서: 느린 트랜잭션 → 그 뒤의 SQL, DB 안에서 도는 텔레메트리 생성기 |
+| [labs/privatelink-gateway](labs/privatelink-gateway/) | 검증 계획(아직 실행 안 함): 여러 계정의 여러 VPC에서 보낸 OTel을 gateway Collector 하나와 PrivateLink endpoint 하나로, 인터넷에 닫힌 Cloud 서비스에 보냄 |
 
 ### 🎓 워크숍 (`workshops/`)
 
