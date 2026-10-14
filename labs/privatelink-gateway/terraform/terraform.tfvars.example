@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (gitignored). Credentials are not variables:
+#   export AWS_PROFILE=<profile>
+#   export CLICKHOUSE_CLOUD_API_KEY=<key>
+#   export CLICKHOUSE_CLOUD_API_SECRET=<secret>
+clickhouse_org_id = "00000000-0000-0000-0000-000000000000"
+
+# name_prefix   = "plgw"
+# region        = "ap-northeast-2"
+# public_access = "deny"        # "tester" together with tester_cidr for V9's control
+# tester_cidr   = "203.0.113.7/32"
+# num_replicas  = 2
+# min_replica_memory_gb = 8
+# max_replica_memory_gb = 8
+# instance_type = "t4g.small"
+# enable_kafka  = false

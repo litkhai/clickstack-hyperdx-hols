@@ -1,0 +1,143 @@
+#!/bin/bash
+# Rendered by terraform templatefile() in ec2.tf. Role: ${role}
+# Template note: a literal dollar-brace in this file must be written with a doubled dollar. The
+# collector configs below are inserted as plain values, so their env references stay untouched.
+set -euo pipefail
+exec > >(tee /var/log/lab-user-data.log) 2>&1
+
+# Package name "docker" on Amazon Linux 2023: dnf found and installed it on every instance's first
+# boot on 2026-10-14 (/var/log/lab-user-data.log).
+dnf install -y docker
+systemctl enable --now docker
+install -d -m 755 /opt/otel
+
+%{ if role == "gateway" ~}
+# Gateway: two collectors against the same ClickHouse endpoint. gw-durable (host 4317/4318) has a
+# file-storage queue on a host directory; gw-default (host 24317/24318) has the defaults (V7/K2 negative).
+# The collector image runs as uid 10001, so the queue directory must belong to it.
+install -d -o 10001 -g 10001 -m 750 /var/lib/otelcol/file_storage
+
+cat > /opt/otel/ch.env <<'EOF_ENV'
+CLICKHOUSE_ENDPOINT=${ch_endpoint}
+CLICKHOUSE_USER=${ch_user}
+CLICKHOUSE_PASSWORD=${ch_password}
+EOF_ENV
+chmod 600 /opt/otel/ch.env
+
+cat > /opt/otel/gateway-durable.yaml <<'EOF_CFG'
+${configs["gateway-durable"]}
+EOF_CFG
+cat > /opt/otel/gateway-default.yaml <<'EOF_CFG'
+${configs["gateway-default"]}
+EOF_CFG
+
+docker pull ${collector_image}
+docker pull ${telemetrygen_image}
+
+docker run -d --name gw-durable --restart unless-stopped \
+  -p 4317:4317 -p 4318:4318 -p 13133:13133 -p 8888:8888 \
+  --env-file /opt/otel/ch.env \
+  -v /opt/otel/gateway-durable.yaml:/etc/otelcol/config.yaml:ro \
+  -v /var/lib/otelcol/file_storage:/var/lib/otelcol/file_storage \
+  ${collector_image} --config /etc/otelcol/config.yaml
+
+docker run -d --name gw-default --restart unless-stopped \
+  -p 24317:4317 -p 24318:4318 -p 23133:13133 -p 28888:8888 \
+  --env-file /opt/otel/ch.env \
+  -v /opt/otel/gateway-default.yaml:/etc/otelcol/config.yaml:ro \
+  ${collector_image} --config /etc/otelcol/config.yaml
+%{ endif ~}
+
+%{ if role == "agent_a" ~}
+# Service VPC with a Prometheus exporter: node-exporter, an agent collector that scrapes it and
+# forwards OTLP to the NLB, and telemetrygen on demand (bin/check.sh runs it through SSM).
+cat > /opt/otel/agent.yaml <<'EOF_CFG'
+${configs["agent"]}
+EOF_CFG
+
+docker pull ${collector_image}
+docker pull ${telemetrygen_image}
+docker pull ${node_exporter_image}
+
+# Flags as in the node_exporter README's Docker section (tag v1.12.1).
+docker run -d --name node-exporter --restart unless-stopped \
+  --net host --pid host -v /:/host:ro,rslave \
+  ${node_exporter_image} --path.rootfs=/host
+
+# (Re)start the agent with a given run id: bin/check.sh V6 calls this with the run's id.
+cat > /opt/otel/run-agent.sh <<'EOF_RUN'
+#!/bin/bash
+set -euo pipefail
+docker rm -f agent >/dev/null 2>&1 || true
+docker run -d --name agent --restart unless-stopped --net host \
+  -e RUN_ID="$1" -e NLB_ENDPOINT=${nlb_dns_name}:4317 \
+  -v /opt/otel/agent.yaml:/etc/otelcol/config.yaml:ro \
+  ${collector_image} --config /etc/otelcol/config.yaml
+EOF_RUN
+chmod 755 /opt/otel/run-agent.sh
+/opt/otel/run-agent.sh initial
+%{ endif ~}
+
+%{ if role == "gen_b" ~}
+# Second service VPC: telemetrygen only.
+docker pull ${telemetrygen_image}
+%{ endif ~}
+
+%{ if role == "ingest" ~}
+# Kafka option, ingest side: OTLP in, Kafka out. Listens on host 4317/4318 behind NLB 14317/14318.
+cat > /opt/otel/ingest-kafka.yaml <<'EOF_CFG'
+${configs["ingest-kafka"]}
+EOF_CFG
+cat > /opt/otel/ingest.env <<'EOF_ENV'
+KAFKA_BROKERS=${kafka_brokers}
+EOF_ENV
+
+docker pull ${collector_image}
+docker pull ${telemetrygen_image}
+
+docker run -d --name ingest --restart unless-stopped \
+  -p 4317:4317 -p 4318:4318 -p 13133:13133 -p 8888:8888 \
+  --env-file /opt/otel/ingest.env \
+  -v /opt/otel/ingest-kafka.yaml:/etc/otelcol/config.yaml:ro \
+  ${collector_image} --config /etc/otelcol/config.yaml
+%{ endif ~}
+
+%{ if role == "consumer" ~}
+# Kafka option, consumer side. One config, variants through the environment (see
+# collector/consumer-kafka.yaml). consumer-1 and consumer-2 start now; the variants for K3 negative
+# (marking after=false) and K4 (replay, latest) are started by bin/check.sh through this script.
+cat > /opt/otel/consumer-kafka.yaml <<'EOF_CFG'
+${configs["consumer-kafka"]}
+EOF_CFG
+cat > /opt/otel/consumer.env <<'EOF_ENV'
+CLICKHOUSE_ENDPOINT=${ch_endpoint}
+CLICKHOUSE_USER=${ch_user}
+CLICKHOUSE_PASSWORD=${ch_password}
+KAFKA_BROKERS=${kafka_brokers}
+EOF_ENV
+chmod 600 /opt/otel/consumer.env
+
+docker pull ${collector_image}
+docker pull ${telemetrygen_image}
+
+# run-consumer.sh <name> <group_id> <initial_offset> <marking_after> <database> <host_metrics_port>
+cat > /opt/otel/run-consumer.sh <<'EOF_RUN'
+#!/bin/bash
+set -euo pipefail
+name="$1"; group="$2"; offset="$3"; after="$4"; db="$5"; port="$6"
+docker rm -f "$name" >/dev/null 2>&1 || true
+docker run -d --name "$name" --restart unless-stopped \
+  -p "$port":8888 \
+  --env-file /opt/otel/consumer.env \
+  -e GROUP_ID="$group" -e INITIAL_OFFSET="$offset" -e MARKING_AFTER="$after" -e CH_DATABASE="$db" \
+  -v /opt/otel/consumer-kafka.yaml:/etc/otelcol/config.yaml:ro \
+  ${collector_image} --config /etc/otelcol/config.yaml
+EOF_RUN
+chmod 755 /opt/otel/run-consumer.sh
+# earliest, not latest: the topics are auto-created by the first produce, after these consumers
+# start. With latest, the group's first join landed after K1's messages were written and read none of
+# them (2026-10-14, MSK 3.9.x, collector 0.155.0). earliest applies only while the group has no
+# committed offset, so a restart does not re-read.
+/opt/otel/run-consumer.sh consumer-1 otel-pl earliest true otel_pl 8881
+/opt/otel/run-consumer.sh consumer-2 otel-pl earliest true otel_pl 8882
+%{ endif ~}

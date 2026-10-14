@@ -1,0 +1,40 @@
+# Agent collector in a service VPC (V6). Scrapes the node-exporter on the same host and forwards
+# OTLP to the internal NLB. Components confirmed present in otel/opentelemetry-collector-contrib:0.155.0
+# with `otelcol-contrib components` (prometheus receiver, resource processor, otlp_grpc exporter).
+# Environment:
+#   RUN_ID        written into the resource attribute verify.run_id
+#   NLB_ENDPOINT  <nlb dns name>:4317
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: node-exporter
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["localhost:9100"]
+
+processors:
+  resource:
+    attributes:
+      - key: service.name
+        value: node-exporter-a
+        action: upsert
+      - key: verify.run_id
+        value: ${env:RUN_ID}
+        action: upsert
+
+exporters:
+  otlp_grpc:
+    endpoint: ${env:NLB_ENDPOINT}
+    tls:
+      insecure: true
+
+service:
+  telemetry:
+    logs:
+      level: info
+  pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [resource]
+      exporters: [otlp_grpc]

@@ -1,0 +1,78 @@
+# Consumer collector for the Kafka option: Kafka in, ClickHouse out.
+# Keys read at tag v0.155.0 on 2026-10-14: receiver/kafkareceiver/README.md (brokers, group_id,
+# initial_offset, message_marking.after, topics, telemetry.metrics.kafka_receiver_records_delay),
+# exporter/clickhouseexporter/README.md, exporterhelper README (sending_queue.enabled,
+# retry_on_failure.max_elapsed_time: 0 = retries never stop).
+#
+# One file, four variants through the environment (bin/check.sh starts them):
+#   consumer-1, consumer-2   GROUP_ID=otel-pl      INITIAL_OFFSET=earliest MARKING_AFTER=true   CH_DATABASE=otel_pl
+#   consumer-unsafe (K3 -)   GROUP_ID=otel-pl-unsafe INITIAL_OFFSET=latest MARKING_AFTER=false  CH_DATABASE=otel_pl
+#   consumer-replay (K4 +)   GROUP_ID=<new>        INITIAL_OFFSET=earliest MARKING_AFTER=true   CH_DATABASE=otel_replay
+#   consumer-latest (K4 -)   GROUP_ID=<new>        INITIAL_OFFSET=latest   MARKING_AFTER=true   CH_DATABASE=<own>
+# Environment: KAFKA_BROKERS, CLICKHOUSE_ENDPOINT, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD,
+#              GROUP_ID, INITIAL_OFFSET, MARKING_AFTER, CH_DATABASE
+receivers:
+  kafka:
+    brokers: ${env:KAFKA_BROKERS}
+    tls:
+      insecure: false
+    group_id: ${env:GROUP_ID}
+    initial_offset: ${env:INITIAL_OFFSET}
+    traces:
+      topics: [otlp_spans]
+      encoding: otlp_proto
+    logs:
+      topics: [otlp_logs]
+      encoding: otlp_proto
+    metrics:
+      topics: [otlp_metrics]
+      encoding: otlp_proto
+    message_marking:
+      # false (receiver default): marked before the pipeline runs, so a consumer killed mid-export
+      # loses the message. true: marked after the pipeline returns, at-least-once.
+      after: ${env:MARKING_AFTER}
+    telemetry:
+      metrics:
+        kafka_receiver_records_delay:
+          enabled: true
+
+exporters:
+  clickhouse:
+    endpoint: ${env:CLICKHOUSE_ENDPOINT}
+    username: ${env:CLICKHOUSE_USER}
+    password: ${env:CLICKHOUSE_PASSWORD}
+    database: ${env:CH_DATABASE}
+    create_schema: true
+    timeout: 5s
+    # No queue: the insert happens inside the receiver's call, so "after the pipeline" means
+    # "after ClickHouse accepted the batch". With a queue, the message would be marked as soon as
+    # the batch is queued in memory and K3's guarantee would not hold.
+    sending_queue:
+      enabled: false
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 0
+
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [kafka]
+      exporters: [clickhouse]
+    logs:
+      receivers: [kafka]
+      exporters: [clickhouse]
+    metrics:
+      receivers: [kafka]
+      exporters: [clickhouse]

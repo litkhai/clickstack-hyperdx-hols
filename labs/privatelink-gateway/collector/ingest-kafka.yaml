@@ -1,0 +1,70 @@
+# Ingest collector for the Kafka option (K1-K6): OTLP in, Kafka out.
+# Keys read at tag v0.155.0 on 2026-10-14: exporter/kafkaexporter/README.md (brokers, tls,
+# traces/logs/metrics topic+encoding, sending_queue, retry_on_failure, producer).
+# Environment:
+#   KAFKA_BROKERS  comma separated host:port list (the cluster's TLS bootstrap string)
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  kafka:
+    brokers: ${env:KAFKA_BROKERS}
+    # Client-broker TLS, no client authentication (lab only; see terraform/kafka.tf).
+    tls:
+      insecure: false
+    traces:
+      topic: otlp_spans
+      encoding: otlp_proto
+    logs:
+      topic: otlp_logs
+      encoding: otlp_proto
+    metrics:
+      topic: otlp_metrics
+      encoding: otlp_proto
+    sending_queue:
+      enabled: true
+      sizer: items
+      queue_size: 1000000
+      # One Kafka record per batch. Keep max_size small enough that a record stays under the
+      # producer's max_message_bytes (default 1000000 bytes).
+      batch:
+        flush_timeout: 2s
+        min_size: 1000
+        max_size: 2000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 2h
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [kafka]
+    logs:
+      receivers: [otlp]
+      exporters: [kafka]
+    metrics:
+      receivers: [otlp]
+      exporters: [kafka]

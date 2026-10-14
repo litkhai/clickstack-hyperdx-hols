@@ -1,0 +1,80 @@
+# Gateway collector, durable variant (V7 positive, V8, K2 negative).
+# Image otel/opentelemetry-collector-contrib:0.155.0. Keys read at tag v0.155.0 on 2026-10-14:
+#   exporter/clickhouseexporter/README.md   endpoint, database, create_schema, timeout,
+#                                           sending_queue, retry_on_failure
+#   opentelemetry-collector exporter/exporterhelper/README.md (tag v0.155.0)
+#                                           sending_queue.storage / sizer / batch,
+#                                           retry_on_failure.max_elapsed_time (0 = retries never stop)
+#   extension/storage/filestorage/README.md directory, create_directory, timeout
+# Environment (set by the container, never written here):
+#   CLICKHOUSE_ENDPOINT  https://<private dns hostname>:8443
+#   CLICKHOUSE_USER / CLICKHOUSE_PASSWORD  the ingestion user
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage/queue:
+    directory: /var/lib/otelcol/file_storage
+    create_directory: true
+    timeout: 10s
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  clickhouse:
+    endpoint: ${env:CLICKHOUSE_ENDPOINT}
+    username: ${env:CLICKHOUSE_USER}
+    password: ${env:CLICKHOUSE_PASSWORD}
+    database: otel_pl
+    create_schema: true
+    timeout: 5s
+    sending_queue:
+      enabled: true
+      # Persistent queue: set storage and there is no in-memory queue (exporterhelper README).
+      storage: file_storage/queue
+      # Measure the queue and the batch in items (spans, log records, data points) so
+      # queue_size means "rows held" and not "requests held". 5M items is a lab size.
+      sizer: items
+      queue_size: 5000000
+      num_consumers: 10
+      # Batching inside the queue, as the clickhouseexporter README recommends, not the batch
+      # processor. ClickHouse wants at least 1000 rows per insert.
+      batch:
+        flush_timeout: 2s
+        min_size: 10000
+        max_size: 50000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      # Default is 300s. The exporterhelper README says 0 means "never stop"; a bounded value is
+      # used here so a run that is never unblocked ends. 2h covers V7 (>330 s) and K2 (1 h).
+      max_elapsed_time: 2h
+
+service:
+  extensions: [health_check, file_storage/queue]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [clickhouse]
+    logs:
+      receivers: [otlp]
+      exporters: [clickhouse]
+    metrics:
+      receivers: [otlp]
+      exporters: [clickhouse]
