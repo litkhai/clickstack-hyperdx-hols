@@ -1,6 +1,6 @@
 # O11y Vector AI Demo with ClickStack
 
-> **Related notes · 관련 글**: [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/third-party/hyperdx-clickstack/)
+> **Related notes · 관련 글**: [HyperDX / ClickStack 소개](https://clickhouse.litkhai.dev/articles/clickstack/hyperdx-clickstack/)
 
 OpenTelemetry 기반 관측성 데이터 수집 데모 (ClickStack/HyperDX 호환 스키마)
 

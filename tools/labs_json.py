@@ -18,7 +18,8 @@ import argparse, datetime, json, pathlib, re, subprocess, sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = "docs/labs.json"
 CATEGORIES = ("cloud", "feature", "case-study", "core-architecture",
-              "third-party", "competition", "customer-story")
+              "third-party", "clickstack", "langfuse", "librechat",
+              "competition", "customer-story")
 # Topic tags: the notes site's list (src/data/tags.json there, #145); its sync rejects any other key.
 TAGS = ("mergetree", "index", "projection", "materialized-view", "ingestion", "updates-deletes",
         "join", "performance", "replication", "cloud-architecture", "cloud-operations",
