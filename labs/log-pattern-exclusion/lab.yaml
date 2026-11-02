@@ -1,0 +1,14 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs the _base ClickStack stack.
+target: oss
+tier: T1
+services: [clickstack]
+verified_on: "clickstack-all-in-one 2.39.1 (ClickHouse 26.8.7.19), 2026-11-02"
+
+# Publishing keys (tools/lab.schema.md) — published 2026-11-02, owner's choice
+web: true
+title_ko: "ClickStack에서 로그 패턴 걷어내기: Lucene 제외와 패턴별 정규식"
+summary_ko: "Kibana의 Filter out pattern 흐름을 ClickStack에서 재현합니다. Lucene 제외가 어떤 SQL이 되는지, 문구를 겹치면 남겨야 할 패턴까지 지워지는 이유, Event Patterns 템플릿마다 정규식 하나와 노이즈 목록 테이블로 정확히 빼는 방법을 SQL로 확인합니다."
+title_en: "Filtering out log patterns in ClickStack: Lucene exclusions and one regex per pattern"
+summary_en: "Rebuild Kibana's Filter out pattern workflow in ClickStack: what Lucene exclusions become in SQL, why stacked phrases also drop patterns you meant to keep, and how one regex per Event Patterns template, kept in a noise list, gets it exact."
+category: third-party
+tags: [clickstack, observability, full-text-search, migration]
