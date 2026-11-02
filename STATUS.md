@@ -15,7 +15,7 @@ GitHub secret scanning and push protection are on.
 
 ## Inventory
 
-8 pages across four areas of the README tables: four in `labs/`, two in `workshops/`, plus
+9 pages across four areas of the README tables: five in `labs/`, two in `workshops/`, plus
 `otel-profiles/` and `clickstack-config/`. The two workshops are still single-language (#3).
 
 7 OTel profiles in `otel-profiles/` — `linux-host`, `gpu-nvidia`, `baremetal-node`, `virt-kvm`,
@@ -25,6 +25,10 @@ Ubuntu 24.04 and 22.04 rsyslog fixtures) and `mysql` (MySQL 8.4.11 container, bo
 `_base/docker-compose.otel-verify.yml`. Neither has run on a physical or cloud Linux host. The
 other five each need their own class of hardware (or, for `aws-rds-mysql`, a real RDS instance),
 so they carry no `Verified on …` line.
+
+`labs/log-pattern-exclusion/` ran end to end on 2026-11-02 against the local all-in-one 2.39.1
+(ClickHouse 26.8.7.19): `bin/check.sh` 11/11, cost in `results/`. The HyperDX UI was not driven;
+its behaviour is read from the 2.39.1 source (#110).
 
 `_base/` has the local OSS stack and the Cloud target shape, plus `bin/check.sh` (readiness)
 and `bin/verify.sh` (telemetry through to search). `verify.sh` is verified end to end on
