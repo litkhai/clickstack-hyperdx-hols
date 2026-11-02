@@ -37,7 +37,7 @@ then lists the lab but cannot run it (no `clickhouse` key).
 | `web` | `true` publishes the lab; `false` or absent does not | — |
 | `title_ko` | card title, Korean | yes |
 | `summary_ko` | one-line summary, Korean | yes |
-| `category` | one of `cloud`, `feature`, `case-study`, `core-architecture`, `third-party`, `competition`, `customer-story` — the site's article categories | yes |
+| `category` | one of `cloud`, `feature`, `case-study`, `core-architecture`, `third-party`, `clickstack`, `langfuse`, `librechat`, `competition`, `customer-story` — the site's article categories | yes |
 | `title_en`, `summary_en` | English title and summary | no |
 | `tags` | 1–5 topic keys, `[a, b]`, from the notes site's list: `mergetree`, `index`, `projection`, `materialized-view`, `ingestion`, `updates-deletes`, `join`, `performance`, `replication`, `cloud-architecture`, `cloud-operations`, `migration`, `clickpipes`, `kafka`, `postgres`, `mysql`, `data-lake`, `vector-search`, `full-text-search`, `geo`, `observability`, `clickstack`, `opentelemetry`, `timeseries`, `llm`, `langfuse`, `librechat`, `ai-agents`, `benchmark`, `roadmap` | no |
 
@@ -90,7 +90,7 @@ Workshop profiles that include labs follow this contract; they do not define the
 | `web` | `true`면 게시, `false`이거나 없으면 게시 안 함 | — |
 | `title_ko` | 카드 제목(한국어) | 예 |
 | `summary_ko` | 한 줄 요약(한국어) | 예 |
-| `category` | `cloud`, `feature`, `case-study`, `core-architecture`, `third-party`, `competition`, `customer-story` 중 하나 — 사이트 글 분류와 같다 | 예 |
+| `category` | `cloud`, `feature`, `case-study`, `core-architecture`, `third-party`, `clickstack`, `langfuse`, `librechat`, `competition`, `customer-story` 중 하나 — 사이트 글 분류와 같다 | 예 |
 | `title_en`, `summary_en` | 영어 제목과 요약 | 아니오 |
 | `tags` | 주제 키 1~5개, `[a, b]`, 노트 사이트 목록에서: `mergetree`, `index`, `projection`, `materialized-view`, `ingestion`, `updates-deletes`, `join`, `performance`, `replication`, `cloud-architecture`, `cloud-operations`, `migration`, `clickpipes`, `kafka`, `postgres`, `mysql`, `data-lake`, `vector-search`, `full-text-search`, `geo`, `observability`, `clickstack`, `opentelemetry`, `timeseries`, `llm`, `langfuse`, `librechat`, `ai-agents`, `benchmark`, `roadmap` | 아니오 |
 

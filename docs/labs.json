@@ -1,6 +1,6 @@
 {
   "repo": "clickstack-hyperdx-hols",
-  "generated": "2026-11-02T08:30:33Z",
+  "generated": "2026-11-02T08:55:45Z",
   "labs": [
     {
       "path": "clickstack-config",
@@ -8,7 +8,7 @@
       "summary_ko": "ClickHouse Terraform 프로바이더의 ClickStack 리소스(베타)로 소스, 대시보드, 알림, 웹훅을 코드로 정의하고, 한 구성을 셀프호스팅 ClickStack과 ClickHouse Cloud 양쪽에 적용합니다.",
       "title_en": "ClickStack sources, dashboards and alerts as Terraform",
       "summary_en": "Define ClickStack sources, dashboards, alerts and webhooks with the ClickHouse Terraform provider's beta ClickStack resources, as one configuration for both self-hosted ClickStack and ClickHouse Cloud.",
-      "category": "third-party",
+      "category": "clickstack",
       "tags": [
         "clickstack",
         "observability",
@@ -24,7 +24,7 @@
       "summary_ko": "Cloud 서비스 안에서 리프레시 머티리얼라이즈드 뷰로 OpenTelemetry 형태의 텔레메트리를 만들고, 느린 트랜잭션 뒤의 SQL 찾기, 알림, 배포 비교 같은 APM 워크플로를 Managed ClickStack에서 SQL로 확인합니다.",
       "title_en": "Everyday APM workflows on Managed ClickStack",
       "summary_en": "Generate OpenTelemetry-shaped telemetry inside a ClickHouse Cloud service with refreshable materialized views, then walk APM workflows on Managed ClickStack, from the SQL behind a slow transaction to alerts and deploy comparison.",
-      "category": "third-party",
+      "category": "clickstack",
       "tags": [
         "clickstack",
         "observability",
@@ -58,7 +58,7 @@
       "summary_ko": "Elastic 이전을 수집(ingest 파이프라인·Filebeat·Logstash), 데이터(매핑과 인덱스), 대시보드(Grafana) 세 부분으로 나눠 각각 컬렉터 설정, ClickHouse DDL, ClickHouse 대시보드로 변환합니다.",
       "title_en": "Migrating from Elastic to ClickStack",
       "summary_en": "Split an Elastic migration into ingest, data and dashboards, and convert each on its own: ingest pipelines and Beats or Logstash into collector config, mappings into ClickHouse DDL and a load, Grafana dashboards onto ClickHouse.",
-      "category": "third-party",
+      "category": "clickstack",
       "tags": [
         "migration",
         "clickstack",
@@ -74,7 +74,7 @@
       "summary_ko": "기본 Body 색인에서 '결제'가 '결제가'를 못 찾는 이유와, ngram(2) 색인 + Use Text Index Force enable로 고치는 방법, 그 대가(색인 크기·CPU·오탐)를 Managed ClickStack에서 측정한 실습",
       "title_en": "Korean log search in ClickStack: word index vs ngram(2), Use Text Index",
       "summary_en": "Why a Korean word misses the same word with a particle attached on ClickStack's default body index, the fix (an ngram(2) index plus Use Text Index → Force enable) and its measured cost in index size, CPU and false matches, on Managed ClickStack",
-      "category": "third-party",
+      "category": "clickstack",
       "verified_on": "26.8.1.605",
       "tags": [
         "clickstack",
@@ -92,7 +92,7 @@
       "summary_ko": "Kibana의 Filter out pattern 흐름을 ClickStack에서 재현합니다. Lucene 제외가 어떤 SQL이 되는지, 문구를 겹치면 남겨야 할 패턴까지 지워지는 이유, Event Patterns 템플릿마다 정규식 하나와 노이즈 목록 테이블로 정확히 빼는 방법을 SQL로 확인합니다.",
       "title_en": "Filtering out log patterns in ClickStack: Lucene exclusions and one regex per pattern",
       "summary_en": "Rebuild Kibana's Filter out pattern workflow in ClickStack: what Lucene exclusions become in SQL, why stacked phrases also drop patterns you meant to keep, and how one regex per Event Patterns template, kept in a noise list, gets it exact.",
-      "category": "third-party",
+      "category": "clickstack",
       "target": "oss",
       "tier": "T1",
       "verified_on": "clickstack-all-in-one 2.39.1 (ClickHouse 26.8.7.19), 2026-11-02",
@@ -112,7 +112,7 @@
       "summary_ko": "Linux 호스트, NVIDIA GPU, 베어메탈 BMC, KVM, vSphere, MySQL, RDS MySQL처럼 머신 종류마다 필요한 수신기를 서로 합쳐지는 컬렉터 설정 조각으로 모아 ClickStack으로 보냅니다.",
       "title_en": "OpenTelemetry collector profiles by machine class",
       "summary_en": "Composable OpenTelemetry collector fragments, one per class of machine (Linux host, NVIDIA GPU, bare metal with a BMC, KVM, vSphere, MySQL, RDS MySQL), written to merge into ClickStack's ingestion.",
-      "category": "third-party",
+      "category": "clickstack",
       "tags": [
         "opentelemetry",
         "clickstack",
@@ -128,7 +128,7 @@
       "summary_ko": "mysql 수신기와 CloudWatch 로그·지표를 사이드카 OpenTelemetry Collector로 ClickStack에 보내는 프로필입니다.",
       "title_en": "Monitoring Amazon RDS for MySQL with ClickStack",
       "summary_en": "A profile that sends RDS MySQL engine metrics and CloudWatch logs and metrics to ClickStack through a sidecar OpenTelemetry collector.",
-      "category": "third-party",
+      "category": "clickstack",
       "tags": [
         "mysql",
         "opentelemetry",
@@ -144,7 +144,7 @@
       "summary_ko": "엔진 지표는 사이드카 OpenTelemetry Collector의 mysql 수신기로, 에러·슬로 쿼리 로그는 ClickStack 컬렉터의 filelog로 수집해 ClickStack에 보내는 프로필입니다.",
       "title_en": "Monitoring self-managed MySQL with ClickStack",
       "summary_en": "A profile that collects MySQL engine metrics with the mysql receiver in a sidecar collector, and error and slow query logs with filelog in ClickStack's own collector.",
-      "category": "third-party",
+      "category": "clickstack",
       "tags": [
         "mysql",
         "opentelemetry",
@@ -160,7 +160,7 @@
       "summary_ko": "샘플 이커머스 앱과 결제·재고 서비스의 트레이스·로그·지표를 OpenTelemetry Collector로 ClickHouse Cloud의 ClickStack 호환 스키마에 넣고, HyperDX 서비스 맵으로 서비스 의존성을 봅니다.",
       "title_en": "ClickStack service map with a multi-service e-commerce demo",
       "summary_en": "Send traces, logs and metrics from a sample e-commerce app and its payment and inventory services through an OpenTelemetry collector into a ClickStack-compatible schema on ClickHouse Cloud, and view dependencies in the HyperDX service map.",
-      "category": "third-party",
+      "category": "clickstack",
       "tags": [
         "clickstack",
         "observability",

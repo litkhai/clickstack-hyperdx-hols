@@ -4,6 +4,6 @@ title_ko: "ClickStack 한국어 로그 검색: 단어 색인 vs ngram(2), Use Te
 summary_ko: "기본 Body 색인에서 '결제'가 '결제가'를 못 찾는 이유와, ngram(2) 색인 + Use Text Index Force enable로 고치는 방법, 그 대가(색인 크기·CPU·오탐)를 Managed ClickStack에서 측정한 실습"
 title_en: "Korean log search in ClickStack: word index vs ngram(2), Use Text Index"
 summary_en: "Why a Korean word misses the same word with a particle attached on ClickStack's default body index, the fix (an ngram(2) index plus Use Text Index → Force enable) and its measured cost in index size, CPU and false matches, on Managed ClickStack"
-category: third-party
+category: clickstack
 tags: [clickstack, full-text-search, index, observability]
 verified_on: "26.8.1.605"   # ClickHouse Cloud, with Managed ClickStack HyperDX 2.41.0, 2026-11-02 (README)
