@@ -1,6 +1,6 @@
 {
   "repo": "clickstack-hyperdx-hols",
-  "generated": "2026-11-02T08:15:05Z",
+  "generated": "2026-11-02T08:17:43Z",
   "labs": [
     {
       "path": "clickstack-config",
@@ -15,7 +15,8 @@
         "cloud-operations"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/clickstack-config/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/clickstack-config/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/clickstack-config/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/clickstack-config/"
     },
     {
       "path": "labs/apm-workflows",
@@ -31,7 +32,8 @@
         "materialized-view"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/apm-workflows/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/apm-workflows/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/apm-workflows/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/apm-workflows/"
     },
     {
       "path": "labs/ch2otel",
@@ -47,7 +49,8 @@
         "cloud-operations"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/ch2otel/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/ch2otel/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/ch2otel/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/ch2otel/"
     },
     {
       "path": "labs/elastic-migration",
@@ -62,7 +65,8 @@
         "observability"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/elastic-migration/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/elastic-migration/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/elastic-migration/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/elastic-migration/"
     },
     {
       "path": "labs/korean-log-search",
@@ -79,7 +83,8 @@
         "observability"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/korean-log-search/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/korean-log-search/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/korean-log-search/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/korean-log-search/"
     },
     {
       "path": "labs/log-pattern-exclusion",
@@ -98,7 +103,8 @@
         "migration"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/log-pattern-exclusion/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/log-pattern-exclusion/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/log-pattern-exclusion/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/log-pattern-exclusion/"
     },
     {
       "path": "otel-profiles",
@@ -113,7 +119,8 @@
         "observability"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/otel-profiles/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/otel-profiles/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/otel-profiles/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/otel-profiles/"
     },
     {
       "path": "otel-profiles/profiles/aws-rds-mysql",
@@ -160,7 +167,8 @@
         "opentelemetry"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/workshops/o11y-vector-ai/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/workshops/o11y-vector-ai/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/workshops/o11y-vector-ai/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/workshops/o11y-vector-ai/"
     },
     {
       "path": "workshops/observability-waf",
@@ -175,7 +183,8 @@
         "opentelemetry"
       ],
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/workshops/observability-waf/README.md#한국어",
-      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/workshops/observability-waf/README.md#english"
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/workshops/observability-waf/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/workshops/observability-waf/"
     }
   ]
 }
