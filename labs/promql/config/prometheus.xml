@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- Prometheus HTTP API on the main HTTP port, under /prometheus/api/v1.
+         No table pinned: every request names database and table, which is how
+         HyperDX calls it (see packages/api/src/routers/api/prometheus.ts). -->
+    <http_handlers>
+        <defaults/>
+        <rule>
+            <url_prefix>/prometheus/api/v1</url_prefix>
+            <handler>
+                <type>prometheus_api_v1</type>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>
