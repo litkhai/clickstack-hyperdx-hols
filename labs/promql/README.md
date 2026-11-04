@@ -87,8 +87,9 @@ prints them. Open http://localhost:28080, sign in with them, and add a PromQL ti
 > is involved in this lab. Re-run 2026-11-05 after adding `NEXT_PUBLIC_ENABLE_PROMQL=true` (container
 > recreated, volume kept): 14/14 PASS. The UI was checked by hand the same day: the chart editor's
 > PromQL mode charts `rate` by service, two expressions on one chart, `histogram_quantile` and a
-> Histogram-mode heatmap from this source. The source form's Source Data Type offers Logs, Traces,
-> OTel metrics and Sessions only, which is why `bin/setup_hyperdx.py` creates the source through the API.
+> Histogram-mode heatmap from this source. The same flag adds PromQL to the source form's Source Data
+> Type (without it the form offers Logs, Traces, OTel metrics and Sessions only); `bin/setup_hyperdx.py`
+> creates the source through the API, so the lab does not depend on either.
 
 Retention is a day (`TTL` on the samples inner table), so the lab stays near 26k samples: 36 series
 times four new samples per minute after the three-hour backfill.
@@ -174,5 +175,6 @@ python3 bin/check.py # 약 3분: 리프레시 한 번을 최대 160초 기다림
 > 틀리게 하면 S4 로그인 검사가 실패합니다. 이 실습에는 OpenTelemetry Collector 이미지가 없습니다.
 > 2026-11-05 `NEXT_PUBLIC_ENABLE_PROMQL=true`를 더한 뒤 다시 실행(컨테이너만 새로, 볼륨 유지): 14/14 통과.
 > 같은 날 UI도 직접 확인: 차트 편집기의 PromQL 모드에서 이 소스로 서비스별 `rate`, 한 차트에 식 두 개,
-> `histogram_quantile`, Histogram 모드 히트맵이 그려집니다. 소스 설정 폼의 Source Data Type에는 Logs·Traces·
-> OTel metrics·Sessions만 있어서, `bin/setup_hyperdx.py`가 소스를 API로 만듭니다.
+> `histogram_quantile`, Histogram 모드 히트맵이 그려집니다. 같은 플래그가 소스 설정 폼의 Source Data Type에도
+> PromQL을 더합니다(없으면 Logs·Traces·OTel metrics·Sessions 네 가지만). `bin/setup_hyperdx.py`는 소스를 API로 만들어,
+> 실습은 둘 중 어느 쪽에도 기대지 않습니다.
