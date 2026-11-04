@@ -13,6 +13,12 @@ get today, and where a Lucene exclusion quietly removes logs you still needed.
 > `_base` stack, 2026-11-02: `bin/check.sh` 11/11. HyperDX behaviour below is read from the
 > `@hyperdx/app@2.39.1` source; the UI itself was not driven in this run, and every claim is
 > checked with SQL.
+>
+> UI check, 2026-11-04 (same ClickStack all-in-one `2.39.1` image, ClickHouse 26.8.7.19, after
+> `bin/check.sh` 11/11, headless Chromium): Event Patterns on the lab rows showed the nine templates
+> with `~` counts and no include or exclude action; the five stacked Lucene phrases gave 10,000
+> results with the `… order batch …` pattern gone; the five `NOT match(Body, patternToRegex(…))`
+> conditions in SQL mode gave 20,000 results with the three patterns to keep and the signal left.
 
 ### What HyperDX 2.39.1 does under Event Patterns
 
@@ -182,6 +188,12 @@ Lucene 제외가 아직 필요한 로그까지 조용히 지우는 곳이 어디
 > 검증: ClickStack all-in-one `2.39.1`(HyperDX 2.39.1, ClickHouse 26.8.7.19), 로컬 `_base`
 > 스택, 2026-11-02, `bin/check.sh` 11/11. 아래 HyperDX 동작은 `@hyperdx/app@2.39.1` 소스에서
 > 읽었고, 이번 실행에서 UI를 직접 조작하지는 않았습니다. 모든 주장은 SQL로 확인합니다.
+>
+> UI 확인, 2026-11-04(같은 ClickStack all-in-one `2.39.1` 이미지, ClickHouse 26.8.7.19, `bin/check.sh`
+> 11/11 뒤 headless Chromium): 실습 행의 Event Patterns에 템플릿 아홉 개가 `~` 건수와 함께 보였고 포함·제외
+> 동작은 없었습니다. Lucene 문구 다섯 개를 겹치면 10,000건이 남고 `… order batch …` 패턴이 사라졌습니다.
+> SQL 모드에서 `NOT match(Body, patternToRegex(…))` 다섯 개를 이으면 20,000건이 남고 유지할 패턴 셋과
+> 찾을 신호가 남았습니다.
 
 ### HyperDX 2.39.1의 Event Patterns가 하는 일
 
