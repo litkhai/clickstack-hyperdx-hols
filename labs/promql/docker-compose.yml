@@ -17,6 +17,9 @@ services:
     environment:
       # Off by default in HyperDX; the /api/v1/prometheus router only mounts with it.
       ENABLE_PROMQL: "true"
+      # The UI flag: without it the chart editor has no PromQL mode (packages/app/src/config.ts,
+      # IS_PROMQL_ENABLED), even though the API answers PromQL.
+      NEXT_PUBLIC_ENABLE_PROMQL: "true"
     volumes:
       - promql-data:/data
       - ./config/prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro

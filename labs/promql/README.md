@@ -17,7 +17,7 @@ configuration of (issue #117), so Managed ClickStack is not used here.
 
 | Piece | Where | What |
 |---|---|---|
-| ClickStack all-in-one `2.42.0` | `docker-compose.yml` | the HyperDX version Managed ClickStack runs; bundles ClickHouse 26.8.34.13; `ENABLE_PROMQL=true` mounts HyperDX's `/api/v1/prometheus` router |
+| ClickStack all-in-one `2.42.0` | `docker-compose.yml` | the HyperDX version Managed ClickStack runs; bundles ClickHouse 26.8.34.13; `ENABLE_PROMQL=true` mounts HyperDX's `/api/v1/prometheus` router, and `NEXT_PUBLIC_ENABLE_PROMQL=true` gives the chart editor its PromQL mode (without it the UI has only Builder and SQL) |
 | TimeSeries setting | `config/timeseries-user.xml` | `allow_experimental_time_series_table=1` in the `default` profile (the `default`, `api` and `worker` users use it) |
 | Prometheus HTTP API | `config/prometheus.xml` | `prometheus_api_v1` handler at `/prometheus/api/v1` on the ClickHouse HTTP port; no table pinned, HyperDX names it per request |
 | `promql.metrics` | `sql/01-table.sql` | `ENGINE = TimeSeries`, samples inner table with a 1-day TTL |
@@ -84,7 +84,11 @@ prints them. Open http://localhost:28080, sign in with them, and add a PromQL ti
 > 26.8.34.13), local, 2026-11-04: `bin/up.sh` from an empty volume, then `bin/check.py` 14/14 PASS
 > (negatives included). Fault injection: with the refresh view stopped, `S1 refreshable MV adds samples`
 > fails; with a wrong test-user password, the S4 login check fails. No OpenTelemetry Collector image
-> is involved in this lab. The HyperDX UI was not driven.
+> is involved in this lab. Re-run 2026-11-05 after adding `NEXT_PUBLIC_ENABLE_PROMQL=true` (container
+> recreated, volume kept): 14/14 PASS. The UI was checked by hand the same day: the chart editor's
+> PromQL mode charts `rate` by service, two expressions on one chart, `histogram_quantile` and a
+> Histogram-mode heatmap from this source. The source form's Source Data Type offers Logs, Traces,
+> OTel metrics and Sessions only, which is why `bin/setup_hyperdx.py` creates the source through the API.
 
 Retention is a day (`TTL` on the samples inner table), so the lab stays near 26k samples: 36 series
 times four new samples per minute after the three-hour backfill.
@@ -103,7 +107,7 @@ ClickStack은 쓰지 않습니다.
 
 | 구성 | 위치 | 내용 |
 |---|---|---|
-| ClickStack all-in-one `2.42.0` | `docker-compose.yml` | Managed ClickStack이 쓰는 HyperDX 버전. ClickHouse 26.8.34.13 포함. `ENABLE_PROMQL=true`로 HyperDX의 `/api/v1/prometheus` 라우터를 켬 |
+| ClickStack all-in-one `2.42.0` | `docker-compose.yml` | Managed ClickStack이 쓰는 HyperDX 버전. ClickHouse 26.8.34.13 포함. `ENABLE_PROMQL=true`로 HyperDX의 `/api/v1/prometheus` 라우터를 켜고, `NEXT_PUBLIC_ENABLE_PROMQL=true`로 차트 편집기에 PromQL 모드가 생김(없으면 UI에는 Builder와 SQL뿐) |
 | TimeSeries 설정 | `config/timeseries-user.xml` | `default` 프로필에 `allow_experimental_time_series_table=1` (`default`, `api`, `worker` 사용자가 이 프로필을 씀) |
 | Prometheus HTTP API | `config/prometheus.xml` | ClickHouse HTTP 포트의 `/prometheus/api/v1`에 `prometheus_api_v1` 핸들러. 테이블은 고정하지 않고 HyperDX가 요청마다 지정 |
 | `promql.metrics` | `sql/01-table.sql` | `ENGINE = TimeSeries`, 샘플 내부 테이블에 1일 TTL |
@@ -168,4 +172,7 @@ python3 bin/check.py # 약 3분: 리프레시 한 번을 최대 160초 기다림
 > 로컬, 2026-11-04: 빈 볼륨에서 `bin/up.sh`, 이어서 `bin/check.py` 14/14 통과(부정 검증 포함). 고장
 > 주입: 리프레시 뷰를 멈추면 `S1 refreshable MV adds samples`가 실패하고, 테스트 사용자 비밀번호를
 > 틀리게 하면 S4 로그인 검사가 실패합니다. 이 실습에는 OpenTelemetry Collector 이미지가 없습니다.
-> HyperDX UI는 직접 조작하지 않았습니다.
+> 2026-11-05 `NEXT_PUBLIC_ENABLE_PROMQL=true`를 더한 뒤 다시 실행(컨테이너만 새로, 볼륨 유지): 14/14 통과.
+> 같은 날 UI도 직접 확인: 차트 편집기의 PromQL 모드에서 이 소스로 서비스별 `rate`, 한 차트에 식 두 개,
+> `histogram_quantile`, Histogram 모드 히트맵이 그려집니다. 소스 설정 폼의 Source Data Type에는 Logs·Traces·
+> OTel metrics·Sessions만 있어서, `bin/setup_hyperdx.py`가 소스를 API로 만듭니다.
