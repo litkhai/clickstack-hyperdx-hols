@@ -1,0 +1,7 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs its own ClickStack, Collector and LiteLLM containers.
+target: oss
+tier: T1
+services: [clickstack, otel-collector, litellm]
+verified_on: "clickstack-all-in-one 2.42.0 (ClickHouse 26.8.34.13), otelcol-contrib 0.160.0, litellm 1.108.0, 2026-11-05"
+
+# Publishing keys: not set. Whether this lab gets a card on the notes site (web: true) is the owner's choice.

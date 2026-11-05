@@ -21,6 +21,7 @@ Observability on ClickHouse: OpenTelemetry ingestion, the ClickStack/HyperDX UI,
 | [labs/korean-log-search](labs/korean-log-search/) | Korean log search in ClickStack: why `결제` finds nothing on the default body index, the two settings that fix it (an `ngrams(2)` index and Use Text Index → Force enable) and their measured cost, run on Managed ClickStack on 2026-11-02 (K1–K9) |
 | [labs/log-pattern-exclusion](labs/log-pattern-exclusion/) | Kibana's *Filter out pattern* in ClickStack: what Lucene exclusions become in SQL, why stacked phrases also remove patterns you meant to keep, and one regex per Event Patterns template, kept in a noise list (verified on 2.39.1, 2026-11-02) |
 | [labs/promql](labs/promql/) | PromQL in HyperDX on a local ClickStack 2.42.0: turn on ClickHouse's `TimeSeries` engine and Prometheus HTTP API, fill the table from a refreshable MV, register a PromQL source, check rate and `histogram_quantile` with SQL and HTTP |
+| [labs/llm-serving-observability](labs/llm-serving-observability/) | Self-hosted LLM serving (vLLM behind LiteLLM) observed with ClickStack, runnable without a GPU: the OTel Collector configuration, an `nvidia-smi` → OTLP pusher, LiteLLM gateway-metric cardinality with and without the attribute allowlist, and the 32-tile HyperDX dashboard imported onto hand-made sources |
 
 ### 🎓 Workshops (`workshops/`)
 
@@ -107,6 +108,7 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 | [labs/korean-log-search](labs/korean-log-search/) | ClickStack 한국어 로그 검색: 기본 Body 색인에서 `결제`가 0건인 이유, 고치는 설정 두 가지(`ngrams(2)` 색인, Use Text Index → Force enable)와 측정한 대가. 2026-11-02 Managed ClickStack에서 실행(K1–K9) |
 | [labs/log-pattern-exclusion](labs/log-pattern-exclusion/) | ClickStack에서 Kibana의 *Filter out pattern* 대신: Lucene 제외가 어떤 SQL이 되는지, 문구를 겹치면 남겨야 할 패턴까지 왜 지워지는지, Event Patterns 템플릿마다 정규식 하나와 노이즈 목록 테이블 (2.39.1에서 검증, 2026-11-02) |
 | [labs/promql](labs/promql/) | 로컬 ClickStack 2.42.0에서 HyperDX로 PromQL: ClickHouse `TimeSeries` 엔진과 Prometheus HTTP API를 켜고, 리프레시 MV로 테이블을 채우고, PromQL 소스를 등록해 rate와 `histogram_quantile`을 SQL과 HTTP로 확인 |
+| [labs/llm-serving-observability](labs/llm-serving-observability/) | LiteLLM 뒤의 vLLM을 ClickStack으로 관측, GPU 없이 실행: OTel Collector 설정, `nvidia-smi` → OTLP 푸셔, 속성 허용 목록 유무에 따른 LiteLLM 게이트웨이 메트릭 카디널리티, 손으로 만든 소스에 가져온 HyperDX 대시보드(타일 32개) |
 
 ### 🎓 워크숍 (`workshops/`)
 

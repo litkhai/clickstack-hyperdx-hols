@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stand-in for nvidia-smi on a machine with no NVIDIA GPU. Answers only the query gpu_push.py makes:
+#   --query-gpu=index,power.draw,clocks.sm,clocks.max.sm,temperature.gpu,clocks_event_reasons.active
+# with values in the range measured on a GB10 (power 11-56 W, SM clock 2411 of 3003 MHz,
+# 43-51 C, throttle bitmask 0). Power moves a little so the trend tiles are not flat.
+p=$(awk -v s="$(date +%s)" 'BEGIN { srand(s); printf "%.2f", 11 + rand() * 20 }')
+echo "0, ${p}, 2411, 3003, 45, 0x0000000000000000"
