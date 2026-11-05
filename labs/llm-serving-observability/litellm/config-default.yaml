@@ -1,0 +1,11 @@
+# Same as config.yaml without the attribute allowlist: LiteLLM's default metric attributes.
+# Used only by check.py for the S4 negative (LITELLM_CONFIG=config-default.yaml).
+model_list:
+  - model_name: mock-coder
+    litellm_params:
+      model: openai/mock
+      api_base: http://vllm:8000/v1
+      api_key: none
+
+litellm_settings:
+  callbacks: ["otel"]

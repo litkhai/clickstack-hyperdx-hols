@@ -1,0 +1,1267 @@
+{
+  "version": "0.1.0",
+  "name": "LLM serving observability (v3)",
+  "tags": [
+    "llm",
+    "gpu",
+    "vllm",
+    "genai",
+    "agent"
+  ],
+  "tiles": [
+    {
+      "id": "6aa38f96d18b1bffcb94f40d",
+      "x": 0,
+      "y": 0,
+      "w": 5,
+      "h": 3,
+      "config": {
+        "name": "Total requests",
+        "source": "LLM Trace",
+        "displayType": "number",
+        "color": "chart-blue",
+        "backgroundChart": {
+          "type": "area"
+        },
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "",
+            "isDelta": false,
+            "alias": "Total Requests"
+          }
+        ],
+        "where": "",
+        "numberFormat": {
+          "output": "number",
+          "thousandSeparated": true
+        }
+      },
+      "containerId": "overview"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f40e",
+      "x": 5,
+      "y": 0,
+      "w": 5,
+      "h": 3,
+      "config": {
+        "name": "Average request latency",
+        "source": "LLM Trace",
+        "displayType": "number",
+        "numberFormat": {
+          "output": "duration",
+          "factor": 1e-09
+        },
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Duration",
+            "isDelta": false,
+            "alias": "Avg Latency"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "overview"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f40f",
+      "x": 10,
+      "y": 0,
+      "w": 5,
+      "h": 3,
+      "config": {
+        "name": "GPU power (W)",
+        "source": "LLM Metrics",
+        "displayType": "number",
+        "numberFormat": {
+          "output": "number",
+          "mantissa": 1,
+          "unit": " W"
+        },
+        "color": "chart-orange",
+        "colorRules": [
+          {
+            "operator": "gte",
+            "value": 80,
+            "color": "chart-error",
+            "label": "Critical"
+          },
+          {
+            "operator": "gte",
+            "value": 60,
+            "color": "chart-warning",
+            "label": "Warning"
+          }
+        ],
+        "select": [
+          {
+            "aggFn": "last_value",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "GPU Power",
+            "metricType": "gauge",
+            "metricName": "gpu.power.draw"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "overview"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f410",
+      "x": 15,
+      "y": 0,
+      "w": 5,
+      "h": 3,
+      "config": {
+        "name": "GPU temperature (°C)",
+        "source": "LLM Metrics",
+        "displayType": "number",
+        "numberFormat": {
+          "output": "number",
+          "mantissa": 1,
+          "unit": " °C"
+        },
+        "color": "chart-cyan",
+        "colorRules": [
+          {
+            "operator": "gte",
+            "value": 85,
+            "color": "chart-error",
+            "label": "Critical"
+          },
+          {
+            "operator": "gte",
+            "value": 70,
+            "color": "chart-warning",
+            "label": "Warning"
+          }
+        ],
+        "select": [
+          {
+            "aggFn": "last_value",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "GPU Temp",
+            "metricType": "gauge",
+            "metricName": "gpu.temperature"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "overview"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f411",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "GPU power trend",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Avg Power (W)",
+            "metricType": "gauge",
+            "metricName": "gpu.power.draw"
+          },
+          {
+            "aggFn": "max",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Max Power (W)",
+            "metricType": "gauge",
+            "metricName": "gpu.power.draw"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "gpu-hw"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f412",
+      "x": 12,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "GPU temperature trend",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Avg Temp (°C)",
+            "metricType": "gauge",
+            "metricName": "gpu.temperature"
+          },
+          {
+            "aggFn": "max",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Max Temp (°C)",
+            "metricType": "gauge",
+            "metricName": "gpu.temperature"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "gpu-hw"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f413",
+      "x": 0,
+      "y": 4,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "GPU SM clock (MHz)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "SM Clock (MHz)",
+            "metricType": "gauge",
+            "metricName": "gpu.clock.sm"
+          },
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "SM Clock Max (MHz)",
+            "metricType": "gauge",
+            "metricName": "gpu.clock.sm.max"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "gpu-hw"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f414",
+      "x": 12,
+      "y": 4,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "GPU throttle state",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "last_value",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Throttle Bitmask",
+            "metricType": "gauge",
+            "metricName": "gpu.throttle_reasons"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "gpu-hw"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f415",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "CPU utilization & load average",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "CPU Utilization",
+            "metricType": "gauge",
+            "metricName": "system.cpu.utilization"
+          },
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Load 1m",
+            "metricType": "gauge",
+            "metricName": "system.cpu.load_average.1m"
+          },
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Load 5m",
+            "metricType": "gauge",
+            "metricName": "system.cpu.load_average.5m"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "infra"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f416",
+      "x": 12,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Memory utilization",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Memory Utilization",
+            "metricType": "gauge",
+            "metricName": "system.memory.utilization"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "infra"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f417",
+      "x": 0,
+      "y": 4,
+      "w": 8,
+      "h": 4,
+      "config": {
+        "name": "Network IO",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "byte"
+        },
+        "select": [
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Network IO",
+            "metricType": "sum",
+            "metricName": "system.network.io"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "infra"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f418",
+      "x": 8,
+      "y": 4,
+      "w": 8,
+      "h": 4,
+      "config": {
+        "name": "Disk IO",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "byte"
+        },
+        "select": [
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Disk IO",
+            "metricType": "sum",
+            "metricName": "system.disk.io"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "infra"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f419",
+      "x": 16,
+      "y": 4,
+      "w": 8,
+      "h": 4,
+      "config": {
+        "name": "Filesystem utilization",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "percent"
+        },
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "Attributes['mountpoint'] = '/'",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "FS Utilization",
+            "metricType": "gauge",
+            "metricName": "system.filesystem.utilization"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "infra"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f41a",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "KV cache usage & request queue",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "KV Cache Usage",
+            "metricType": "gauge",
+            "metricName": "vllm:kv_cache_usage_perc"
+          },
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Requests Running",
+            "metricType": "gauge",
+            "metricName": "vllm:num_requests_running"
+          },
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Requests Waiting",
+            "metricType": "gauge",
+            "metricName": "vllm:num_requests_waiting"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-engine",
+      "tabId": "engine-status"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f41b",
+      "x": 12,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Token throughput (prompt / generation)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Prompt Tokens",
+            "metricType": "sum",
+            "metricName": "vllm:prompt_tokens_total"
+          },
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Generation Tokens",
+            "metricType": "sum",
+            "metricName": "vllm:generation_tokens_total"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-engine",
+      "tabId": "engine-status"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f41c",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "E2E request latency (P50/P95/P99)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "duration",
+          "factor": 1
+        },
+        "select": [
+          {
+            "aggFn": "quantile",
+            "level": 0.5,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "P50",
+            "metricType": "histogram",
+            "metricName": "vllm:e2e_request_latency_seconds"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "P95",
+            "metricType": "histogram",
+            "metricName": "vllm:e2e_request_latency_seconds"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.99,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "P99",
+            "metricType": "histogram",
+            "metricName": "vllm:e2e_request_latency_seconds"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-engine",
+      "tabId": "latency-analysis"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f41d",
+      "x": 12,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "TTFT & Inter-Token Latency (P50/P95)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "duration",
+          "factor": 1
+        },
+        "select": [
+          {
+            "aggFn": "quantile",
+            "level": 0.5,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "TTFT P50",
+            "metricType": "histogram",
+            "metricName": "vllm:time_to_first_token_seconds"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "TTFT P95",
+            "metricType": "histogram",
+            "metricName": "vllm:time_to_first_token_seconds"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.5,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "ITL P50",
+            "metricType": "histogram",
+            "metricName": "vllm:inter_token_latency_seconds"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "ITL P95",
+            "metricType": "histogram",
+            "metricName": "vllm:inter_token_latency_seconds"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-engine",
+      "tabId": "latency-analysis"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f41e",
+      "x": 0,
+      "y": 0,
+      "w": 8,
+      "h": 4,
+      "config": {
+        "name": "Prefix Cache Hit Rate (hits / queries)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "formulas": [
+          {
+            "expression": "A / B * 100",
+            "alias": "Hit Rate %"
+          }
+        ],
+        "showOperandSeries": false,
+        "select": [
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Cache Hits",
+            "metricType": "sum",
+            "metricName": "vllm:prefix_cache_hits_total"
+          },
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Cache Queries",
+            "metricType": "sum",
+            "metricName": "vllm:prefix_cache_queries_total"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-advanced"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f41f",
+      "x": 8,
+      "y": 0,
+      "w": 8,
+      "h": 4,
+      "config": {
+        "name": "Preemptions",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Preemptions",
+            "metricType": "sum",
+            "metricName": "vllm:num_preemptions_total"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-advanced"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f420",
+      "x": 16,
+      "y": 0,
+      "w": 8,
+      "h": 4,
+      "config": {
+        "name": "vLLM scrape health (up & scrape)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "last_value",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Up (1=OK)",
+            "metricType": "gauge",
+            "metricName": "up"
+          },
+          {
+            "aggFn": "last_value",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Samples Scraped",
+            "metricType": "gauge",
+            "metricName": "scrape_samples_scraped"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-advanced"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f421",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Requests by StatusCode",
+        "source": "LLM Trace",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "",
+            "isDelta": false,
+            "alias": "Requests"
+          }
+        ],
+        "where": "",
+        "groupBy": "StatusCode"
+      },
+      "containerId": "genai"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f422",
+      "x": 12,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "GenAI token usage (input / output)",
+        "source": "LLM Trace",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "SpanAttributes['gen_ai.usage.input_tokens'] != ''",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "toFloat64OrZero(SpanAttributes['gen_ai.usage.input_tokens'])",
+            "isDelta": false,
+            "alias": "Avg Input Tokens"
+          },
+          {
+            "aggFn": "avg",
+            "aggCondition": "SpanAttributes['gen_ai.usage.output_tokens'] != ''",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "toFloat64OrZero(SpanAttributes['gen_ai.usage.output_tokens'])",
+            "isDelta": false,
+            "alias": "Avg Output Tokens"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "genai"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f423",
+      "x": 0,
+      "y": 4,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Token usage distribution (metric P50/P95)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "quantile",
+            "level": 0.5,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Token P50",
+            "metricType": "histogram",
+            "metricName": "gen_ai.client.token.usage"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Token P95",
+            "metricType": "histogram",
+            "metricName": "gen_ai.client.token.usage"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "genai"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f424",
+      "x": 12,
+      "y": 4,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "GenAI Operation Duration (P50/P95)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "duration",
+          "factor": 1
+        },
+        "select": [
+          {
+            "aggFn": "quantile",
+            "level": 0.5,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Duration P50",
+            "metricType": "histogram",
+            "metricName": "gen_ai.client.operation.duration"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Duration P95",
+            "metricType": "histogram",
+            "metricName": "gen_ai.client.operation.duration"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "genai"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f425",
+      "x": 0,
+      "y": 0,
+      "w": 24,
+      "h": 5,
+      "config": {
+        "name": "Performance by operation",
+        "source": "LLM Trace",
+        "displayType": "table",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "",
+            "isDelta": false,
+            "alias": "Requests"
+          },
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Duration",
+            "isDelta": false,
+            "alias": "Avg Latency",
+            "numberFormat": {
+              "output": "duration",
+              "factor": 1e-09
+            }
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Duration",
+            "isDelta": false,
+            "alias": "P95 Latency",
+            "numberFormat": {
+              "output": "duration",
+              "factor": 1e-09
+            }
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.99,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Duration",
+            "isDelta": false,
+            "alias": "P99 Latency",
+            "numberFormat": {
+              "output": "duration",
+              "factor": 1e-09
+            }
+          }
+        ],
+        "where": "",
+        "groupBy": "SpanName",
+        "orderBy": "\"Requests\" DESC"
+      },
+      "containerId": "trace-analysis"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f426",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Log event timeline",
+        "source": "LLM Log",
+        "displayType": "stacked_bar",
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "",
+            "isDelta": false,
+            "alias": "Log Events"
+          }
+        ],
+        "where": "",
+        "groupBy": "LogAttributes['event_name']"
+      },
+      "containerId": "logs"
+    },
+    {
+      "id": "6aa38f96d18b1bffcb94f427",
+      "x": 12,
+      "y": 0,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Recent log search",
+        "source": "LLM Log",
+        "displayType": "search",
+        "select": "",
+        "where": "",
+        "whereLanguage": "lucene"
+      },
+      "containerId": "logs"
+    },
+    {
+      "id": "6aa3a4c7e91b2d3f40516201",
+      "x": 20,
+      "y": 0,
+      "w": 4,
+      "h": 3,
+      "config": {
+        "name": "GPU throttle (0 = healthy)",
+        "source": "LLM Metrics",
+        "displayType": "number",
+        "numberFormat": {
+          "output": "number",
+          "mantissa": 0
+        },
+        "color": "chart-green",
+        "colorRules": [
+          {
+            "operator": "gte",
+            "value": 1,
+            "color": "chart-error",
+            "label": "Throttling"
+          }
+        ],
+        "select": [
+          {
+            "aggFn": "last_value",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Throttle",
+            "metricType": "gauge",
+            "metricName": "gpu.throttle_reasons"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "overview"
+    },
+    {
+      "id": "6aa3a4c7e91b2d3f40516202",
+      "x": 0,
+      "y": 4,
+      "w": 24,
+      "h": 4,
+      "config": {
+        "name": "TTFT — gateway vs engine (P50/P95)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "numberFormat": {
+          "output": "duration",
+          "factor": 1
+        },
+        "select": [
+          {
+            "aggFn": "quantile",
+            "level": 0.5,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Gateway TTFT P50",
+            "metricType": "histogram",
+            "metricName": "gen_ai.server.time_to_first_token"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Gateway TTFT P95",
+            "metricType": "histogram",
+            "metricName": "gen_ai.server.time_to_first_token"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.5,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Engine TTFT P50",
+            "metricType": "histogram",
+            "metricName": "vllm:time_to_first_token_seconds"
+          },
+          {
+            "aggFn": "quantile",
+            "level": 0.95,
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Engine TTFT P95",
+            "metricType": "histogram",
+            "metricName": "vllm:time_to_first_token_seconds"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-engine",
+      "tabId": "latency-analysis"
+    },
+    {
+      "id": "6aa3a4c7e91b2d3f40516203",
+      "x": 0,
+      "y": 4,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Prompt tokens served from cache",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Cached Prompt Tokens",
+            "metricType": "sum",
+            "metricName": "vllm:prompt_tokens_cached_total"
+          },
+          {
+            "aggFn": "increase",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Total Prompt Tokens",
+            "metricType": "sum",
+            "metricName": "vllm:prompt_tokens_total"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "vllm-advanced"
+    },
+    {
+      "id": "6aa3a4c7e91b2d3f40516204",
+      "x": 12,
+      "y": 4,
+      "w": 12,
+      "h": 4,
+      "config": {
+        "name": "Queue reasons (capacity / deferred)",
+        "source": "LLM Metrics",
+        "displayType": "line",
+        "select": [
+          {
+            "aggFn": "avg",
+            "aggCondition": "",
+            "aggConditionLanguage": "lucene",
+            "valueExpression": "Value",
+            "isDelta": false,
+            "alias": "Waiting",
+            "metricType": "gauge",
+            "metricName": "vllm:num_requests_waiting_by_reason"
+          }
+        ],
+        "where": "",
+        "groupBy": "Attributes['reason']"
+      },
+      "containerId": "vllm-advanced"
+    },
+    {
+      "id": "6aa3a4c7e91b2d3f40516205",
+      "x": 0,
+      "y": 4,
+      "w": 24,
+      "h": 4,
+      "config": {
+        "name": "Messages per request — agent session depth (prompt / completion events)",
+        "source": "LLM Log",
+        "displayType": "line",
+        "formulas": [
+          {
+            "expression": "A / B",
+            "alias": "Messages per Request"
+          }
+        ],
+        "showOperandSeries": false,
+        "select": [
+          {
+            "aggFn": "count",
+            "aggCondition": "LogAttributes['event_name'] = 'gen_ai.content.prompt'",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "",
+            "isDelta": false,
+            "alias": "Prompt Events"
+          },
+          {
+            "aggFn": "count",
+            "aggCondition": "LogAttributes['event_name'] = 'gen_ai.content.completion'",
+            "aggConditionLanguage": "sql",
+            "valueExpression": "",
+            "isDelta": false,
+            "alias": "Completion Events"
+          }
+        ],
+        "where": ""
+      },
+      "containerId": "logs"
+    }
+  ],
+  "filters": [],
+  "containers": [
+    {
+      "id": "overview",
+      "title": "📊 Overview",
+      "collapsed": false
+    },
+    {
+      "id": "gpu-hw",
+      "title": "🖥️ GPU & hardware",
+      "collapsed": false
+    },
+    {
+      "id": "infra",
+      "title": "⚙️ Infrastructure",
+      "collapsed": false
+    },
+    {
+      "id": "vllm-engine",
+      "title": "🚀 vLLM engine",
+      "collapsed": false,
+      "tabs": [
+        {
+          "id": "engine-status",
+          "title": "Engine state"
+        },
+        {
+          "id": "latency-analysis",
+          "title": "Latency"
+        }
+      ]
+    },
+    {
+      "id": "vllm-advanced",
+      "title": "🔧 vLLM advanced (cache, preemption, scrape)",
+      "collapsed": false
+    },
+    {
+      "id": "genai",
+      "title": "🤖 GenAI requests & tokens",
+      "collapsed": false
+    },
+    {
+      "id": "trace-analysis",
+      "title": "🔍 Trace analysis",
+      "collapsed": false
+    },
+    {
+      "id": "logs",
+      "title": "📝 Logs",
+      "collapsed": false
+    }
+  ]
+}

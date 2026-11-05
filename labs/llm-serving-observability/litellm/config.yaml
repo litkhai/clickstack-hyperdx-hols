@@ -1,0 +1,19 @@
+# LiteLLM proxy in front of the mock vLLM, with OTel traces, events and metrics to the Collector.
+model_list:
+  - model_name: mock-coder
+    litellm_params:
+      model: openai/mock
+      api_base: http://vllm:8000/v1
+      api_key: none
+
+litellm_settings:
+  callbacks: ["otel"]
+
+# Top-level key, not under litellm_settings. Without it the default metric attributes include
+# hidden_params and metadata.requester_metadata, which differ per request: one new series per
+# request, re-exported on every cycle (config-default.yaml shows it).
+callback_settings:
+  otel:
+    attributes:
+      include_list: [gen_ai.framework, gen_ai.operation.name, gen_ai.provider.name,
+                     gen_ai.request.model, gen_ai.system]

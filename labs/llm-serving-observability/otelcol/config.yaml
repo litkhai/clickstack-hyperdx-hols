@@ -1,0 +1,68 @@
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: vllm
+          scrape_interval: 15s
+          static_configs: [{ targets: ["vllm:8000"] }]
+          metric_relabel_configs:
+            # keep only these families; keep histogram buckets (needed for p95/p99 TTFT)
+            - source_labels: [__name__]
+              action: keep
+              regex: "vllm:(num_requests_(running|waiting)|num_requests_waiting_by_reason|kv_cache_usage_perc|prefix_cache_(queries|hits)_total|num_preemptions_total|(prompt|generation)_tokens_total|prompt_tokens_cached_total|request_success_total|(time_to_first_token|inter_token_latency|e2e_request_latency)_seconds.*|iteration_tokens_total.*|request_(prompt|generation)_tokens.*)"
+
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318            # inside the Docker network only, no host port
+        max_request_body_size: 33554432   # 32 MiB; the HTTP default is 20 MiB (confighttp, v0.160.0)
+
+  host_metrics:
+    collection_interval: 30s
+    root_path: /hostfs
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization: { enabled: true }     # off by default
+      load:
+      memory:                                           # the only window into unified memory on GB10
+        metrics:
+          system.memory.utilization: { enabled: true }  # off by default
+      disk:
+        exclude:
+          devices: ["^loop\\d+$", "^ram\\d+$", "^dm-\\d+$"]
+          match_type: regexp
+      filesystem:
+        metrics:
+          system.filesystem.utilization: { enabled: true }  # off by default
+        exclude_fs_types:
+          fs_types: [squashfs, tmpfs, devtmpfs, overlay, nsfs, tracefs, proc, sysfs,
+                     cgroup2, securityfs, pstore, mqueue, debugfs, configfs, fusectl,
+                     bpf, autofs, hugetlbfs, rpc_pipefs, binfmt_misc, efivarfs, ramfs]
+          match_type: strict
+      network:
+      paging:
+      processes:                                        # never the per-process process:
+
+processors:
+  memory_limiter: { check_interval: 5s, limit_mib: 512 }
+  batch: { timeout: 60s, send_batch_size: 5000 }
+
+exporters:
+  clickhouse:
+    endpoint: ${env:CH_ENDPOINT}     # ClickHouse Cloud: tcp://<service>.clickhouse.cloud:9440?secure=true
+    username: ${env:CH_USER}         # ClickHouse Cloud: default
+    password: ${env:CH_PASSWORD}
+    database: llm_obs
+    create_schema: true
+    ttl: 720h
+    async_insert: true
+
+service:
+  telemetry:
+    metrics:
+      readers: [{ pull: { exporter: { prometheus: { host: 0.0.0.0, port: 8888 } } } }]
+  pipelines:
+    metrics: { receivers: [prometheus, host_metrics, otlp], processors: [memory_limiter, batch], exporters: [clickhouse] }
+    traces:  { receivers: [otlp], processors: [memory_limiter, batch], exporters: [clickhouse] }
+    logs:    { receivers: [otlp], processors: [memory_limiter, batch], exporters: [clickhouse] }
