@@ -71,7 +71,7 @@ HyperDX is at `http://localhost:38080`; the test user is in `.run/hyperdx-user`.
 > Verified on ClickStack all-in-one `2.42.0` (HyperDX 2.42.0, as reported by its `/health`;
 > ClickHouse 26.8.34.13), OTel Collector contrib `0.160.0`, LiteLLM `1.108.0`, Python 3.12.16 —
 > local Docker Desktop (macOS arm64), 2026-11-05: from an empty volume, `bin/up.sh` then `bin/check.py`,
-> 13 of 13 checks passed, the negative checks included (S1 fault: `exclude_devices`; S4: 2 series with
+> 14 of 14 checks passed, the negative checks included (S1 fault: `exclude_devices`; S4: 2 series with
 > the allowlist, 20 without, after 10 requests each).
 
 ### On a real box
@@ -149,7 +149,7 @@ HyperDX는 `http://localhost:38080`이고 테스트 사용자는 `.run/hyperdx-u
 
 > 검증: ClickStack all-in-one `2.42.0`(HyperDX 2.42.0, `/health` 보고값, ClickHouse 26.8.34.13),
 > OTel Collector contrib `0.160.0`, LiteLLM `1.108.0`, Python 3.12.16. 로컬 Docker Desktop(macOS arm64), 2026-11-05:
-> 빈 볼륨에서 `bin/up.sh`, 이어서 `bin/check.py` 13개 모두 통과(부정 검증 포함. S1 고장: `exclude_devices`, S4: 요청 10개씩
+> 빈 볼륨에서 `bin/up.sh`, 이어서 `bin/check.py` 14개 모두 통과(부정 검증 포함. S1 고장: `exclude_devices`, S4: 요청 10개씩
 > 보낸 뒤 허용 목록이 있으면 시리즈 2개, 없으면 20개).
 
 ### 실제 장비에서
