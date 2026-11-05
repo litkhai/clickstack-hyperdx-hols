@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- 26.8.34.13 (bundled in clickstack-all-in-one:2.42.0) rejects
+                 enable_time_series_table as UNKNOWN_SETTING; it takes the
+                 older name below. The master docs use the newer one. -->
+            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        </default>
+    </profiles>
+</clickhouse>
