@@ -1,6 +1,6 @@
 {
   "repo": "clickstack-hyperdx-hols",
-  "generated": "2026-11-05T07:15:51Z",
+  "generated": "2026-11-05T07:18:09Z",
   "labs": [
     {
       "path": "clickstack-config",
@@ -91,7 +91,7 @@
       "title_ko": "자가 호스팅 LLM 서빙을 ClickStack으로 관측하기",
       "summary_ko": "LiteLLM 뒤의 vLLM을 OTel Collector와 ClickStack으로 관측하는 설정, nvidia-smi 푸셔, HyperDX 대시보드를 GPU 없이 돌립니다. 게이트웨이 메트릭 카디널리티와 대시보드 소스 짝짓기까지 SQL과 HyperDX API로 확인합니다.",
       "title_en": "Self-hosted LLM serving observed with ClickStack",
-      "summary_en": "Run the OTel Collector configuration, nvidia-smi pusher and HyperDX dashboard for vLLM behind LiteLLM without a GPU, then check gateway-metric cardinality and dashboard source mapping with SQL and the HyperDX API.",
+      "summary_en": "Run the Collector configuration, nvidia-smi pusher and HyperDX dashboard for vLLM behind LiteLLM without a GPU, and check them with SQL and the HyperDX API.",
       "category": "clickstack",
       "target": "oss",
       "tier": "T1",
