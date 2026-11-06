@@ -1,0 +1,78 @@
+#!/bin/bash
+# Rendered by templatefile() in main.tf. The collector configs and analyze.py are inserted as
+# plain values, so their own dollar-brace references are not touched by the template.
+set -euo pipefail
+exec > >(tee /var/log/hmv-user-data.log) 2>&1
+
+dnf install -y nftables tar
+install -d -m 755 /opt/otel /var/lib/hmv
+
+# otelcol-contrib from the GitHub release (the same build as the container image)
+cd /tmp
+curl -fsSLO "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${otelcol_version}/otelcol-contrib_${otelcol_version}_linux_arm64.tar.gz"
+tar -xzf "otelcol-contrib_${otelcol_version}_linux_arm64.tar.gz" -C /opt/otel
+
+cat > /opt/otel/agent.yaml <<'EOF_CFG'
+${agent_config}
+EOF_CFG
+cat > /opt/otel/gateway.yaml <<'EOF_CFG'
+${gateway_config}
+EOF_CFG
+cat > /opt/otel/analyze.py <<'EOF_PY'
+${analyze_py}
+EOF_PY
+chmod 755 /opt/otel/analyze.py
+
+# Byte counters on the gateway's input, one per port. Named counters so `nft -j list counters`
+# reads them and `nft reset counters table inet hmv` zeroes them at the window's start. The Linux
+# agent's traffic is loopback; it still passes the input hook.
+cat > /etc/nftables/hmv.nft <<'EOF_NFT'
+table inet hmv {
+  counter p4318 {}
+  counter p4328 {}
+  counter p4319 {}
+  counter p4329 {}
+  counter p4339 {}
+  chain input {
+    type filter hook input priority 0; policy accept;
+    tcp dport 4318 counter name "p4318"
+    tcp dport 4328 counter name "p4328"
+    tcp dport 4319 counter name "p4319"
+    tcp dport 4329 counter name "p4329"
+    tcp dport 4339 counter name "p4339"
+  }
+}
+EOF_NFT
+nft -f /etc/nftables/hmv.nft
+
+cat > /etc/systemd/system/otel-gateway.service <<'EOF_UNIT'
+[Unit]
+Description=hmv measuring gateway
+After=network-online.target
+[Service]
+Environment=OUT_DIR=/var/lib/hmv
+ExecStart=/opt/otel/otelcol-contrib --config /opt/otel/gateway.yaml
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF_UNIT
+
+cat > /etc/systemd/system/otel-agent.service <<'EOF_UNIT'
+[Unit]
+Description=hmv host agent
+After=otel-gateway.service
+[Service]
+Environment=GATEWAY_BASE=http://127.0.0.1:4318
+Environment=GATEWAY_PROC=http://127.0.0.1:4328
+Environment=TELEMETRY_PORT=8889
+ExecStart=/opt/otel/otelcol-contrib --config /opt/otel/agent.yaml
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF_UNIT
+
+systemctl daemon-reload
+systemctl enable --now otel-gateway
+sleep 3
+systemctl enable --now otel-agent
+echo "hmv user data done $(date -u +%FT%TZ)"

@@ -1,0 +1,30 @@
+<powershell>
+# Rendered by templatefile() in main.tf. The agent config is inserted as a plain value.
+$ErrorActionPreference = 'Stop'
+Start-Transcript -Path C:\hmv-user-data.log -Append
+
+New-Item -ItemType Directory -Force -Path C:\otel | Out-Null
+$tgz = "C:\otel\otelcol-contrib_${otelcol_version}_windows_amd64.tar.gz"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${otelcol_version}/otelcol-contrib_${otelcol_version}_windows_amd64.tar.gz" -OutFile $tgz
+tar.exe -xzf $tgz -C C:\otel
+
+@'
+${agent_config}
+'@ | Set-Content -Encoding ascii -Path C:\otel\agent.yaml
+
+# Machine-level variables: a service started after this reads them.
+[Environment]::SetEnvironmentVariable('GATEWAY_BASE', 'http://${gateway_ip}:4319', 'Machine')
+[Environment]::SetEnvironmentVariable('GATEWAY_PROC', 'http://${gateway_ip}:4329', 'Machine')
+[Environment]::SetEnvironmentVariable('TELEMETRY_PORT', '8888', 'Machine')
+
+# A Windows service runs as LocalSystem unless told otherwise — the account M3 is about.
+New-Service -Name otelcol-agent -DisplayName 'hmv host agent' -StartupType Automatic `
+  -BinaryPathName '"C:\otel\otelcol-contrib.exe" --config "C:\otel\agent.yaml"' | Out-Null
+# The collector logs to the Application event log under the service name; register the source
+# so its messages are readable (bin/run.sh reads them for M4).
+try { New-EventLog -LogName Application -Source otelcol-agent } catch { }
+Start-Service otelcol-agent
+Write-Output "hmv user data done $((Get-Date).ToUniversalTime().ToString('s'))Z"
+Stop-Transcript
+</powershell>

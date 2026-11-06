@@ -1,0 +1,78 @@
+# Agent on a Linux host — hostmetrics every 60 s, the otel-profiles/linux-host scraper set.
+# Two receivers, two exporters, so the gateway can count the base set and the process scraper on
+# separate ports (nft byte counters and receiver counters per port).
+#
+# Environment (systemd unit on EC2, docker compose locally):
+#   GATEWAY_BASE   http://<gateway>:4318   base host metrics
+#   GATEWAY_PROC   http://<gateway>:4328   process scraper, one process
+#   TELEMETRY_PORT the agent's own Prometheus port (8889 on EC2, where the gateway has 8888)
+
+receivers:
+  hostmetrics:
+    collection_interval: 60s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      load:
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      filesystem:
+      network:
+      paging:
+      processes:
+      system:
+
+  # One named process, the way a "is the server process up" check would collect it. The collector
+  # itself is the process: it is always there, on both operating systems, with no extra install.
+  hostmetrics/process:
+    collection_interval: 60s
+    scrapers:
+      process:
+        include:
+          names: ['^otelcol-contrib(\.exe)?$']
+          match_type: regexp
+
+processors:
+  resourcedetection:
+    # ec2: host.id, host.type, cloud.account.id, cloud.region, cloud.availability_zone, and the
+    # instance's tags that match `tags` as ec2.tag.<key> (needs ec2:DescribeTags).
+    detectors: [env, system, ec2]
+    timeout: 5s
+    override: false
+    system:
+      hostname_sources: [os]
+    ec2:
+      tags: ['^lab\.service\.']
+  batch: {}
+
+exporters:
+  otlphttp/base:
+    endpoint: ${env:GATEWAY_BASE}
+    compression: gzip
+  otlphttp/process:
+    endpoint: ${env:GATEWAY_PROC}
+    compression: gzip
+
+service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: ${env:TELEMETRY_PORT}
+  pipelines:
+    metrics/base:
+      receivers: [hostmetrics]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/base]
+    metrics/process:
+      receivers: [hostmetrics/process]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/process]

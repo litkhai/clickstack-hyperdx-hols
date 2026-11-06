@@ -1,0 +1,72 @@
+# Agent on a Windows host — the Linux agent minus `processes`, which hostmetrics does not support
+# on Windows. Everything else is the same so the two counts compare.
+#
+# Environment (machine-level variables set by user data before the service starts):
+#   GATEWAY_BASE   http://<gateway>:4319
+#   GATEWAY_PROC   http://<gateway>:4329
+#   TELEMETRY_PORT 8888
+
+receivers:
+  hostmetrics:
+    collection_interval: 60s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      load:
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      filesystem:
+      network:
+      paging:
+      system:
+
+  hostmetrics/process:
+    collection_interval: 60s
+    scrapers:
+      process:
+        include:
+          names: ['^otelcol-contrib(\.exe)?$']
+          match_type: regexp
+
+processors:
+  resourcedetection:
+    detectors: [env, system, ec2]
+    timeout: 5s
+    override: false
+    system:
+      hostname_sources: [os]
+    ec2:
+      tags: ['^lab\.service\.']
+  batch: {}
+
+exporters:
+  otlphttp/base:
+    endpoint: ${env:GATEWAY_BASE}
+    compression: gzip
+  otlphttp/process:
+    endpoint: ${env:GATEWAY_PROC}
+    compression: gzip
+
+service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: ${env:TELEMETRY_PORT}
+  pipelines:
+    metrics/base:
+      receivers: [hostmetrics]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/base]
+    metrics/process:
+      receivers: [hostmetrics/process]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/process]

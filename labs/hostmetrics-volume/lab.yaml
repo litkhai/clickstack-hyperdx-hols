@@ -1,0 +1,4 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: EC2 (Terraform) plus a local smoke compose.
+target: oss
+tier: T1
+services: [otelcol]

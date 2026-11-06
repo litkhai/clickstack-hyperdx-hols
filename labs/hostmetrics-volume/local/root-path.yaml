@@ -1,0 +1,14 @@
+# Merged over agent-linux.yaml in the local run only: the collector is in a container, so it reads
+# the host through the /hostfs bind mount. On EC2 the agent runs on the host and this is not used.
+receivers:
+  hostmetrics:
+    root_path: /hostfs
+  hostmetrics/process:
+    root_path: /hostfs
+    # A container without CAP_SYS_PTRACE cannot readlink other processes' /proc/<pid>/exe, and
+    # the image has no /etc/passwd for the user lookup. Muted here only; on EC2 the agent runs as
+    # root on the host and its errors are part of what the lab records (M4).
+    scrapers:
+      process:
+        mute_process_exe_error: true
+        mute_process_user_error: true

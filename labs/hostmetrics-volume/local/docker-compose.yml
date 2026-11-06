@@ -1,0 +1,35 @@
+# Local smoke run: the same agent and gateway configs in two containers, so a config or
+# analyze.py error shows up before anything is applied in AWS. Docker Desktop's VM is the host,
+# so the counts are not an EC2 measurement, and there are no nft byte counters here.
+#
+#   docker compose up -d && sleep 200 && docker compose down
+#   ../bin/analyze.py --dir out --start <t0> --end <t1>
+
+services:
+  gateway:
+    image: otel/opentelemetry-collector-contrib:0.155.0
+    command: ["--config", "/etc/hmv/gateway.yaml"]
+    user: "0:0"
+    environment:
+      OUT_DIR: /out
+    volumes:
+      - ../collector/gateway.yaml:/etc/hmv/gateway.yaml:ro
+      - ./out:/out
+    ports:
+      - "18888:8888"
+
+  agent:
+    image: otel/opentelemetry-collector-contrib:0.155.0
+    # A second --config merges over the first: here it only adds root_path for the container.
+    command: ["--config", "/etc/hmv/agent.yaml", "--config", "/etc/hmv/root-path.yaml"]
+    user: "0:0"
+    pid: host
+    environment:
+      GATEWAY_BASE: http://gateway:4318
+      GATEWAY_PROC: http://gateway:4328
+      TELEMETRY_PORT: "8889"
+    volumes:
+      - ../collector/agent-linux.yaml:/etc/hmv/agent.yaml:ro
+      - ./root-path.yaml:/etc/hmv/root-path.yaml:ro
+      - /:/hostfs:ro
+    depends_on: [gateway]
