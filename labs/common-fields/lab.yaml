@@ -1,0 +1,6 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: the demo needs a ClickHouse Cloud service
+# with Managed ClickStack; the tests need only clickhouse local and Docker.
+target: cloud
+tier: T1
+services: [clickstack]
+verified_on: "clickhouse local 26.9.6.6, otelcol-contrib 0.155.0 and Managed ClickStack (ClickHouse Cloud 26.8), 2026-11-06"
