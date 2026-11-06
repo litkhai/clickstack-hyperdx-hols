@@ -1,0 +1,198 @@
+{
+ "version": "0.1.0",
+ "name": "Vault 감사와 HA",
+ "tags": [
+  "vault"
+ ],
+ "tiles": [
+  {
+   "id": "007a17000000000000000101",
+   "x": 0,
+   "y": 0,
+   "w": 8,
+   "h": 4,
+   "config": {
+    "name": "active 노드 (vault_core_active)",
+    "source": "Vault Metrics",
+    "displayType": "line",
+    "select": [
+     {
+      "aggFn": "max",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "Value",
+      "isDelta": false,
+      "alias": "active",
+      "metricType": "gauge",
+      "metricName": "vault_core_active"
+     }
+    ],
+    "where": "",
+    "groupBy": "ResourceAttributes['service.instance.id']"
+   },
+   "containerId": "ha"
+  },
+  {
+   "id": "007a17000000000000000102",
+   "x": 8,
+   "y": 0,
+   "w": 8,
+   "h": 4,
+   "config": {
+    "name": "노드 수집 상태 (up)",
+    "source": "Vault Metrics",
+    "displayType": "line",
+    "select": [
+     {
+      "aggFn": "min",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "Value",
+      "isDelta": false,
+      "alias": "up",
+      "metricType": "gauge",
+      "metricName": "up"
+     }
+    ],
+    "where": "",
+    "groupBy": "ResourceAttributes['service.instance.id']"
+   },
+   "containerId": "ha"
+  },
+  {
+   "id": "007a17000000000000000103",
+   "x": 16,
+   "y": 0,
+   "w": 8,
+   "h": 4,
+   "config": {
+    "name": "노드별 감사 항목",
+    "source": "Vault Audit",
+    "displayType": "stacked_bar",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "항목"
+     }
+    ],
+    "where": "",
+    "whereLanguage": "lucene",
+    "groupBy": "LogAttributes['vault.node'] AS `노드`"
+   },
+   "containerId": "ha"
+  },
+  {
+   "id": "007a17000000000000000104",
+   "x": 0,
+   "y": 0,
+   "w": 12,
+   "h": 4,
+   "config": {
+    "name": "범주별 응답",
+    "source": "Vault Audit",
+    "displayType": "stacked_bar",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "응답"
+     }
+    ],
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] != 'preflight'",
+    "whereLanguage": "sql",
+    "groupBy": "LogAttributes['vault.event.category'] AS `범주`"
+   },
+   "containerId": "audit"
+  },
+  {
+   "id": "007a17000000000000000105",
+   "x": 12,
+   "y": 0,
+   "w": 12,
+   "h": 4,
+   "config": {
+    "name": "거부된 요청",
+    "source": "Vault Audit",
+    "displayType": "search",
+    "select": "Timestamp, LogAttributes['vault.auth.display_name'] AS `주체`, LogAttributes['vault.auth.role_name'] AS `역할`, LogAttributes['vault.request.operation'] AS `작업`, LogAttributes['vault.request.path'] AS `경로`, LogAttributes['vault.node'] AS `노드`",
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] = 'denied'",
+    "whereLanguage": "sql"
+   },
+   "containerId": "audit"
+  },
+  {
+   "id": "007a17000000000000000106",
+   "x": 0,
+   "y": 4,
+   "w": 12,
+   "h": 5,
+   "config": {
+    "name": "발급 (토큰·인증서)",
+    "source": "Vault Audit",
+    "displayType": "table",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "발급 수"
+     }
+    ],
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] IN ('token_issue', 'cert_issue', 'credential_issue')",
+    "whereLanguage": "sql",
+    "groupBy": "LogAttributes['vault.event.category'] AS `범주`, LogAttributes['vault.request.path'] AS `경로`, LogAttributes['vault.issued.policies'] AS `정책`",
+    "orderBy": "\"발급 수\" DESC"
+   },
+   "containerId": "audit"
+  },
+  {
+   "id": "007a17000000000000000107",
+   "x": 12,
+   "y": 4,
+   "w": 12,
+   "h": 5,
+   "config": {
+    "name": "시크릿·키 사용",
+    "source": "Vault Audit",
+    "displayType": "table",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "사용 수"
+     }
+    ],
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] IN ('secret_read', 'key_use')",
+    "whereLanguage": "sql",
+    "groupBy": "LogAttributes['vault.request.path'] AS `경로`, LogAttributes['vault.auth.display_name'] AS `주체`",
+    "orderBy": "\"사용 수\" DESC"
+   },
+   "containerId": "audit"
+  }
+ ],
+ "filters": [],
+ "containers": [
+  {
+   "id": "ha",
+   "title": "HA 상태",
+   "collapsed": false
+  },
+  {
+   "id": "audit",
+   "title": "감사 기록",
+   "collapsed": false
+  }
+ ]
+}
