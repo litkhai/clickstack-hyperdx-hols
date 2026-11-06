@@ -1,0 +1,10 @@
+SELECT 'Q1 A', count() FROM a WHERE MetricName = 'system.m7' AND ResourceAttributes['host.name'] = 'host-1234' SETTINGS use_query_cache=0;
+SELECT 'Q1 B', count() FROM b WHERE MetricName = 'system.m7' AND host = 'host-1234' SETTINGS use_query_cache=0;
+SELECT 'Q1 C', count() FROM c WHERE MetricName = 'system.m7' AND host = 'host-1234' SETTINGS use_query_cache=0;
+SELECT 'Q1 C+group', count() FROM c WHERE MetricName = 'system.m7' AND svc_group = 'g14' AND host = 'host-1234' SETTINGS use_query_cache=0;
+SELECT 'Q2 A', count(DISTINCT ResourceAttributes['host.name']) FROM a WHERE MetricName = 'system.m7' AND ResourceAttributes['ec2.tag.svc.group'] = 'g7' SETTINGS use_query_cache=0;
+SELECT 'Q2 B', count(DISTINCT host) FROM b WHERE MetricName = 'system.m7' AND svc_group = 'g7' SETTINGS use_query_cache=0;
+SELECT 'Q2 C', count(DISTINCT host) FROM c WHERE MetricName = 'system.m7' AND svc_group = 'g7' SETTINGS use_query_cache=0;
+SELECT 'Q3 A', count() FROM a WHERE ResourceAttributes['host.name'] = 'host-1234' SETTINGS use_query_cache=0;
+SELECT 'Q3 B', count() FROM b WHERE host = 'host-1234' SETTINGS use_query_cache=0;
+SELECT 'Q3 C+group', count() FROM c WHERE svc_group = 'g14' AND host = 'host-1234' SETTINGS use_query_cache=0;

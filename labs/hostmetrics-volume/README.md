@@ -73,7 +73,32 @@ Per-minute record: [`results/2026-11-06-timeline.json`](results/2026-11-06-timel
 How an alert sees these: [`labs/process-down-alerts`](../process-down-alerts/README.md) — a
 group-by alert does not fire for a series that stopped (A, B), but does for an explicit value (C, D).
 
-### 3. One gateway for many networks
+### 3. Where the common fields should live (schema bench)
+
+The service taxonomy and `host.name` are what every fleet query filters on. Three tables with the
+same 16.8 M synthetic rows (4,000 hosts × 70 metrics × 60 minutes, `ServiceName` constant, like
+host metrics): **A** the exporter's default gauge schema (attributes in `Map`, bloom filters on
+map keys and values, `ORDER BY (ServiceName, MetricName, Attributes, time)`), **B** A plus
+`MATERIALIZED` columns `host` and `svc_group` with skip indexes, **C** an own schema
+(`create_schema: false`) with `ORDER BY (ServiceName, MetricName, svc_group, host, time)`.
+`clickhouse local` 26.8.34.13 (the ClickStack 2.42.0 image) on Docker Desktop, 2026-11-06, two
+runs agree; [`schema-bench/`](schema-bench/), [`results/2026-11-06-schema-bench.txt`](results/2026-11-06-schema-bench.txt).
+
+| Query | A default | B materialized columns | C taxonomy in the sort key |
+|---|---|---|---|
+| one host, one metric, 60 min | 253,952 rows · 0.89 MiB · 96 ms | 253,952 · 0.21 MiB · 21 ms | with the group in the filter: **8,192 · 0.02 MiB · 1.2 ms** (host alone: 188,416 · 4.8 ms) |
+| one group (200 hosts), one metric | 253,952 · 1.74 MiB · 59 ms | 253,952 · 0.14 MiB · 14 ms | **24,576 · 0.03 MiB · 1.2 ms** |
+| one host, every metric | 16.8 M · 57 MiB · 1,353 ms | 16.8 M · 4.9 MiB · 52 ms | group + host: **1.14 M · 0.5 MiB · 45 ms** |
+
+- The bloom filters (on the map or on the column) skipped nothing here: every granule holds
+  thousands of hosts, so every granule may contain the one asked for.
+- A materialized column reads the same rows but not the whole map: 4–12× fewer bytes, 5–26×
+  faster.
+- The sort key is what cuts rows: 10–30× fewer, but only when the query names the leading
+  key (group, then host).
+- Storage was the same within 5 % (A 107.8 MiB, B 112.0, C 106.1).
+
+### 4. One gateway for many networks
 
 | Check (from) | Result |
 |---|---|
@@ -194,7 +219,24 @@ S4 gs2 작업 재시작(05:03:45Z). 분 단위 기록: [`results/2026-11-06-time
 알림이 이것을 어떻게 보는지는 [`labs/process-down-alerts`](../process-down-alerts/README.md)에 있습니다 —
 group by 알림은 끊긴 시계열(A, B)에는 울리지 않고, 명시적인 값(C, D)에는 울립니다.
 
-### 3. 여러 네트워크에서 gateway 하나로
+### 3. 공통 필드를 어디에 둘 것인가(스키마 비교)
+
+서비스 분류와 `host.name`은 플릿 전체 조회가 매번 거는 조건입니다. 같은 합성 데이터 1,680만 행
+(호스트 4,000 × 메트릭 70 × 60분, 호스트 메트릭처럼 `ServiceName`은 하나)으로 테이블 셋을 비교했습니다.
+**A**는 exporter 기본 gauge 스키마(속성은 `Map`, map 키·값에 bloom filter, `ORDER BY (ServiceName,
+MetricName, Attributes, time)`), **B**는 A에 `MATERIALIZED` 컬럼 `host`, `svc_group`과 skip index를 더한 것,
+**C**는 직접 만든 스키마(`create_schema: false`)로 `ORDER BY (ServiceName, MetricName, svc_group, host, time)`
+입니다. Docker Desktop의 `clickhouse local` 26.8.34.13(ClickStack 2.42.0 이미지), 2026-11-06, 두 번 돌려
+같은 결과. 표는 위 English 절과 같습니다.
+
+- bloom filter(map에 걸든 컬럼에 걸든)는 이 데이터에서 아무것도 건너뛰지 못했습니다. granule마다 호스트가
+  수천 대 섞여 있어서, 어느 granule에나 찾는 호스트가 있을 수 있기 때문입니다.
+- materialized 컬럼은 읽는 행은 같지만 map 전체를 읽지 않습니다. 바이트가 4–12분의 1, 5–26배 빠릅니다.
+- 행을 줄이는 것은 정렬 키입니다. 10–30분의 1로 줄지만, 조회가 앞쪽 키(그룹, 그다음 호스트)를 조건에
+  넣을 때만입니다.
+- 저장 크기는 5% 안에서 같았습니다(A 107.8 MiB, B 112.0, C 106.1).
+
+### 4. 여러 네트워크에서 gateway 하나로
 
 | 확인(출발) | 결과 |
 |---|---|

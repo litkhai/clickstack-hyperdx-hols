@@ -1,0 +1,14 @@
+rows	16800000
+a	107.75 MiB	2052
+b	111.96 MiB	2052
+c	106.06 MiB	2052
+Q1 A         result=   60 rows=   253952 marks=   31 readMiB=   0.89 ms=   95.5
+Q1 B         result=   60 rows=   253952 marks=   31 readMiB=   0.21 ms=   21.3
+Q1 C         result=   60 rows=   188416 marks=   23 readMiB=   0.06 ms=    4.8
+Q1 C+group   result=   60 rows=     8192 marks=    1 readMiB=   0.02 ms=    1.2
+Q2 A         result=  200 rows=   253952 marks=   31 readMiB=   1.74 ms=   58.8
+Q2 B         result=  200 rows=   253952 marks=   31 readMiB=   0.14 ms=   14.4
+Q2 C         result=  200 rows=    24576 marks=    3 readMiB=   0.03 ms=    1.2
+Q3 A         result= 4200 rows= 16800000 marks= 2051 readMiB=  57.12 ms= 1353.0
+Q3 B         result= 4200 rows= 16800000 marks= 2051 readMiB=   4.89 ms=   51.8
+Q3 C+group   result= 4200 rows=  1138688 marks=  139 readMiB=   0.50 ms=   44.6
