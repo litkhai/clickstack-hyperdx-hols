@@ -13,8 +13,10 @@ Collector scrapes each node's own metrics, so the active/standby state sits next
 > **Verified on** hashicorp/vault 2.2.1 (OSS, 3-node Raft), otelcol-contrib 0.160.0 and
 > clickstack-all-in-one 2.42.0 (ClickHouse 26.8.34.13), locally, 2026-11-06: `bin/check.py` 20/20
 > PASS, including a failover of the active node ([results](results/check-2026-11-06.md)).
-> Managed ClickStack: the same Collector configuration with `CH_*` pointed at a Cloud service (below),
-> **not run yet**.
+> Managed ClickStack: the same Collector configuration with `CH_*` pointed at a ClickHouse Cloud
+> service (26.8.1.608, ap-northeast-2) and Managed ClickStack HyperDX 2.42.0-sha6e4d740, 2026-11-06:
+> 19 PASS, 1 SKIP (S7's negative runs locally only) ([results](results/check-cloud-2026-11-06.md)); the two
+> sources and the dashboard set up in the UI as below, all seven tiles drawn.
 
 ### What it answers
 
@@ -125,8 +127,16 @@ The Collector writes to the Cloud service directly; Vault and the Collector stay
 3. In HyperDX on the Cloud service, add a **Log** source on `vault_audit.otel_logs` and a **Metric**
    source on `vault_audit` (`otel_metrics_gauge`, `_sum`, `_histogram`, `_summary`), with the default
    OTel column mappings, named "Vault Audit" and "Vault Metrics", then import `dashboard/vault-audit.json`.
+   The Log source's **Timestamp Column must stay `Timestamp`**: the form fills it in after the table is
+   picked, and the contrib exporter's `otel_logs` has no `TimestampTime` column (nor does local ClickStack 2.42.0's own).
+   With `TimestampTime`, every log tile answered `Unknown expression or function identifier`
+   (2026-11-06). The metrics tiles start when the Collector was pointed at the service: the audit files are
+   sent again from the start, a Prometheus scrape has no history.
 4. `set -a; . ./.env; set +a; bin/check.py` — the same checks over HTTPS, without the S7 negative
    (its scratch Collector writes to the local ClickStack).
+
+Screens from the Seoul run: [`images/05-cloud-dashboard.webp`](images/05-cloud-dashboard.webp),
+[`images/06-cloud-denied-search.webp`](images/06-cloud-denied-search.webp).
 
 ### Tuning knobs
 
@@ -154,7 +164,9 @@ ClickHouse로 보냅니다. ClickStack이 그대로 읽는 OTel 로그 형태로
 > **검증** hashicorp/vault 2.2.1(OSS, Raft 3노드), otelcol-contrib 0.160.0,
 > clickstack-all-in-one 2.42.0(ClickHouse 26.8.34.13), 로컬, 2026-11-06: `bin/check.py` 20/20
 > PASS, active 노드 장애 전환 포함([결과](results/check-2026-11-06.md)).
-> Managed ClickStack: 같은 Collector 설정에서 `CH_*`만 Cloud 서비스로 바꾸는 방식(아래), **아직 실행하지 않음**.
+> Managed ClickStack: 같은 Collector 설정에서 `CH_*`만 ClickHouse Cloud 서비스(26.8.1.608, ap-northeast-2)로 바꾸고
+> Managed ClickStack HyperDX 2.42.0-sha6e4d740에서 2026-11-06: 19 PASS, 1 SKIP(S7 음성 검사는 로컬 전용)
+> ([결과](results/check-cloud-2026-11-06.md)). 소스 둘과 대시보드는 아래처럼 UI에서 만들었고, 타일 7개가 모두 그려졌습니다.
 
 ### 답하는 질문
 
@@ -262,9 +274,16 @@ Collector가 Cloud 서비스에 직접 씁니다. Vault와 Collector는 그 자�
    `docker compose rm -sf otelcol && docker volume rm vaultlab_otelcol-storage && docker compose up -d --no-deps otelcol`
 3. Cloud 서비스의 HyperDX에서 `vault_audit.otel_logs`를 읽는 **Log** 소스와 `vault_audit`(`otel_metrics_gauge`,
    `_sum`, `_histogram`, `_summary`)를 읽는 **Metric** 소스를 기본 OTel 컬럼 매핑으로, 이름은 "Vault Audit"·"Vault Metrics"로
-   추가하고 `dashboard/vault-audit.json`을 가져옵니다.
+   추가하고 `dashboard/vault-audit.json`을 가져옵니다. 로그 소스의 **Timestamp Column은 `Timestamp`로 둡니다**. 테이블을
+   고르면 폼이 채워 주는 값이고, contrib exporter의 `otel_logs`에는 `TimestampTime` 열이 없습니다(로컬 ClickStack 2.42.0 자체
+   테이블에도 없음). `TimestampTime`으로 두자 로그 타일이 모두 `Unknown expression or function identifier`로 끝났습니다(2026-11-06).
+   메트릭 타일은 Collector를 서비스로 돌린 시점부터 그려집니다. 감사 파일은 처음부터 다시 보내지지만 Prometheus 수집에는
+   과거가 없기 때문입니다.
 4. `set -a; . ./.env; set +a; bin/check.py`. 같은 검사를 HTTPS로 돌립니다. S7 음성 검사는 빠집니다(임시
    Collector가 로컬 ClickStack에 쓰기 때문).
+
+Seoul 실행의 화면: [`images/05-cloud-dashboard.webp`](images/05-cloud-dashboard.webp),
+[`images/06-cloud-denied-search.webp`](images/06-cloud-denied-search.webp).
 
 ### 튜닝 항목
 
