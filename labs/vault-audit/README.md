@@ -43,7 +43,8 @@ Collector scrapes each node's own metrics, so the active/standby state sits next
 | Audit device and engines | `bin/setup_vault.sh` | file device `mode=0644`; KV v2, transit key `orders`, `pki/` (serial number left out of HMAC) and `pki-untuned/`; policies `app-ro`, `ops-finance`; AppRole `orders-api`, userpass |
 | Traffic | `bin/traffic.sh [rounds] [node]` | per round: an AppRole login, KV reads, transit encrypt/decrypt, two certificates, two denied requests, a userpass login, a token created by an administrator |
 | Collector | `otelcol/config.yaml` | `file_log` + `json_parser` (timestamp from the entry), `transform` to OTel fields, `count` connector, `prometheus` on three targets with a keep list, `file_storage` for read offsets |
-| ClickStack 2.42.0 | `docker-compose.yml`, `bin/setup_hyperdx.py` | local HyperDX with "Vault Audit" and "Vault Metrics" sources on `vault_audit` |
+| ClickStack 2.42.0 | `docker-compose.yml`, `bin/setup_hyperdx.py` | local HyperDX with "Vault Audit" and "Vault Metrics" sources on `vault_audit`, and the dashboard below |
+| Dashboard | `dashboard/vault-audit.json` | "Vault audit and HA": active node, scrape `up` and audit entries per node; responses by category, denied requests, issuance, secret and key use. Imports as it is on Managed ClickStack (Dashboards → Import) |
 | Questions | `sql/queries.sql` | issuance history, one token's whole life, denied requests, secret and key use, HA state now, which node held the trail, responses per category |
 
 ### The OTel shape
@@ -71,6 +72,8 @@ Collector scrapes each node's own metrics, so the active/standby state sits next
 - **Standby metrics need `unauthenticated_metrics_access`.** Without it, `/v1/sys/metrics` on a standby
   answered `307` to the active node even with a valid token, so a scrape of a standby never showed the
   standby. With it, each node answered `200` with its own values (`vault_core_active 0` on a standby).
+  Vault's `/sys/metrics` API page says follower nodes ignore metric requests, typically a timeout; on
+  2.2.1 the answer was a `307`, not a timeout (page read 2026-11-06).
   Autopilot gauges come from the active node only, which reports every node's health
   (`vault_autopilot_node_healthy`, one series per node).
 - **Vault's default audit file mode is `0600`** (a second file device enabled without `mode` was created
@@ -86,6 +89,8 @@ Collector scrapes each node's own metrics, so the active/standby state sits next
   24 preflight responses for 17 KV reads in this run. They are tagged `preflight`, not dropped.
 - **Enabling the device leaves two halves**: Vault's own test request (`sys/audit/test`, no response)
   and the response to the enable call, whose request came before the device existed.
+- **Dashboard filters in SQL, not Lucene.** A tile filtered with `vault.event.category:denied` (Lucene, a dotted
+  attribute name) ended in "Error loading chart"; `LogAttributes['vault.event.category'] = 'denied'` drew.
 - **Login responses have no policy result** (`vault.policy.allowed` is empty): the request had no token.
 - **Without `file_storage`, a Collector restart sends the whole file again**: 274 lines became 548 rows
   (S7). With it, a restart neither lost nor duplicated an entry.
@@ -104,7 +109,8 @@ bin/check.py               # S1–S8, about 3 minutes; stops and restarts the ac
 docker compose down -v
 ```
 
-HyperDX: http://localhost:48080 (the test user is in `.run/hyperdx-user`). Vault nodes: 48201–48203.
+HyperDX: http://localhost:48080 (the test user is in `.run/hyperdx-user`). Screens from this stack are in
+[`images/`](images/) (2026-11-06). Vault nodes: 48201–48203.
 A restarted Vault node comes back sealed: run `bin/vault_ha.sh` again.
 
 ### Managed ClickStack
@@ -118,7 +124,7 @@ The Collector writes to the Cloud service directly; Vault and the Collector stay
    `docker compose rm -sf otelcol && docker volume rm vaultlab_otelcol-storage && docker compose up -d --no-deps otelcol`
 3. In HyperDX on the Cloud service, add a **Log** source on `vault_audit.otel_logs` and a **Metric**
    source on `vault_audit` (`otel_metrics_gauge`, `_sum`, `_histogram`, `_summary`), with the default
-   OTel column mappings.
+   OTel column mappings, named "Vault Audit" and "Vault Metrics", then import `dashboard/vault-audit.json`.
 4. `set -a; . ./.env; set +a; bin/check.py` — the same checks over HTTPS, without the S7 negative
    (its scratch Collector writes to the local ClickStack).
 
@@ -177,7 +183,8 @@ ClickHouse로 보냅니다. ClickStack이 그대로 읽는 OTel 로그 형태로
 | 감사 디바이스와 엔진 | `bin/setup_vault.sh` | file 디바이스 `mode=0644`. KV v2, transit 키 `orders`, `pki/`(시리얼 번호를 HMAC에서 제외)와 `pki-untuned/`. 정책 `app-ro`, `ops-finance`. AppRole `orders-api`, userpass |
 | 트래픽 | `bin/traffic.sh [회수] [노드]` | 한 회차: AppRole 로그인, KV 읽기, transit 암복호화, 인증서 2장, 거부 요청 2건, userpass 로그인, 관리자의 토큰 발급 |
 | Collector | `otelcol/config.yaml` | `file_log` + `json_parser`(감사 항목의 시각), OTel 필드로 바꾸는 `transform`, `count` 커넥터, 대상 3개와 keep 목록을 둔 `prometheus`, 읽은 위치를 기억하는 `file_storage` |
-| ClickStack 2.42.0 | `docker-compose.yml`, `bin/setup_hyperdx.py` | `vault_audit`를 읽는 "Vault Audit"·"Vault Metrics" 소스가 있는 로컬 HyperDX |
+| ClickStack 2.42.0 | `docker-compose.yml`, `bin/setup_hyperdx.py` | `vault_audit`를 읽는 "Vault Audit"·"Vault Metrics" 소스와 아래 대시보드가 있는 로컬 HyperDX |
+| 대시보드 | `dashboard/vault-audit.json` | "Vault audit and HA": 노드별 active·수집 `up`·감사 항목, 범주별 응답, 거부 요청, 발급, 시크릿·키 사용. Managed ClickStack에서도 그대로 가져옵니다(Dashboards → Import) |
 | 질의 | `sql/queries.sql` | 발급 이력, 토큰 하나의 전 생애, 거부 요청, 시크릿·키 사용, 현재 HA 상태, 감사 기록을 쓴 노드, 범주별 응답 수 |
 
 ### OTel 형태
@@ -204,7 +211,8 @@ ClickHouse로 보냅니다. ClickStack이 그대로 읽는 OTel 로그 형태로
   에이전트를 하나씩 둡니다.
 - **standby 메트릭에는 `unauthenticated_metrics_access`가 필요합니다.** 없으면 standby의 `/v1/sys/metrics`가
   유효한 토큰을 줘도 active 노드로 `307`을 돌려주므로, standby를 긁어도 standby 값은 보이지 않습니다. 있으면 노드마다
-  자기 값으로 `200`을 돌려줍니다(standby는 `vault_core_active 0`). autopilot 게이지는 active 노드에서만 나오고,
+  자기 값으로 `200`을 돌려줍니다(standby는 `vault_core_active 0`). Vault `/sys/metrics` API 문서는 follower가
+  메트릭 요청을 무시해 보통 timeout이 난다고 적지만, 2.2.1의 응답은 timeout이 아니라 `307`이었습니다(2026-11-06 읽음). autopilot 게이지는 active 노드에서만 나오고,
   그 노드가 모든 노드의 상태를 알려 줍니다(`vault_autopilot_node_healthy`, 노드마다 시리즈 하나).
 - **Vault 감사 파일의 기본 권한은 `0600`입니다**(`mode` 없이 켠 두 번째 file 디바이스가 `-rw-------`로 생김).
   다른 사용자로 도는 Collector는 읽지 못합니다. 실습은 `mode=0644`를 씁니다. 호스트에서는 에이전트를 `vault`
@@ -219,6 +227,8 @@ ClickHouse로 보냅니다. ClickStack이 그대로 읽는 OTel 로그 형태로
   실행에서 KV 읽기 17건에 사전 호출 응답이 24건이었습니다. 버리지 않고 `preflight`로 표시합니다.
 - **디바이스를 켜면 반쪽 둘이 남습니다.** Vault 자체의 시험 요청(`sys/audit/test`, 응답 없음)과, 디바이스가
   생기기 전에 요청이 들어온 enable 호출의 응답입니다.
+- **대시보드 필터는 Lucene이 아니라 SQL로.** 점이 든 속성 이름을 Lucene(`vault.event.category:denied`)으로 쓴 타일은
+  "Error loading chart"로 끝났고, `LogAttributes['vault.event.category'] = 'denied'`로 바꾸자 그려졌습니다.
 - **로그인 응답에는 정책 결과가 없습니다**(`vault.policy.allowed`가 빈 값). 요청에 토큰이 없기 때문입니다.
 - **`file_storage`가 없으면 Collector를 재시작할 때 파일 전체를 다시 보냅니다.** 274줄이 548행이 됐습니다(S7).
   있으면 재시작에서 항목을 잃지도, 중복하지도 않았습니다.
@@ -237,7 +247,8 @@ bin/check.py               # S1–S8, 약 3분. active 노드를 한 번 멈췄�
 docker compose down -v
 ```
 
-HyperDX: http://localhost:48080 (테스트 사용자는 `.run/hyperdx-user`). Vault 노드: 48201–48203.
+HyperDX: http://localhost:48080 (테스트 사용자는 `.run/hyperdx-user`). 이 스택에서 찍은 화면은
+[`images/`](images/)에 있습니다(2026-11-06). Vault 노드: 48201–48203.
 재시작한 Vault 노드는 봉인된 채로 올라옵니다. `bin/vault_ha.sh`를 다시 실행하세요.
 
 ### Managed ClickStack
@@ -250,7 +261,8 @@ Collector가 Cloud 서비스에 직접 씁니다. Vault와 Collector는 그 자�
 2. 읽은 위치를 비우고 새 대상으로 Collector를 띄웁니다. 기존 파일도 보내집니다:
    `docker compose rm -sf otelcol && docker volume rm vaultlab_otelcol-storage && docker compose up -d --no-deps otelcol`
 3. Cloud 서비스의 HyperDX에서 `vault_audit.otel_logs`를 읽는 **Log** 소스와 `vault_audit`(`otel_metrics_gauge`,
-   `_sum`, `_histogram`, `_summary`)를 읽는 **Metric** 소스를 기본 OTel 컬럼 매핑으로 추가합니다.
+   `_sum`, `_histogram`, `_summary`)를 읽는 **Metric** 소스를 기본 OTel 컬럼 매핑으로, 이름은 "Vault Audit"·"Vault Metrics"로
+   추가하고 `dashboard/vault-audit.json`을 가져옵니다.
 4. `set -a; . ./.env; set +a; bin/check.py`. 같은 검사를 HTTPS로 돌립니다. S7 음성 검사는 빠집니다(임시
    Collector가 로컬 ClickStack에 쓰기 때문).
 

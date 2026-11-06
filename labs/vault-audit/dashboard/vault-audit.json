@@ -1,0 +1,198 @@
+{
+ "version": "0.1.0",
+ "name": "Vault audit and HA",
+ "tags": [
+  "vault"
+ ],
+ "tiles": [
+  {
+   "id": "007a17000000000000000001",
+   "x": 0,
+   "y": 0,
+   "w": 8,
+   "h": 4,
+   "config": {
+    "name": "Active node (vault_core_active)",
+    "source": "Vault Metrics",
+    "displayType": "line",
+    "select": [
+     {
+      "aggFn": "max",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "Value",
+      "isDelta": false,
+      "alias": "active",
+      "metricType": "gauge",
+      "metricName": "vault_core_active"
+     }
+    ],
+    "where": "",
+    "groupBy": "ResourceAttributes['service.instance.id']"
+   },
+   "containerId": "ha"
+  },
+  {
+   "id": "007a17000000000000000002",
+   "x": 8,
+   "y": 0,
+   "w": 8,
+   "h": 4,
+   "config": {
+    "name": "Node up (scrape)",
+    "source": "Vault Metrics",
+    "displayType": "line",
+    "select": [
+     {
+      "aggFn": "min",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "Value",
+      "isDelta": false,
+      "alias": "up",
+      "metricType": "gauge",
+      "metricName": "up"
+     }
+    ],
+    "where": "",
+    "groupBy": "ResourceAttributes['service.instance.id']"
+   },
+   "containerId": "ha"
+  },
+  {
+   "id": "007a17000000000000000003",
+   "x": 16,
+   "y": 0,
+   "w": 8,
+   "h": 4,
+   "config": {
+    "name": "Audit entries by node",
+    "source": "Vault Audit",
+    "displayType": "stacked_bar",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "entries"
+     }
+    ],
+    "where": "",
+    "whereLanguage": "lucene",
+    "groupBy": "LogAttributes['vault.node'] AS node"
+   },
+   "containerId": "ha"
+  },
+  {
+   "id": "007a17000000000000000004",
+   "x": 0,
+   "y": 0,
+   "w": 12,
+   "h": 4,
+   "config": {
+    "name": "Responses by category",
+    "source": "Vault Audit",
+    "displayType": "stacked_bar",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "responses"
+     }
+    ],
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] != 'preflight'",
+    "whereLanguage": "sql",
+    "groupBy": "LogAttributes['vault.event.category'] AS category"
+   },
+   "containerId": "audit"
+  },
+  {
+   "id": "007a17000000000000000005",
+   "x": 12,
+   "y": 0,
+   "w": 12,
+   "h": 4,
+   "config": {
+    "name": "Denied requests",
+    "source": "Vault Audit",
+    "displayType": "search",
+    "select": "Timestamp, LogAttributes['vault.auth.display_name'] AS who, LogAttributes['vault.auth.role_name'] AS role, LogAttributes['vault.request.operation'] AS op, LogAttributes['vault.request.path'] AS path, LogAttributes['vault.node'] AS node",
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] = 'denied'",
+    "whereLanguage": "sql"
+   },
+   "containerId": "audit"
+  },
+  {
+   "id": "007a17000000000000000006",
+   "x": 0,
+   "y": 4,
+   "w": 12,
+   "h": 5,
+   "config": {
+    "name": "Issuance (tokens, certificates)",
+    "source": "Vault Audit",
+    "displayType": "table",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "issued"
+     }
+    ],
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] IN ('token_issue', 'cert_issue', 'credential_issue')",
+    "whereLanguage": "sql",
+    "groupBy": "LogAttributes['vault.event.category'] AS category, LogAttributes['vault.request.path'] AS path, LogAttributes['vault.issued.policies'] AS policies",
+    "orderBy": "\"issued\" DESC"
+   },
+   "containerId": "audit"
+  },
+  {
+   "id": "007a17000000000000000007",
+   "x": 12,
+   "y": 4,
+   "w": 12,
+   "h": 5,
+   "config": {
+    "name": "Secret and key use",
+    "source": "Vault Audit",
+    "displayType": "table",
+    "select": [
+     {
+      "aggFn": "count",
+      "aggCondition": "",
+      "aggConditionLanguage": "lucene",
+      "valueExpression": "",
+      "isDelta": false,
+      "alias": "uses"
+     }
+    ],
+    "where": "LogAttributes['vault.audit.type'] = 'response' AND LogAttributes['vault.event.category'] IN ('secret_read', 'key_use')",
+    "whereLanguage": "sql",
+    "groupBy": "LogAttributes['vault.request.path'] AS path, LogAttributes['vault.auth.display_name'] AS who",
+    "orderBy": "\"uses\" DESC"
+   },
+   "containerId": "audit"
+  }
+ ],
+ "filters": [],
+ "containers": [
+  {
+   "id": "ha",
+   "title": "HA state",
+   "collapsed": false
+  },
+  {
+   "id": "audit",
+   "title": "Audit trail",
+   "collapsed": false
+  }
+ ]
+}

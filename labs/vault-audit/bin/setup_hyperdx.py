@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Register a localhost HyperDX test user (first run only) and create two sources on the
-vault_audit database: "Vault Audit" (logs) and "Vault Metrics".
+"""Register a localhost HyperDX test user (first run only), create two sources on the
+vault_audit database ("Vault Audit" logs, "Vault Metrics") and import dashboard/vault-audit.json.
 
 - Credentials go to the gitignored .run/hyperdx-user (mode 600) and are never printed.
 - Sources are copied from the image's own default Logs / Metrics sources and pointed at
@@ -12,6 +12,7 @@ vault_audit database: "Vault Audit" (logs) and "Vault Metrics".
 Re-running is safe: existing sources are found by name and kept.
 """
 import json
+import os
 import secrets
 import sys
 
@@ -20,6 +21,7 @@ import lab
 NAMES = {"log": "Vault Audit", "metric": "Vault Metrics"}
 DROP = {"_id", "id", "__v", "createdAt", "updatedAt", "team", "metadataMaterializedViews",
         "logSourceId", "traceSourceId", "metricSourceId", "sessionSourceId"}
+DASHBOARD = os.path.join(lab.LAB, "dashboard", "vault-audit.json")
 
 
 def user(c):
@@ -55,11 +57,33 @@ def sources(c):
     return ids
 
 
+def dashboard(c):
+    """Each tile's source *name* becomes the id of the source with that name, as HyperDX's own
+    import page does; the same JSON imports by hand on Managed ClickStack (Dashboards → Import)."""
+    template = json.load(open(DASHBOARD))
+    for d in c.json("GET", "/dashboards"):
+        if d["name"] == template["name"]:
+            print(f"dashboard exists: {d['id']}")
+            return
+    srcs = {s["name"].lower(): s["id"] for s in c.json("GET", "/sources")}
+    tiles = []
+    for tile in template["tiles"]:
+        config = dict(tile["config"])
+        if config["source"].lower() not in srcs:
+            sys.exit(f"tile '{config['name']}' names source '{config['source']}', which does not exist")
+        config["source"] = srcs[config["source"].lower()]
+        tiles.append({**tile, "config": config})
+    body = {"name": template["name"], "tags": template["tags"], "tiles": tiles,
+            "filters": template["filters"], "containers": template["containers"]}
+    print(f"dashboard created: {c.json('POST', '/dashboards', body)['id']} ({len(tiles)} tiles)")
+
+
 def main():
     c = lab.HyperDX()
     user(c)
     c.login()
     sources(c)
+    dashboard(c)
 
 
 if __name__ == "__main__":
