@@ -1,0 +1,42 @@
+# labs/common-fields · the gateway side of the common fields. Merge into the gateway collector's
+# config (otelcol-contrib 0.155.0) after its own file:  --config gateway.yaml --config standard-fields.yaml
+#
+# Where each common field comes from:
+#   service.name, service.namespace, service.version, deployment.environment.name
+#       the app (OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES, see README) or, for host metrics,
+#       the host agent's resource processor
+#   host.name, cloud.*, host.id
+#       the host agent's resourcedetection (system, ec2)
+#   svc.domain, svc.group
+#       EC2 tags svc.domain / svc.group on the instance: the host agent's ec2 detector reads them
+#       (tags: ['^svc\.'] -> ec2.tag.svc.domain, ec2.tag.svc.group; role needs ec2:DescribeTags),
+#       and this file renames them. An app that sets svc.* itself keeps its own value.
+#
+# The rename runs here, once, instead of on 4,000 hosts, so the key names are fixed in one place.
+# Rename svc.domain / svc.group to your own taxonomy keys here and in ../schema/schema.sql.
+
+processors:
+  transform/common-fields:
+    error_mode: ignore
+    trace_statements: &rename
+      - context: resource
+        statements:
+          - set(attributes["svc.domain"], attributes["ec2.tag.svc.domain"]) where attributes["svc.domain"] == nil and attributes["ec2.tag.svc.domain"] != nil
+          - set(attributes["svc.group"], attributes["ec2.tag.svc.group"]) where attributes["svc.group"] == nil and attributes["ec2.tag.svc.group"] != nil
+          - delete_key(attributes, "ec2.tag.svc.domain")
+          - delete_key(attributes, "ec2.tag.svc.group")
+    metric_statements: *rename
+    log_statements: *rename
+
+exporters:
+  clickhouse:
+    # The tables come from ../schema/schema.sql; the exporter must not create its own.
+    create_schema: false
+    logs_table_name: otel_logs
+    traces_table_name: otel_traces
+    metrics_tables:
+      gauge: { name: otel_metrics_gauge }
+      sum: { name: otel_metrics_sum }
+      summary: { name: otel_metrics_summary }
+      histogram: { name: otel_metrics_histogram }
+      exponential_histogram: { name: otel_metrics_exponential_histogram }

@@ -1,0 +1,15 @@
+# Test harness for ../collector/standard-fields.yaml: OTLP in, the rename, a file out. Used by
+# tests/test_collector.sh; the clickhouse exporter from standard-fields.yaml is given a dummy
+# endpoint and left out of the pipelines.
+receivers:
+  otlp:
+    protocols:
+      http: { endpoint: 0.0.0.0:4318 }
+exporters:
+  file/out: { path: /out/out.json }
+  clickhouse: { endpoint: "tcp://127.0.0.1:9000" }
+service:
+  pipelines:
+    logs: { receivers: [otlp], processors: [transform/common-fields], exporters: [file/out] }
+    metrics: { receivers: [otlp], processors: [transform/common-fields], exporters: [file/out] }
+    traces: { receivers: [otlp], processors: [transform/common-fields], exporters: [file/out] }
