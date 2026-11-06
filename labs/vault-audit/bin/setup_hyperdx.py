@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Register a localhost HyperDX test user (first run only), create two sources on the
-vault_audit database ("Vault Audit" logs, "Vault Metrics") and import dashboard/vault-audit.json.
+vault_audit database ("Vault Audit" logs, "Vault Metrics") and import the two dashboards in
+dashboard/: vault-audit.json (English tile names) and vault-audit.ko.json (Korean), the same tiles.
 
 - Credentials go to the gitignored .run/hyperdx-user (mode 600) and are never printed.
 - Sources are copied from the image's own default Logs / Metrics sources and pointed at
@@ -21,7 +22,7 @@ import lab
 NAMES = {"log": "Vault Audit", "metric": "Vault Metrics"}
 DROP = {"_id", "id", "__v", "createdAt", "updatedAt", "team", "metadataMaterializedViews",
         "logSourceId", "traceSourceId", "metricSourceId", "sessionSourceId"}
-DASHBOARD = os.path.join(lab.LAB, "dashboard", "vault-audit.json")
+DASHBOARDS = [os.path.join(lab.LAB, "dashboard", f) for f in ("vault-audit.json", "vault-audit.ko.json")]
 
 
 def user(c):
@@ -57,10 +58,10 @@ def sources(c):
     return ids
 
 
-def dashboard(c):
+def dashboard(c, path):
     """Each tile's source *name* becomes the id of the source with that name, as HyperDX's own
     import page does; the same JSON imports by hand on Managed ClickStack (Dashboards → Import)."""
-    template = json.load(open(DASHBOARD))
+    template = json.load(open(path))
     for d in c.json("GET", "/dashboards"):
         if d["name"] == template["name"]:
             print(f"dashboard exists: {d['id']}")
@@ -83,7 +84,8 @@ def main():
     user(c)
     c.login()
     sources(c)
-    dashboard(c)
+    for path in DASHBOARDS:
+        dashboard(c, path)
 
 
 if __name__ == "__main__":

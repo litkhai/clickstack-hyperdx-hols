@@ -1,2 +1,4 @@
 .run/
 .env
+# bin/capture.mjs writes 2x PNGs next to the WebPs; only the WebPs are kept
+images/**/*.png

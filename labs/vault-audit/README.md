@@ -46,7 +46,8 @@ Collector scrapes each node's own metrics, so the active/standby state sits next
 | Traffic | `bin/traffic.sh [rounds] [node]` | per round: an AppRole login, KV reads, transit encrypt/decrypt, two certificates, two denied requests, a userpass login, a token created by an administrator |
 | Collector | `otelcol/config.yaml` | `file_log` + `json_parser` (timestamp from the entry), `transform` to OTel fields, `count` connector, `prometheus` on three targets with a keep list, `file_storage` for read offsets |
 | ClickStack 2.42.0 | `docker-compose.yml`, `bin/setup_hyperdx.py` | local HyperDX with "Vault Audit" and "Vault Metrics" sources on `vault_audit`, and the dashboard below |
-| Dashboard | `dashboard/vault-audit.json` | "Vault audit and HA": active node, scrape `up` and audit entries per node; responses by category, denied requests, issuance, secret and key use. Imports as it is on Managed ClickStack (Dashboards → Import) |
+| Dashboards | `dashboard/vault-audit.json`, `dashboard/vault-audit.ko.json` | "Vault audit and HA" and its Korean twin "Vault 감사와 HA" (same tiles, Korean names and column aliases): active node, scrape `up` and audit entries per node; responses by category, denied requests, issuance, secret and key use. Both import as they are on Managed ClickStack (Dashboards → Import) |
+| Screens | `bin/capture.mjs` | headless Chromium, HyperDX dark mode, 1-minute granularity: dashboard, denied requests, one request/response pair, a login's detail panel, into `images/ko/` and `images/en/` |
 | Questions | `sql/queries.sql` | issuance history, one token's whole life, denied requests, secret and key use, HA state now, which node held the trail, responses per category |
 
 ### The OTel shape
@@ -111,8 +112,13 @@ bin/check.py               # S1–S8, about 3 minutes; stops and restarts the ac
 docker compose down -v
 ```
 
-HyperDX: http://localhost:48080 (the test user is in `.run/hyperdx-user`). Screens from this stack are in
-[`images/`](images/) (2026-11-06). Vault nodes: 48201–48203.
+HyperDX: http://localhost:48080 (the test user is in `.run/hyperdx-user`). Screens from this stack, dark mode,
+2026-11-06: [`images/en/`](images/en/), [`images/ko/`](images/ko/). To take them again (needs the
+`playwright` package and its Chromium; `cwebp` for the WebPs):
+
+```bash
+PLAYWRIGHT=<path to the playwright package> node bin/capture.mjs all
+``` Vault nodes: 48201–48203.
 A restarted Vault node comes back sealed: run `bin/vault_ha.sh` again.
 
 ### Managed ClickStack
@@ -126,7 +132,7 @@ The Collector writes to the Cloud service directly; Vault and the Collector stay
    `docker compose rm -sf otelcol && docker volume rm vaultlab_otelcol-storage && docker compose up -d --no-deps otelcol`
 3. In HyperDX on the Cloud service, add a **Log** source on `vault_audit.otel_logs` and a **Metric**
    source on `vault_audit` (`otel_metrics_gauge`, `_sum`, `_histogram`, `_summary`), with the default
-   OTel column mappings, named "Vault Audit" and "Vault Metrics", then import `dashboard/vault-audit.json`.
+   OTel column mappings, named "Vault Audit" and "Vault Metrics", then import `dashboard/vault-audit.json` (or `.ko.json`).
    The Log source's **Timestamp Column must stay `Timestamp`**: the form fills it in after the table is
    picked, and the contrib exporter's `otel_logs` has no `TimestampTime` column (nor does local ClickStack 2.42.0's own).
    With `TimestampTime`, every log tile answered `Unknown expression or function identifier`
@@ -134,9 +140,6 @@ The Collector writes to the Cloud service directly; Vault and the Collector stay
    sent again from the start, a Prometheus scrape has no history.
 4. `set -a; . ./.env; set +a; bin/check.py` — the same checks over HTTPS, without the S7 negative
    (its scratch Collector writes to the local ClickStack).
-
-Screens from the Seoul run: [`images/05-cloud-dashboard.webp`](images/05-cloud-dashboard.webp),
-[`images/06-cloud-denied-search.webp`](images/06-cloud-denied-search.webp).
 
 ### Tuning knobs
 
@@ -196,7 +199,8 @@ ClickHouse로 보냅니다. ClickStack이 그대로 읽는 OTel 로그 형태로
 | 트래픽 | `bin/traffic.sh [회수] [노드]` | 한 회차: AppRole 로그인, KV 읽기, transit 암복호화, 인증서 2장, 거부 요청 2건, userpass 로그인, 관리자의 토큰 발급 |
 | Collector | `otelcol/config.yaml` | `file_log` + `json_parser`(감사 항목의 시각), OTel 필드로 바꾸는 `transform`, `count` 커넥터, 대상 3개와 keep 목록을 둔 `prometheus`, 읽은 위치를 기억하는 `file_storage` |
 | ClickStack 2.42.0 | `docker-compose.yml`, `bin/setup_hyperdx.py` | `vault_audit`를 읽는 "Vault Audit"·"Vault Metrics" 소스와 아래 대시보드가 있는 로컬 HyperDX |
-| 대시보드 | `dashboard/vault-audit.json` | "Vault audit and HA": 노드별 active·수집 `up`·감사 항목, 범주별 응답, 거부 요청, 발급, 시크릿·키 사용. Managed ClickStack에서도 그대로 가져옵니다(Dashboards → Import) |
+| 대시보드 | `dashboard/vault-audit.json`, `dashboard/vault-audit.ko.json` | "Vault audit and HA"와 한국어판 "Vault 감사와 HA"(같은 타일, 이름과 열 별칭만 한국어): 노드별 active·수집 `up`·감사 항목, 범주별 응답, 거부 요청, 발급, 시크릿·키 사용. 둘 다 Managed ClickStack에서 그대로 가져옵니다(Dashboards → Import) |
+| 화면 | `bin/capture.mjs` | headless Chromium, HyperDX 다크 모드, 1분 단위: 대시보드, 거부 요청, 요청·응답 한 쌍, 로그인 상세 패널을 `images/ko/`, `images/en/`에 |
 | 질의 | `sql/queries.sql` | 발급 이력, 토큰 하나의 전 생애, 거부 요청, 시크릿·키 사용, 현재 HA 상태, 감사 기록을 쓴 노드, 범주별 응답 수 |
 
 ### OTel 형태
@@ -259,8 +263,12 @@ bin/check.py               # S1–S8, 약 3분. active 노드를 한 번 멈췄�
 docker compose down -v
 ```
 
-HyperDX: http://localhost:48080 (테스트 사용자는 `.run/hyperdx-user`). 이 스택에서 찍은 화면은
-[`images/`](images/)에 있습니다(2026-11-06). Vault 노드: 48201–48203.
+HyperDX: http://localhost:48080 (테스트 사용자는 `.run/hyperdx-user`). 이 스택에서 다크 모드로 찍은 화면(2026-11-06):
+[`images/ko/`](images/ko/), [`images/en/`](images/en/). 다시 찍으려면(`playwright` 패키지와 Chromium, WebP에는 `cwebp` 필요):
+
+```bash
+PLAYWRIGHT=<playwright 패키지 경로> node bin/capture.mjs all
+``` Vault 노드: 48201–48203.
 재시작한 Vault 노드는 봉인된 채로 올라옵니다. `bin/vault_ha.sh`를 다시 실행하세요.
 
 ### Managed ClickStack
@@ -274,16 +282,13 @@ Collector가 Cloud 서비스에 직접 씁니다. Vault와 Collector는 그 자�
    `docker compose rm -sf otelcol && docker volume rm vaultlab_otelcol-storage && docker compose up -d --no-deps otelcol`
 3. Cloud 서비스의 HyperDX에서 `vault_audit.otel_logs`를 읽는 **Log** 소스와 `vault_audit`(`otel_metrics_gauge`,
    `_sum`, `_histogram`, `_summary`)를 읽는 **Metric** 소스를 기본 OTel 컬럼 매핑으로, 이름은 "Vault Audit"·"Vault Metrics"로
-   추가하고 `dashboard/vault-audit.json`을 가져옵니다. 로그 소스의 **Timestamp Column은 `Timestamp`로 둡니다**. 테이블을
+   추가하고 `dashboard/vault-audit.json`(또는 `.ko.json`)을 가져옵니다. 로그 소스의 **Timestamp Column은 `Timestamp`로 둡니다**. 테이블을
    고르면 폼이 채워 주는 값이고, contrib exporter의 `otel_logs`에는 `TimestampTime` 열이 없습니다(로컬 ClickStack 2.42.0 자체
    테이블에도 없음). `TimestampTime`으로 두자 로그 타일이 모두 `Unknown expression or function identifier`로 끝났습니다(2026-11-06).
    메트릭 타일은 Collector를 서비스로 돌린 시점부터 그려집니다. 감사 파일은 처음부터 다시 보내지지만 Prometheus 수집에는
    과거가 없기 때문입니다.
 4. `set -a; . ./.env; set +a; bin/check.py`. 같은 검사를 HTTPS로 돌립니다. S7 음성 검사는 빠집니다(임시
    Collector가 로컬 ClickStack에 쓰기 때문).
-
-Seoul 실행의 화면: [`images/05-cloud-dashboard.webp`](images/05-cloud-dashboard.webp),
-[`images/06-cloud-denied-search.webp`](images/06-cloud-denied-search.webp).
 
 ### 튜닝 항목
 
