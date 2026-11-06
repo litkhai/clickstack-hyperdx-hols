@@ -38,6 +38,34 @@ variable "windows_instance_type" {
   default     = "t3.medium"
 }
 
+# managed = true (written by managed/windows_prep.py into managed.auto.tfvars): the gateway also
+# exports every set to a ClickHouse Cloud service, for Managed ClickStack screens.
+variable "managed" {
+  type    = bool
+  default = false
+}
+
+variable "ch_endpoint" {
+  type    = string
+  default = ""
+}
+
+variable "ch_user" {
+  type    = string
+  default = ""
+}
+
+variable "ch_password" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "ch_database" {
+  type    = string
+  default = ""
+}
+
 variable "otelcol_version" {
   type    = string
   default = "0.155.0"
@@ -262,6 +290,12 @@ resource "aws_instance" "linux" {
     otelcol_version = var.otelcol_version
     agent_config    = file("${path.module}/../collector/agent-linux.yaml")
     gateway_config  = file("${path.module}/../collector/gateway.yaml")
+    managed         = var.managed
+    managed_config  = file("${path.module}/../collector/gateway-managed.yaml")
+    ch_endpoint     = var.ch_endpoint
+    ch_user         = var.ch_user
+    ch_password     = var.ch_password
+    ch_database     = var.ch_database
   })
   user_data_replace_on_change = true
   tags                        = merge(local.service_tags, { Name = "${var.name_prefix}-linux" })

@@ -1,0 +1,39 @@
+# Overlay for `managed = true` (managed/windows_prep.py): merged after gateway.yaml, so every set
+# is still written to its file AND goes to a ClickHouse Cloud service, where Managed ClickStack
+# shows it. Lists are replaced, not merged, by the collector, so each pipeline names both exporters.
+#
+# Environment: CH_ENDPOINT (https://<host>:8443), CH_USER, CH_PASSWORD, CH_DATABASE.
+
+exporters:
+  clickhouse:
+    endpoint: ${env:CH_ENDPOINT}
+    username: ${env:CH_USER}
+    password: ${env:CH_PASSWORD}
+    database: ${env:CH_DATABASE}
+    create_schema: true
+    timeout: 10s
+    sending_queue:
+      enabled: true
+      queue_size: 10000
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 10m
+
+service:
+  pipelines:
+    metrics/linux-base:
+      exporters: [file/linux-base, clickhouse]
+    metrics/linux-proc:
+      exporters: [file/linux-proc, clickhouse]
+    metrics/windows-base:
+      exporters: [file/windows-base, clickhouse]
+    metrics/windows-proc:
+      exporters: [file/windows-proc, clickhouse]
+    metrics/windows-proc-ls:
+      exporters: [file/windows-proc-ls, clickhouse]
+    metrics/windows-perf:
+      exporters: [file/windows-perf, clickhouse]
+    metrics/windows-svc:
+      exporters: [file/windows-svc, clickhouse]
+    metrics/windows-script:
+      exporters: [file/windows-script, clickhouse]

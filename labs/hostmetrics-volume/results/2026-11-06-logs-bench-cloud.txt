@@ -1,0 +1,48 @@
+# logs schema bench on ClickHouse Cloud — 2026-11-06 08:22:00Z
+server: 26.8.1.608	2
+build: 134 s
+g0	10000000	333.56 MiB	1226
+g1	10000000	343.01 MiB	1226
+g2	10000000	340.73 MiB	1227
+run 1 Q1 g0        result=9921
+run 1 Q1 g1        result=9921
+run 1 Q1 g2        result=9921
+run 1 Q2 g0        result=2488
+run 1 Q2 g1        result=2488
+run 1 Q2 g2+group  result=2488
+run 1 Q3 g0        result=9921
+run 1 Q3 g1        result=9921
+run 1 Q3 g2        result=9921
+run 1 Q4 g0        result=10484
+run 1 Q4 g2        result=10483
+run 2 Q1 g0        result=9921
+run 2 Q1 g1        result=9921
+run 2 Q1 g2        result=9921
+run 2 Q2 g0        result=2488
+run 2 Q2 g1        result=2488
+run 2 Q2 g2+group  result=2488
+run 2 Q3 g0        result=9921
+run 2 Q3 g1        result=9921
+run 2 Q3 g2        result=9921
+run 2 Q4 g0        result=10437
+run 2 Q4 g2        result=10437
+
+query	run	read_rows	read_MiB	marks	ms
+Q1 g0	1	1775505	13.67	217	936
+Q1 g2	1	532480	1.02	65	17
+Q2 g0	1	180224	2.39	22	18
+Q2 g2+group	1	98304	0.33	12	8
+Q3 g0	1	1775505	13.67	217	743
+Q3 g2	1	532480	1.02	65	40
+Q4 g0	1	73728	0.63	9	38
+Q4 g2	1	98304	0.87	12	8
+Q1 g0	2	1775505	13.67	217	290
+Q1 g1	2	10000000	10.92	1221	152
+Q2 g1	2	10000000	19.53	1221	173
+Q2 g2+group	2	98304	0.33	12	6
+Q3 g0	2	1775505	13.67	217	274
+Q3 g1	2	10000000	19.08	1221	539
+Q3 g2	2	532480	1.02	65	32
+Q4 g2	2	98304	0.87	12	8
+
+kept logs_bench_hmv; ClickStack log sources: hmv logs g0 default, hmv logs g2 taxonomy key; run --cleanup when done
