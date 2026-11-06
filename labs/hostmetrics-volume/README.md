@@ -73,7 +73,52 @@ Per-minute record: [`results/2026-11-06-timeline.json`](results/2026-11-06-timel
 How an alert sees these: [`labs/process-down-alerts`](../process-down-alerts/README.md) — a
 group-by alert does not fire for a series that stopped (A, B), but does for an explicit value (C, D).
 
-### 3. One gateway for many networks
+### 3. Where the common fields should live (schema bench)
+
+The service taxonomy and `host.name` are what every fleet query filters on. Three tables with the
+same 16.8 M synthetic rows (4,000 hosts × 70 metrics × 60 minutes, `ServiceName` constant, like
+host metrics): **A** the exporter's default gauge schema (attributes in `Map`, bloom filters on
+map keys and values, `ORDER BY (ServiceName, MetricName, Attributes, time)`), **B** A plus
+`MATERIALIZED` columns `host` and `svc_group` with skip indexes, **C** an own schema
+(`create_schema: false`) with `ORDER BY (ServiceName, MetricName, svc_group, host, time)`.
+`clickhouse local` 26.8.34.13 (the ClickStack 2.42.0 image) on Docker Desktop, 2026-11-06, two
+runs agree; [`schema-bench/`](schema-bench/), [`results/2026-11-06-schema-bench.txt`](results/2026-11-06-schema-bench.txt).
+
+| Query | A default | B materialized columns | C taxonomy in the sort key |
+|---|---|---|---|
+| one host, one metric, 60 min | 253,952 rows · 0.89 MiB · 96 ms | 253,952 · 0.21 MiB · 21 ms | with the group in the filter: **8,192 · 0.02 MiB · 1.2 ms** (host alone: 188,416 · 4.8 ms) |
+| one group (200 hosts), one metric | 253,952 · 1.74 MiB · 59 ms | 253,952 · 0.14 MiB · 14 ms | **24,576 · 0.03 MiB · 1.2 ms** |
+| one host, every metric | 16.8 M · 57 MiB · 1,353 ms | 16.8 M · 4.9 MiB · 52 ms | group + host: **1.14 M · 0.5 MiB · 45 ms** |
+
+- The bloom filters (on the map or on the column) skipped nothing here: every granule holds
+  thousands of hosts, so every granule may contain the one asked for.
+- A materialized column reads the same rows but not the whole map: 4–12× fewer bytes, 5–26×
+  faster.
+- The sort key is what cuts rows: 10–30× fewer, but only when the query names the leading
+  key (group, then host).
+- Storage was the same within 5 % (A 107.8 MiB, B 112.0, C 106.1).
+
+**The same bench on ClickHouse Cloud** (the Seoul service Managed ClickStack reads: 26.8.1.608, 2
+replicas, `max_threads` 2; [`schema-bench/cloud_bench.py`](schema-bench/cloud_bench.py),
+[`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt), run 2 of 2,
+2026-11-06). A1 is the newer default these services' tables carry (`ORDER BY (ServiceName,
+MetricName, toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)` + a `TimeUnix` minmax index).
+
+| Query | A0 default (0.155) | A1 newer default | B materialized columns | C taxonomy in the sort key |
+|---|---|---|---|---|
+| one host, one metric | 286,720 rows · 6.52 MiB · 85 ms | 263,936 · 6.00 MiB · 22 ms | 259,456 · 4.31 MiB · 46 ms | group + host: **32,768 · 0.54 MiB · 44 ms** |
+| one group, one metric | 286,720 · 8.02 MiB · 104 ms | 263,936 · 7.38 MiB · 104 ms | 275,840 · 4.66 MiB · 203 ms | **49,152 · 0.79 MiB · 5 ms** |
+| one host, every metric | 16.8 M · 187.8 MiB · 1,369 ms (run 1: 2,701) | 15.7 M · 175.4 MiB · 2,445 ms | 16.8 M · 49.8 MiB · 845 ms (run 1: 702) | group + host: **4.8 M · 17.4 MiB · 120 ms** (run 1: 201) |
+
+- Same direction as locally: bloom filters skip nothing, the newer default does not help a host
+  filter, and only the sort key cuts what is read (8–12× fewer bytes, 11× faster on the largest query).
+- Materialized columns help less than locally: 1.4–3.8× fewer bytes, 1.6× (warm) to 3.8× (run 1)
+  faster on the largest query — and B took **46 % more storage** (47.3 → 68.9 MiB; locally +4 %).
+- Small queries' times scatter between 5 and 200 ms on Cloud; read rows and bytes are the measure.
+- A1 holds 15.69 M of 16.8 M rows: its copy from A0 started before all of A0's parts were visible
+  on the replica that ran it. Compare A1 by marks and bytes per row, not by counts.
+
+### 4. One gateway for many networks
 
 | Check (from) | Result |
 |---|---|
@@ -194,7 +239,38 @@ S4 gs2 작업 재시작(05:03:45Z). 분 단위 기록: [`results/2026-11-06-time
 알림이 이것을 어떻게 보는지는 [`labs/process-down-alerts`](../process-down-alerts/README.md)에 있습니다 —
 group by 알림은 끊긴 시계열(A, B)에는 울리지 않고, 명시적인 값(C, D)에는 울립니다.
 
-### 3. 여러 네트워크에서 gateway 하나로
+### 3. 공통 필드를 어디에 둘 것인가(스키마 비교)
+
+서비스 분류와 `host.name`은 플릿 전체 조회가 매번 거는 조건입니다. 같은 합성 데이터 1,680만 행
+(호스트 4,000 × 메트릭 70 × 60분, 호스트 메트릭처럼 `ServiceName`은 하나)으로 테이블 셋을 비교했습니다.
+**A**는 exporter 기본 gauge 스키마(속성은 `Map`, map 키·값에 bloom filter, `ORDER BY (ServiceName,
+MetricName, Attributes, time)`), **B**는 A에 `MATERIALIZED` 컬럼 `host`, `svc_group`과 skip index를 더한 것,
+**C**는 직접 만든 스키마(`create_schema: false`)로 `ORDER BY (ServiceName, MetricName, svc_group, host, time)`
+입니다. Docker Desktop의 `clickhouse local` 26.8.34.13(ClickStack 2.42.0 이미지), 2026-11-06, 두 번 돌려
+같은 결과. 표는 위 English 절과 같습니다.
+
+- bloom filter(map에 걸든 컬럼에 걸든)는 이 데이터에서 아무것도 건너뛰지 못했습니다. granule마다 호스트가
+  수천 대 섞여 있어서, 어느 granule에나 찾는 호스트가 있을 수 있기 때문입니다.
+- materialized 컬럼은 읽는 행은 같지만 map 전체를 읽지 않습니다. 바이트가 4–12분의 1, 5–26배 빠릅니다.
+- 행을 줄이는 것은 정렬 키입니다. 10–30분의 1로 줄지만, 조회가 앞쪽 키(그룹, 그다음 호스트)를 조건에
+  넣을 때만입니다.
+- 저장 크기는 5% 안에서 같았습니다(A 107.8 MiB, B 112.0, C 106.1).
+
+**같은 비교를 ClickHouse Cloud에서**(Managed ClickStack이 읽는 서울 서비스: 26.8.1.608, replica 2,
+`max_threads` 2. [`schema-bench/cloud_bench.py`](schema-bench/cloud_bench.py),
+[`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt), 2회 중 2회째,
+2026-11-06). A1은 이 서비스 테이블들이 가진 최신 기본값입니다(`ORDER BY (ServiceName, MetricName,
+toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)` + `TimeUnix` minmax 인덱스). 표는 위 English 절과 같습니다.
+
+- 방향은 로컬과 같습니다. bloom filter는 건너뛰지 못했고, 최신 기본값도 호스트 조건에 도움이 되지 않았으며,
+  읽는 양을 줄인 것은 정렬 키뿐입니다(바이트 8–12분의 1, 가장 큰 조회 11배 빠름).
+- materialized 컬럼의 효과는 로컬보다 작습니다. 바이트 1.4–3.8분의 1, 가장 큰 조회 1.6배(warm)–3.8배(1회째)
+  빠름. 그리고 B는 저장을 **46% 더** 썼습니다(47.3 → 68.9 MiB, 로컬은 +4%).
+- Cloud에서 작은 조회 시간은 5–200 ms 사이로 흔들립니다. 읽은 행과 바이트를 기준으로 봅니다.
+- A1은 1,680만 행 중 1,569만 행만 들어갔습니다. A0에서 복사를 시작할 때 그 replica에 A0의 part가 다 보이지
+  않았던 것으로 보입니다. A1은 건수가 아니라 granule·바이트 비율로 비교합니다.
+
+### 4. 여러 네트워크에서 gateway 하나로
 
 | 확인(출발) | 결과 |
 |---|---|

@@ -2,4 +2,4 @@
 target: oss
 tier: T1
 services: [clickstack]
-verified_on: "clickstack-all-in-one 2.42.0 (ClickHouse 26.8.34.13), 2026-11-06"
+verified_on: "clickstack-all-in-one 2.42.0 (ClickHouse 26.8.34.13) and Managed ClickStack (ClickHouse Cloud 26.8.1.608), 2026-11-06"
