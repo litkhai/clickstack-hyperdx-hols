@@ -1,0 +1,103 @@
+# Measuring gateway — one OTLP/HTTP port per (source, set), each written to its own file.
+# No batch processor: what arrives is what is written, so the file count and the receiver's
+# accepted-points counter must agree (check M1's control).
+#
+#   4318 linux base    4328 linux process
+#   4319 windows base  4329 windows process (A, LocalSystem)  4349 process (A, LocalService)
+#   4359 windows perfcounters (B)  4369 windows_service (C)  4379 check script (D)
+# The Windows host reaches 43x9 through the NLB-backed endpoint service; NLB health checks go
+# to 13133 (health_check), so they do not add to the nft byte counters on the OTLP ports.
+#
+# Environment: OUT_DIR (where the .jsonl files go).
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp/linux-base:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+  otlp/linux-proc:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4328
+  otlp/windows-base:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4319
+  otlp/windows-proc:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4329
+
+  otlp/windows-proc-ls:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4349
+  otlp/windows-perf:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4359
+  otlp/windows-svc:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4369
+  otlp/windows-script:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4379
+exporters:
+  file/linux-base:
+    path: ${env:OUT_DIR}/linux-base.jsonl
+  file/linux-proc:
+    path: ${env:OUT_DIR}/linux-proc.jsonl
+  file/windows-base:
+    path: ${env:OUT_DIR}/windows-base.jsonl
+  file/windows-proc:
+    path: ${env:OUT_DIR}/windows-proc.jsonl
+
+  file/windows-proc-ls:
+    path: ${env:OUT_DIR}/windows-proc-ls.jsonl
+  file/windows-perf:
+    path: ${env:OUT_DIR}/windows-perf.jsonl
+  file/windows-svc:
+    path: ${env:OUT_DIR}/windows-svc.jsonl
+  file/windows-script:
+    path: ${env:OUT_DIR}/windows-script.jsonl
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    metrics/linux-base:
+      receivers: [otlp/linux-base]
+      exporters: [file/linux-base]
+    metrics/linux-proc:
+      receivers: [otlp/linux-proc]
+      exporters: [file/linux-proc]
+    metrics/windows-base:
+      receivers: [otlp/windows-base]
+      exporters: [file/windows-base]
+    metrics/windows-proc:
+      receivers: [otlp/windows-proc]
+      exporters: [file/windows-proc]
+    metrics/windows-proc-ls:
+      receivers: [otlp/windows-proc-ls]
+      exporters: [file/windows-proc-ls]
+    metrics/windows-perf:
+      receivers: [otlp/windows-perf]
+      exporters: [file/windows-perf]
+    metrics/windows-svc:
+      receivers: [otlp/windows-svc]
+      exporters: [file/windows-svc]
+    metrics/windows-script:
+      receivers: [otlp/windows-script]
+      exporters: [file/windows-script]

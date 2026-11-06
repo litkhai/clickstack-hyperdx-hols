@@ -1,0 +1,71 @@
+<powershell>
+# Rendered by templatefile() in main.tf. Configs and the check script are inserted as plain values.
+# Template note: a literal dollar-brace must be written with a doubled dollar here.
+$ErrorActionPreference = 'Stop'
+Start-Transcript -Path C:\hmv-user-data.log -Append
+
+New-Item -ItemType Directory -Force -Path C:\otel, C:\game | Out-Null
+$tgz = "C:\otel\otelcol-contrib.tar.gz"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${otelcol_version}/otelcol-contrib_${otelcol_version}_windows_amd64.tar.gz" -OutFile $tgz
+tar.exe -xzf $tgz -C C:\otel
+
+@'
+${agent_config}
+'@ | Set-Content -Encoding ascii -Path C:\otel\agent.yaml
+@'
+${agent_ls_config}
+'@ | Set-Content -Encoding ascii -Path C:\otel\agent-ls.yaml
+$gs = @'
+${gameserver_config}
+'@
+$gs.Replace('$${env:GS_PORT}', '14317') | Set-Content -Encoding ascii -Path C:\game\gs1.yaml
+$gs.Replace('$${env:GS_PORT}', '14318') | Set-Content -Encoding ascii -Path C:\game\gs2.yaml
+@'
+${check_ps1}
+'@ | Set-Content -Encoding ascii -Path C:\game\check.ps1
+
+# The stand-in game server: the collector binary under another name (service-aware, does nothing).
+Copy-Item C:\otel\otelcol-contrib.exe C:\game\GameServer.exe
+
+# Gateway endpoints: the interface endpoint of the gateway's endpoint service (no route to the
+# gateway VPC otherwise). Machine-level, so services started after this read them.
+$ep = '${endpoint_dns}'
+foreach ($kv in @(@('GATEWAY_BASE', 4319), @('GATEWAY_PROC', 4329), @('GATEWAY_PROC_LS', 4349), @('GATEWAY_PERF', 4359), @('GATEWAY_SVC', 4369), @('GATEWAY_SCRIPT', 4379))) {
+    [Environment]::SetEnvironmentVariable($kv[0], "http://$($ep):$($kv[1])", 'Machine')
+}
+[Environment]::SetEnvironmentVariable('TELEMETRY_PORT', '8888', 'Machine')
+
+# Instance gs1: a Windows service (LocalSystem). Instance gs2: a SYSTEM scheduled task at startup.
+New-Service -Name GameServer -DisplayName 'hmv stand-in game server' -StartupType Automatic `
+  -BinaryPathName '"C:\game\GameServer.exe" --config "C:\game\gs1.yaml"' | Out-Null
+Start-Service GameServer
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries
+Register-ScheduledTask -TaskName GameServer2 -User 'SYSTEM' -RunLevel Highest -Settings $settings `
+  -Trigger (New-ScheduledTaskTrigger -AtStartup) `
+  -Action (New-ScheduledTaskAction -Execute 'C:\game\GameServer.exe' -Argument '--config C:\game\gs2.yaml') | Out-Null
+Start-ScheduledTask -TaskName GameServer2
+
+# Method D: every minute as SYSTEM.
+Register-ScheduledTask -TaskName ProcessCheck -User 'SYSTEM' -RunLevel Highest -Settings $settings `
+  -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)) `
+  -Action (New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\game\check.ps1') | Out-Null
+
+# Agents: LocalSystem (every method) and LocalService (method A only, W3).
+foreach ($s in @('otelcol-agent', 'otelcol-agent-ls')) {
+  try { New-EventLog -LogName Application -Source $s } catch { }
+}
+New-Service -Name otelcol-agent -DisplayName 'hmv host agent' -StartupType Automatic `
+  -BinaryPathName '"C:\otel\otelcol-contrib.exe" --config "C:\otel\agent.yaml"' | Out-Null
+New-Service -Name otelcol-agent-ls -DisplayName 'hmv host agent (LocalService)' -StartupType Automatic `
+  -BinaryPathName '"C:\otel\otelcol-contrib.exe" --config "C:\otel\agent-ls.yaml"' | Out-Null
+# Not `sc.exe config ... password= ""`: Windows PowerShell 5.1 drops the empty argument and sc.exe
+# leaves the service on LocalSystem (seen 2026-11-06). Win32_Service.Change takes the empty password.
+$ls = Get-CimInstance Win32_Service | Where-Object { $_.Name -eq 'otelcol-agent-ls' }
+$r = Invoke-CimMethod -InputObject $ls -MethodName Change -Arguments @{ StartName = 'NT AUTHORITY\LocalService'; StartPassword = '' }
+if ($r.ReturnValue -ne 0) { throw "Win32_Service.Change returned $($r.ReturnValue)" }
+Start-Service otelcol-agent
+Start-Service otelcol-agent-ls
+Write-Output "hmv user data done $((Get-Date).ToUniversalTime().ToString('s'))Z"
+Stop-Transcript
+</powershell>

@@ -1,0 +1,35 @@
+# Method A under NT AUTHORITY\LocalService (service otelcol-agent-ls): the same process scraper
+# as the LocalSystem agent, to see what a non-administrative account can read about processes
+# that run as SYSTEM. Exports to GATEWAY_PROC_LS (4349). Its own telemetry port is fixed at 8889.
+
+receivers:
+  hostmetrics/process:
+    collection_interval: 60s
+    scrapers:
+      process:
+        include:
+          names: ['^(otelcol-contrib|GameServer)\.exe$']
+          match_type: regexp
+
+processors:
+  batch: {}
+
+exporters:
+  otlphttp/process:
+    endpoint: ${env:GATEWAY_PROC_LS}
+    compression: gzip
+
+service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 127.0.0.1
+                port: 8889
+  pipelines:
+    metrics/process:
+      receivers: [hostmetrics/process]
+      processors: [batch]
+      exporters: [otlphttp/process]

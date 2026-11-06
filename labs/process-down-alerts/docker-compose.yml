@@ -1,0 +1,28 @@
+# Local ClickStack 2.42.0 (the HyperDX version Managed ClickStack runs, read 2026-11-04 in
+# labs/promql) plus a webhook receiver that writes every alert notification it gets to a file.
+#
+#   docker compose up -d && bin/setup.py && bin/run.sh
+services:
+  clickstack:
+    image: clickhouse/clickstack-all-in-one:2.42.0
+    container_name: process-down-alerts
+    restart: unless-stopped
+    ports:
+      - "${AL_UI_PORT:-29080}:8080"
+      - "${AL_API_PORT:-29000}:8000"
+      - "${AL_CH_HTTP_PORT:-29123}:8123"
+      - "${AL_OTLP_HTTP_PORT:-29318}:4318"
+    volumes:
+      - al-data:/data
+
+  # HyperDX refuses webhook URLs that are a private IP literal or localhost
+  # (packages/api/src/utils/validators.ts, @hyperdx/api@2.42.0); a compose service name passes.
+  webhook:
+    image: python:3.12-alpine
+    command: ["python", "-u", "/bin/webhook.py"]
+    volumes:
+      - ./bin/webhook.py:/bin/webhook.py:ro
+      - ./out:/out
+
+volumes:
+  al-data:

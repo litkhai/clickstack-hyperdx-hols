@@ -1,0 +1,5 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs its own ClickStack container.
+target: oss
+tier: T1
+services: [clickstack]
+verified_on: "clickstack-all-in-one 2.42.0 (ClickHouse 26.8.34.13), 2026-11-06"

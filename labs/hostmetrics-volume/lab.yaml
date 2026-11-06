@@ -1,0 +1,5 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: EC2 (Terraform) plus a local smoke compose.
+target: oss
+tier: T1
+services: [otelcol]
+verified_on: "otelcol-contrib 0.155.0 on EC2 (AL2023 arm64 t4g.small, Windows Server 2022 t3.medium), ap-northeast-2, 2026-11-06"

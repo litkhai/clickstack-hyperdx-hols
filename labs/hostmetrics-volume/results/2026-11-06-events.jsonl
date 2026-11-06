@@ -1,0 +1,7 @@
+{"event":"start","t":1793940747}
+{"event":"S1 gs1 service stopped","t":1793940752}
+{"event":"A-LS agent switched to NT AUTHORITY\\LocalService (sc.exe config had left it LocalSystem)","t":1793940829}
+{"event":"S2 gs1 service started","t":1793940996}
+{"event":"S3 gs2 task process killed","t":1793941180}
+{"event":"S4 gs2 task started","t":1793941425}
+{"event":"end","t":1793941605}
