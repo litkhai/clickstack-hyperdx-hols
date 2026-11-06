@@ -110,6 +110,8 @@ A restarted Vault node comes back sealed: run `bin/vault_ha.sh` again.
 ### Managed ClickStack
 
 The Collector writes to the Cloud service directly; Vault and the Collector stay where they are.
+`bin/cloud.sh <env-file>` does steps 1, 2 and 4 in one go from a file that sets `CH_HOST`, `CH_USER` and
+`CH_PASSWORD`, and refuses a database that already has tables.
 
 1. `cp .env.example .env`, fill in the service host, user and password (`chmod 600 .env`).
 2. Start the Collector on the new target with fresh read offsets, so it sends the existing files too:
@@ -241,6 +243,8 @@ HyperDX: http://localhost:48080 (테스트 사용자는 `.run/hyperdx-user`). Va
 ### Managed ClickStack
 
 Collector가 Cloud 서비스에 직접 씁니다. Vault와 Collector는 그 자리에 둡니다.
+`bin/cloud.sh <env 파일>`이 `CH_HOST`, `CH_USER`, `CH_PASSWORD`를 둔 파일로 1, 2, 4단계를 한 번에 하고,
+테이블이 이미 있는 데이터베이스에는 실행하지 않습니다.
 
 1. `cp .env.example .env` 후 서비스 호스트, 사용자, 비밀번호를 채웁니다(`chmod 600 .env`).
 2. 읽은 위치를 비우고 새 대상으로 Collector를 띄웁니다. 기존 파일도 보내집니다:
