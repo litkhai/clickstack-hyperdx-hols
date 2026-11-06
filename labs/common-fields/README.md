@@ -130,6 +130,13 @@ it (`pay` matches `payments` and `paypal`), and it is the index, not the search,
 
 ![Substring svc.group:g7: sent as ILIKE, Scanned Rows 49,152 on this schema](images/03-search-substring.webp)
 
+The same fields tie the signals together. Searching the trace source for
+`ResourceAttributes.svc.group:"g7" StatusCode:"Error"` and opening a span shows its log lines on
+the same timeline (the trace source is linked to the log source; the logs carry the span's trace
+id) and the common fields under Resource Attributes:
+
+![A g7 error span with its four log lines in the waterfall; Resource Attributes show svc.domain d3, svc.group g7, host.name, deployment.environment.name](images/04-trace-with-logs.webp)
+
 Screens: Managed ClickStack (HyperDX 2.42.0) on ClickHouse Cloud 26.8.1.608, Seoul, 2026-11-06,
 `managed/demo.py`; rows read confirmed in `system.query_log`.
 
@@ -271,6 +278,12 @@ materialized 컬럼을 찾아 map 키 검색을 그 컬럼으로 바꿔 씁니�
 `paypal`을 모두 잡음), 읽는 양을 줄인 것은 검색 방식이 아니라 인덱스이기 때문입니다.
 
 ![부분 일치 svc.group:g7: ILIKE로 나가고, 이 스키마에서 Scanned Rows 49,152](images/03-search-substring.webp)
+
+같은 필드가 신호를 서로 잇습니다. trace 소스에서 `ResourceAttributes.svc.group:"g7" StatusCode:"Error"`로 검색해
+span 하나를 열면, 그 span의 로그 줄이 같은 시간축에 함께 나오고(trace 소스를 로그 소스와 연결했고, 로그에 span의
+trace ID가 들어 있음), Resource Attributes에 공통 필드가 보입니다.
+
+![g7의 에러 span과 로그 네 줄이 한 waterfall에, Resource Attributes에 svc.domain d3, svc.group g7, host.name, deployment.environment.name](images/04-trace-with-logs.webp)
 
 화면: Managed ClickStack(HyperDX 2.42.0), ClickHouse Cloud 26.8.1.608, 서울, 2026-11-06, `managed/demo.py`.
 읽은 행은 `system.query_log`로 확인했습니다.
