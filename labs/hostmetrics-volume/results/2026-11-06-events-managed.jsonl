@@ -1,0 +1,6 @@
+{"event":"start","t":1793954234}
+{"event":"S1 gs1 service stopped","t":1793954238}
+{"event":"S2 gs1 service started","t":1793954482}
+{"event":"S3 gs2 task process killed","t":1793954666}
+{"event":"S4 gs2 task started","t":1793954911}
+{"event":"end","t":1793955091}

@@ -42,13 +42,30 @@ table inet hmv {
 EOF_NFT
 nft -f /etc/nftables/hmv.nft
 
+%{ if managed ~}
+cat > /opt/otel/gateway-managed.yaml <<'EOF_CFG'
+${managed_config}
+EOF_CFG
+cat > /opt/otel/ch.env <<'EOF_ENV'
+CH_ENDPOINT=${ch_endpoint}
+CH_USER=${ch_user}
+CH_PASSWORD=${ch_password}
+CH_DATABASE=${ch_database}
+EOF_ENV
+chmod 600 /opt/otel/ch.env
+%{ endif ~}
 cat > /etc/systemd/system/otel-gateway.service <<'EOF_UNIT'
 [Unit]
 Description=hmv measuring gateway
 After=network-online.target
 [Service]
 Environment=OUT_DIR=/var/lib/hmv
+%{ if managed ~}
+EnvironmentFile=/opt/otel/ch.env
+ExecStart=/opt/otel/otelcol-contrib --config /opt/otel/gateway.yaml --config /opt/otel/gateway-managed.yaml
+%{ else ~}
 ExecStart=/opt/otel/otelcol-contrib --config /opt/otel/gateway.yaml
+%{ endif ~}
 Restart=always
 [Install]
 WantedBy=multi-user.target

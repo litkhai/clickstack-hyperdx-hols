@@ -70,6 +70,16 @@ Per-minute record: [`results/2026-11-06-timeline.json`](results/2026-11-06-timel
   on LocalSystem (Windows PowerShell 5.1 drops the empty argument). `Win32_Service.Change` with an
   empty password works; the user data now uses it. The LocalService row is from 04:53:49Z on.
 
+**The same stop/start test on Managed ClickStack** (2026-11-06 08:10–08:58Z): `managed/windows_prep.py`,
+then `terraform apply` with `managed = true`, so the gateway also wrote every set to the database
+`windows_hmv` on the Seoul service, and `bin/run.sh killtest` (events:
+[`results/2026-11-06-events-managed.jsonl`](results/2026-11-06-events-managed.jsonl)). The prepared
+dashboard showed the same four behaviours as the minute table above — service state 1 only while the
+gs1 service was stopped, the check script 0 for gs1 and then gs2, the process scraper starting a
+new PID line at every restart. Screens are in the notes article on this run. First attempt: the
+clickhouse exporter's `CREATE DATABASE` failed with HTTP 403 because the ingest user lacked that
+right; `windows_prep.py` now grants it.
+
 How an alert sees these: [`labs/process-down-alerts`](../process-down-alerts/README.md) — a
 group-by alert does not fire for a series that stopped (A, B), but does for an explicit value (C, D).
 
@@ -99,24 +109,48 @@ runs agree; [`schema-bench/`](schema-bench/), [`results/2026-11-06-schema-bench.
 - Storage was the same within 5 % (A 107.8 MiB, B 112.0, C 106.1).
 
 **The same bench on ClickHouse Cloud** (the Seoul service Managed ClickStack reads: 26.8.1.608, 2
-replicas, `max_threads` 2; [`schema-bench/cloud_bench.py`](schema-bench/cloud_bench.py),
-[`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt), run 2 of 2,
-2026-11-06). A1 is the newer default these services' tables carry (`ORDER BY (ServiceName,
-MetricName, toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)` + a `TimeUnix` minmax index).
+replicas), 2026-11-06. **Read after every table had merged into one part** — the first Cloud
+run ([`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt)) read the
+tables right after `OPTIMIZE … FINAL` returned, before the merges had settled, and overstated B's
+storage (+46 %) and understated its speed; it is kept as that run's record, not as the result.
+Settled numbers, run 2 of 2: [`results/2026-11-06-schema-bench-cloud-settled.txt`](results/2026-11-06-schema-bench-cloud-settled.txt).
+A1 is the newer default these services' tables carry (`ORDER BY (ServiceName, MetricName,
+toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)` + a `TimeUnix` minmax index).
 
 | Query | A0 default (0.155) | A1 newer default | B materialized columns | C taxonomy in the sort key |
 |---|---|---|---|---|
-| one host, one metric | 286,720 rows · 6.52 MiB · 85 ms | 263,936 · 6.00 MiB · 22 ms | 259,456 · 4.31 MiB · 46 ms | group + host: **32,768 · 0.54 MiB · 44 ms** |
-| one group, one metric | 286,720 · 8.02 MiB · 104 ms | 263,936 · 7.38 MiB · 104 ms | 275,840 · 4.66 MiB · 203 ms | **49,152 · 0.79 MiB · 5 ms** |
-| one host, every metric | 16.8 M · 187.8 MiB · 1,369 ms (run 1: 2,701) | 15.7 M · 175.4 MiB · 2,445 ms | 16.8 M · 49.8 MiB · 845 ms (run 1: 702) | group + host: **4.8 M · 17.4 MiB · 120 ms** (run 1: 201) |
+| one host, one metric | 253,952 rows · 5.68 MiB | 229,376 · 5.13 MiB | 253,952 · 3.40 MiB | group + host: **8,192 · 0.12 MiB** |
+| one group, one metric | 253,952 · 6.97 MiB | 229,376 · 6.30 MiB | 253,952 · 3.64 MiB | **24,576 · 0.35 MiB** |
+| one host, every metric | 16.8 M · 187.8 MiB · 572 ms | 15.7 M · 175.4 MiB · 690 ms | 16.8 M · 32.0 MiB · 20 ms | group + host: **1.14 M · 3.26 MiB · 16 ms** |
+| storage | 41.32 MiB | 39.00 MiB | 44.89 MiB (+8.6 %) | 41.62 MiB |
 
-- Same direction as locally: bloom filters skip nothing, the newer default does not help a host
-  filter, and only the sort key cuts what is read (8–12× fewer bytes, 11× faster on the largest query).
-- Materialized columns help less than locally: 1.4–3.8× fewer bytes, 1.6× (warm) to 3.8× (run 1)
-  faster on the largest query — and B took **46 % more storage** (47.3 → 68.9 MiB; locally +4 %).
-- Small queries' times scatter between 5 and 200 ms on Cloud; read rows and bytes are the measure.
-- A1 holds 15.69 M of 16.8 M rows: its copy from A0 started before all of A0's parts were visible
-  on the replica that ran it. Compare A1 by marks and bytes per row, not by counts.
+- Same as locally once settled: bloom filters skip nothing; the newer default does not help a host
+  filter; the sort key cuts bytes 45–58×; materialized columns cut bytes 1.6–5.9× and the largest
+  query 29×, for 8.6 % more storage. Small queries' times (3–270 ms) are noise on Cloud.
+- A1 holds 15,688,047 of 16.8 M rows in both builds: the rows of minutes 00:55–00:59 are missing
+  (56–58 entirely) after `INSERT … SELECT` from A0. Cause not identified; compare A1 by ratios.
+
+**Logs on ClickHouse Cloud** ([`schema-bench/cloud_logs_bench.py`](schema-bench/cloud_logs_bench.py),
+[`results/2026-11-06-logs-bench-cloud.txt`](results/2026-11-06-logs-bench-cloud.txt), 2026-11-06 08:22Z):
+10 M rows, 200 services in 20 groups, 4,000 hosts, 60 minutes, 2 % ERROR. G0 is the current
+default logs schema (`ORDER BY (toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`, text
+indexes on the map keys/values and `lower(Body)`); G1 adds `svc_group`/`host` MATERIALIZED columns
+**without** an index; G2 puts the taxonomy first in the sort key.
+
+| Query | G0 default | G1 + materialized, no index | G2 taxonomy in the sort key |
+|---|---|---|---|
+| one group's ERRORs | 1.78 M rows · 13.7 MiB · 290 ms | **10 M · 10.9 MiB · 152 ms** | **0.53 M · 1.0 MiB · 17 ms** |
+| one host | 180 K · 2.4 MiB · 18 ms | **10 M · 19.5 MiB · 173 ms** | 98 K · 0.33 MiB · 6 ms |
+| `hasToken(lower(Body), 'timeout')` in a group | 1.78 M · 274 ms | 10 M · 539 ms | 0.53 M · 32 ms |
+| one service, last 15 min | 74 K · 38 ms | — | 98 K · 8 ms |
+
+- The default logs schema starts well (text index on the map values: 217 of 1,226 granules read).
+  The taxonomy in the sort key still reads 3.3× fewer rows and 13× fewer bytes.
+- A MATERIALIZED column without an index made the filter on it read every row. ClickStack rewrites
+  matching conditions to such a column, so add a skip index whenever you add one.
+- In the ClickStack search screen (the `hmv logs g0/g2` sources a `--keep` run creates),
+  `ResourceAttributes.svc.group:g7` is a substring match and scanned all 10 M rows on both;
+  the exact `ResourceAttributes.svc.group:"g7"` scanned 1,564,672 on G0 and 507,904 on G2.
 
 ### 4. One gateway for many networks
 
@@ -164,6 +198,9 @@ terraform -chdir=terraform destroy
 | `bin/analyze.py`, `bin/timeline.py` | volume report; per-minute method view. Sent to the gateway through SSM |
 | `bin/check.ps1` | method D |
 | `local/` | the Linux half in Docker, to check configs before applying |
+| `managed/windows_prep.py` | Managed ClickStack side of a `managed = true` run: database, ingest user (password only in the gitignored `terraform/managed.auto.tfvars`), metric source, dashboard; `--cleanup` |
+| `collector/gateway-managed.yaml` | overlay: the gateway also writes every set to that database (clickhouse exporter) |
+| `schema-bench/cloud_bench.py`, `cloud_logs_bench.py` | the metric and log schema benches on a Cloud service; `--keep` / `--cleanup` |
 
 For the configuration to use on real hosts, see the standard profile
 [`otel-profiles/profiles/windows-host`](../../otel-profiles/profiles/windows-host/README.md) — this
@@ -236,6 +273,13 @@ S4 gs2 작업 재시작(05:03:45Z). 분 단위 기록: [`results/2026-11-06-time
   남겼습니다(Windows PowerShell 5.1이 빈 인자를 버림). 빈 비밀번호로 `Win32_Service.Change`를 부르면
   되고, user data를 그렇게 고쳤습니다. LocalService 행은 04:53:49Z부터입니다.
 
+**같은 중지·재시작 시험을 Managed ClickStack에서**(2026-11-06 08:10–08:58Z): `managed/windows_prep.py` 뒤
+`managed = true`로 `terraform apply`해 게이트웨이가 모든 세트를 서울 서비스의 `windows_hmv` DB에도 쓰게 하고
+`bin/run.sh killtest`를 돌렸습니다(사건: [`results/2026-11-06-events-managed.jsonl`](results/2026-11-06-events-managed.jsonl)).
+준비된 대시보드에서 위 분 단위 표와 같은 네 동작이 보였습니다 — 서비스 상태는 gs1 서비스 중지 동안만 1, 확인 스크립트는
+gs1과 gs2가 차례로 0, process scraper는 재시작할 때마다 새 PID 선. 첫 시도에서는 수집 사용자에게 `CREATE DATABASE`
+권한이 없어 clickhouse exporter가 HTTP 403으로 시작하지 못했고, `windows_prep.py`가 이제 그 권한을 줍니다.
+
 알림이 이것을 어떻게 보는지는 [`labs/process-down-alerts`](../process-down-alerts/README.md)에 있습니다 —
 group by 알림은 끊긴 시계열(A, B)에는 울리지 않고, 명시적인 값(C, D)에는 울립니다.
 
@@ -256,19 +300,21 @@ MetricName, Attributes, time)`), **B**는 A에 `MATERIALIZED` 컬럼 `host`, `sv
   넣을 때만입니다.
 - 저장 크기는 5% 안에서 같았습니다(A 107.8 MiB, B 112.0, C 106.1).
 
-**같은 비교를 ClickHouse Cloud에서**(Managed ClickStack이 읽는 서울 서비스: 26.8.1.608, replica 2,
-`max_threads` 2. [`schema-bench/cloud_bench.py`](schema-bench/cloud_bench.py),
-[`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt), 2회 중 2회째,
-2026-11-06). A1은 이 서비스 테이블들이 가진 최신 기본값입니다(`ORDER BY (ServiceName, MetricName,
-toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)` + `TimeUnix` minmax 인덱스). 표는 위 English 절과 같습니다.
+**같은 비교를 ClickHouse Cloud에서**(Managed ClickStack이 읽는 서울 서비스: 26.8.1.608, replica 2),
+2026-11-06. **테이블마다 part가 하나로 병합된 뒤 읽었습니다.** 첫 Cloud 실행
+([`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt))은 `OPTIMIZE … FINAL`이
+돌아온 직후, 병합이 끝나기 전에 읽어 B의 저장(+46%)을 크게, 속도를 작게 잡았습니다. 그 실행의 기록으로만 남기고
+결과로 쓰지 않습니다. 확정값(2회 중 2회째): [`results/2026-11-06-schema-bench-cloud-settled.txt`](results/2026-11-06-schema-bench-cloud-settled.txt).
+표와 로그 비교는 위 English 절과 같습니다.
 
-- 방향은 로컬과 같습니다. bloom filter는 건너뛰지 못했고, 최신 기본값도 호스트 조건에 도움이 되지 않았으며,
-  읽는 양을 줄인 것은 정렬 키뿐입니다(바이트 8–12분의 1, 가장 큰 조회 11배 빠름).
-- materialized 컬럼의 효과는 로컬보다 작습니다. 바이트 1.4–3.8분의 1, 가장 큰 조회 1.6배(warm)–3.8배(1회째)
-  빠름. 그리고 B는 저장을 **46% 더** 썼습니다(47.3 → 68.9 MiB, 로컬은 +4%).
-- Cloud에서 작은 조회 시간은 5–200 ms 사이로 흔들립니다. 읽은 행과 바이트를 기준으로 봅니다.
-- A1은 1,680만 행 중 1,569만 행만 들어갔습니다. A0에서 복사를 시작할 때 그 replica에 A0의 part가 다 보이지
-  않았던 것으로 보입니다. A1은 건수가 아니라 granule·바이트 비율로 비교합니다.
+- 병합이 끝나면 로컬과 같습니다. bloom filter는 건너뛰지 못하고, 최신 기본값도 호스트 조건에 도움이 되지 않으며,
+  정렬 키가 바이트를 1/45–1/58로 줄입니다. materialized 컬럼은 바이트 1/1.6–1/5.9, 가장 큰 조회 29배, 저장 +8.6%.
+- A1은 두 빌드 모두 1,680만 행 중 15,688,047행입니다. A0에서 `INSERT … SELECT`한 뒤 00:55–00:59분(56–58분은 전부)의
+  행이 빠졌고, 원인은 확인하지 못했습니다. A1은 비율로 비교합니다.
+- **로그**: 기본 스키마도 출발점이 좋지만(map 값 text 인덱스로 granule 1,226개 중 217개만 읽음), 분류를 정렬 키에 넣으면
+  행 1/3.3, 바이트 1/13. **인덱스 없는 MATERIALIZED 컬럼은 그 컬럼 조건이 전체를 읽게 만듭니다** — ClickStack이 조건을
+  그 컬럼으로 바꿔 쓰므로, 컬럼을 만들면 skip index를 함께 겁니다. ClickStack 검색 화면에서 `svc.group:g7`(부분 일치)은
+  두 스키마 모두 1,000만 행 전체, `svc.group:"g7"`(정확 일치)은 G0 1,564,672행, G2 507,904행이었습니다.
 
 ### 4. 여러 네트워크에서 gateway 하나로
 

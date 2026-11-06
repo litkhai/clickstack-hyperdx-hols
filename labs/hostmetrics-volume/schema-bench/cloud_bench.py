@@ -13,6 +13,7 @@ Every query runs twice (run 1 after the build, run 2 right after); rows, bytes, 
 come from system.query_log on all replicas. The database is dropped at the end unless --keep.
 
     cloud_bench.py [--env ~/.config/khai-harness/secrets/clickhouse-seoul.env] [--keep]
+    cloud_bench.py --cleanup        drop the database a --keep run left
       > ../results/<date>-schema-bench-cloud.txt
 
 The env file holds CH_HOST, CH_USER, CH_PASSWORD (HTTPS port 8443). Values are never printed.
@@ -105,6 +106,10 @@ def main():
     args = sys.argv[1:]
     env_path = args[args.index("--env") + 1] if "--env" in args else "~/.config/khai-harness/secrets/clickhouse-seoul.env"
     ch = CH(load_env(env_path))
+    if "--cleanup" in args:
+        ch.q(f"DROP DATABASE IF EXISTS {DB}")
+        print(f"dropped {DB}")
+        return
     tag = f"hmv-bench-{int(time.time())}"
     print(f"# schema bench on ClickHouse Cloud — {time.strftime('%Y-%m-%d %H:%M:%SZ', time.gmtime())}")
     print("server:", ch.q("SELECT version(), getSetting('max_threads'), "

@@ -18,6 +18,9 @@ At the end the alerts, dashboard and webhook are deleted and the database droppe
 
     managed_alerts.py [--ch-env ~/.config/khai-harness/secrets/clickhouse-seoul.env]
                       [--api-env ~/.config/khai-harness/secrets/chc-api.env] [--keep]
+    managed_alerts.py --cleanup     delete what a --keep run left (found by name), drop the database
+
+--keep leaves the dashboard, alerts, webhook and data for screen captures; run --cleanup after.
     -> ../results/<date>-managed.md and <date>-managed-states.jsonl
 
 CH env: CH_HOST, CH_USER, CH_PASSWORD. API env: CHC_KEY, CHC_SECRET. Values are never printed.
@@ -130,17 +133,35 @@ def insert(ch, hosts):
     ch.q(f"INSERT INTO {DB}.gauge FORMAT JSONEachRow\n{rows}", date_time_input_format="best_effort")
 
 
+def cleanup(ch, cloud):
+    dash = [d for d in cloud.cs("GET", "/dashboards") if d.get("name") == NAME]
+    ids = {d["id"] for d in dash}
+    for a in cloud.cs("GET", "/alerts"):
+        if a.get("dashboardId") in ids:
+            cloud.cs("DELETE", f"/alerts/{a['id']}")
+    for d in dash:
+        cloud.cs("DELETE", f"/dashboards/{d['id']}")
+    for w in cloud.cs("GET", "/webhooks"):
+        if w.get("name") == NAME:
+            cloud.cs("DELETE", f"/webhooks/{w['id']}")
+    ch.q(f"DROP DATABASE IF EXISTS {DB}")
+    print(f"cleaned up: {len(dash)} dashboard(s) and their alerts, the webhook, database {DB}")
+
+
 def main():
     args = sys.argv[1:]
     opt = lambda k, d: args[args.index(k) + 1] if k in args else d  # noqa: E731
     ch = CH(load_env(opt("--ch-env", "~/.config/khai-harness/secrets/clickhouse-seoul.env")))
     cloud = Cloud(load_env(opt("--api-env", "~/.config/khai-harness/secrets/chc-api.env")), ch.host)
+    if "--cleanup" in args:
+        return cleanup(ch, cloud)
     day = time.strftime("%Y-%m-%d", time.gmtime())
     os.makedirs(RESULTS, exist_ok=True)
     states_path = os.path.join(RESULTS, f"{day}-managed-states.jsonl")
     server = ch.q("SELECT version()").strip()
     print("server:", server)
 
+    cleanup(ch, cloud)  # a previous --keep run: alerts first (a webhook cannot go while alerts use it), then the rest
     ch.q(f"CREATE DATABASE IF NOT EXISTS {DB}")
     ch.q(f"""CREATE TABLE IF NOT EXISTS {DB}.gauge (TimeUnix DateTime64(9), MetricName LowCardinality(String), Value Float64,
           ResourceAttributes Map(LowCardinality(String), String)) ENGINE = MergeTree ORDER BY (MetricName, TimeUnix)""")
@@ -148,9 +169,6 @@ def main():
     src = next(s for s in sources if s.get("connection"))
     conn = src["connection"]
 
-    for w in cloud.cs("GET", "/webhooks"):
-        if w.get("name") == NAME:
-            cloud.cs("DELETE", f"/webhooks/{w['id']}")
     hook = cloud.cs("POST", "/webhooks", {"name": NAME, "service": "generic", "url": "https://example.com/hmv-alert-bench",
                                           "description": "labs/process-down-alerts managed run; nothing receives this"})
     dash_body = {"name": NAME, "tags": ["process-down-alerts"], "tiles": [
@@ -196,6 +214,8 @@ def main():
             cloud.cs("DELETE", f"/webhooks/{hook['id']}")
             ch.q(f"DROP DATABASE {DB}")
             print("cleaned up alerts, dashboard, webhook and database")
+        else:
+            print("kept everything for captures; run with --cleanup when done")
 
     # report: states seen per phase per alert (whatever state fields the API returns)
     snaps = [json.loads(l) for l in open(states_path) if l.strip()]

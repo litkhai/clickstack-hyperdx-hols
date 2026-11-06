@@ -64,6 +64,23 @@ Same as the local run: a group-by alert does not fire for a host whose series st
 expected-list SQL tile and a per-host number tile do. The 2 minutes are bounded by the 30–40 s
 state polling, not measured to the second (locally the first notification came at 76 s).
 
+**Log alerts on Managed ClickStack** ([`managed/managed_log_alerts.py`](managed/managed_log_alerts.py),
+[`results/2026-11-06-managed-logs.md`](results/2026-11-06-managed-logs.md), 2026-11-06 08:06–08:22Z): two
+services logging every 20 s; svc-b throws errors for 4 minutes, then sends nothing for 5.
+
+| Alert (SQL tile, 1 m) | svc-b error burst | svc-b silent |
+|---|---|---|
+| E1 errors per service, at least 5 | **ALERT** | OK |
+| E2 log lines per service, below 1 | OK | **OK throughout (silent)** |
+| E3 log lines vs the services seen in the last hour, below 1 | OK | **ALERT** |
+
+A condition that produces rows (errors) works as a group-by alert; a service that stopped logging
+needs the expected list, as for metrics. A second metric run with `--keep` (screens captured, then
+`--cleanup`) gave the same table as the first: [`results/2026-11-06-managed-run2.md`](results/2026-11-06-managed-run2.md).
+On screen, a chart draws a bucket with no data as 0 — the M2 chart looks as if host-b fell to 0 —
+while the alert does not evaluate that group; and an alert created with `interval: 1m` through the
+Cloud API showed "over 5 minute" in its settings while being evaluated every minute.
+
 ### Run it
 
 ```bash
@@ -138,6 +155,15 @@ OpenTelemetry로 "서버 프로세스가 떠 있는가"를 볼 때 보통 hostme
 표는 위 English 절과 같습니다. 로컬 실행과 같습니다: group by 알림은 시계열이 끊긴 호스트에 울리지 않고,
 기대 목록 SQL 타일과 호스트별 number 타일은 울립니다. "약 2분"은 30–40초 간격의 상태 조회로 잡힌 값이라
 초 단위 측정이 아닙니다(로컬에서는 첫 알림이 76초).
+
+**로그 알림을 Managed ClickStack에서**([`managed/managed_log_alerts.py`](managed/managed_log_alerts.py),
+[`results/2026-11-06-managed-logs.md`](results/2026-11-06-managed-logs.md), 2026-11-06 08:06–08:22Z): 서비스 둘이 20초마다
+로그를 보내고, svc-b가 4분 동안 에러를 쏟아낸 뒤 5분 동안 아무것도 보내지 않습니다. E1(서비스별 에러 건수 5 이상)은 에러
+구간에 ALERT, E2(서비스별 로그 줄 수 1 미만)는 무응답 구간 내내 OK(울리지 않음), E3(지난 1시간 서비스 대비)는 ALERT.
+행이 생기는 조건(에러)은 group by로 되고, 로그가 끊긴 서비스는 메트릭과 마찬가지로 기대 목록이 필요합니다. `--keep`으로 한
+두 번째 메트릭 실행(화면 캡처 후 `--cleanup`)도 첫 실행과 같은 표였습니다([`results/2026-11-06-managed-run2.md`](results/2026-11-06-managed-run2.md)).
+화면에서는 차트가 데이터 없는 구간을 0처럼 그려 M2 차트만 보면 host-b가 0으로 떨어진 것처럼 보이지만 알림은 그 그룹을
+평가하지 않습니다. Cloud API로 `interval: 1m`로 만든 알림이 설정 화면에는 "over 5 minute"로 보였고, 실제로는 1분마다 평가됐습니다.
 
 ### 실행
 
