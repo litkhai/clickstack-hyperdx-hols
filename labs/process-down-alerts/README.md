@@ -44,6 +44,26 @@ What this means:
 5. Time to first notification: **76 s** from the stop with 20 s sends and a 1-minute alert.
    With the scraper's 60 s interval, add up to one more interval.
 
+### The same test on Managed ClickStack
+
+> **Verified on** Managed ClickStack, our ClickHouse Cloud Seoul service (ClickHouse 26.8.1.608),
+> 2026-11-06 06:49–07:08Z, one run. [`managed/managed_alerts.py`](managed/managed_alerts.py) creates
+> the dashboard, a generic webhook and the alerts through the ClickHouse Cloud API (SQL tiles only),
+> inserts the two hosts' rows over HTTPS every 20 s, reads each alert's `state` every 30–40 s, and
+> deletes everything at the end. The webhook pointed at example.com, so nothing was delivered;
+> `executionErrors` stayed empty. Report: [`results/2026-11-06-managed.md`](results/2026-11-06-managed.md).
+
+| Alert (SQL tile, `below 1`, 1 m) | host-b stopped | every host down | back up |
+|---|---|---|---|
+| M2 points per host, group by host | **OK throughout (silent)** | ALERT | OK |
+| M3 against the hosts seen in the last hour | **ALERT** within about 2 min | ALERT | OK |
+| M4 number tile, host-b | **ALERT** within about 2 min | ALERT | OK |
+| M5 all points, no group | OK | ALERT | OK |
+
+Same as the local run: a group-by alert does not fire for a host whose series stopped; the
+expected-list SQL tile and a per-host number tile do. The 2 minutes are bounded by the 30–40 s
+state polling, not measured to the second (locally the first notification came at 76 s).
+
 ### Run it
 
 ```bash
@@ -106,6 +126,18 @@ OpenTelemetry로 "서버 프로세스가 떠 있는가"를 볼 때 보통 hostme
 4. **조건이 계속 충족되면 1분마다 다시 알립니다**(5분 중지에 알림 5개). 수천 대에서는 더 긴 간격,
    `numConsecutiveWindows`, 또는 중복을 거르는 라우팅이 필요합니다.
 5. 첫 알림까지 **76초**(20초 간격 전송, 1분 알림). scraper의 60초 간격이면 최대 한 간격이 더 붙습니다.
+
+### 같은 시험을 Managed ClickStack에서
+
+> **검증:** Managed ClickStack, 우리 조직의 ClickHouse Cloud 서울 서비스(ClickHouse 26.8.1.608),
+> 2026-11-06 06:49–07:08Z, 1회. [`managed/managed_alerts.py`](managed/managed_alerts.py)가 ClickHouse Cloud
+> API로 대시보드, generic webhook, 알림(SQL 타일만)을 만들고, 두 호스트의 행을 HTTPS로 20초마다 넣고,
+> 알림의 `state`를 30–40초마다 읽은 뒤 끝나면 모두 지웁니다. webhook은 example.com이라 아무것도 전달되지
+> 않았고 `executionErrors`는 비어 있었습니다. 보고서: [`results/2026-11-06-managed.md`](results/2026-11-06-managed.md).
+
+표는 위 English 절과 같습니다. 로컬 실행과 같습니다: group by 알림은 시계열이 끊긴 호스트에 울리지 않고,
+기대 목록 SQL 타일과 호스트별 number 타일은 울립니다. "약 2분"은 30–40초 간격의 상태 조회로 잡힌 값이라
+초 단위 측정이 아닙니다(로컬에서는 첫 알림이 76초).
 
 ### 실행
 
