@@ -1,0 +1,5 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs three Vault nodes, a Collector and ClickStack.
+target: oss
+tier: T1
+services: [clickstack, vault, otel-collector]
+verified_on: "hashicorp/vault 2.2.1 (3-node Raft), otelcol-contrib 0.160.0, clickstack-all-in-one 2.42.0 (ClickHouse 26.8.34.13), 2026-11-06"

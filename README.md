@@ -22,6 +22,7 @@ Observability on ClickHouse: OpenTelemetry ingestion, the ClickStack/HyperDX UI,
 | [labs/log-pattern-exclusion](labs/log-pattern-exclusion/) | Kibana's *Filter out pattern* in ClickStack: what Lucene exclusions become in SQL, why stacked phrases also remove patterns you meant to keep, and one regex per Event Patterns template, kept in a noise list (verified on 2.39.1, 2026-11-02) |
 | [labs/promql](labs/promql/) | PromQL in HyperDX on a local ClickStack 2.42.0: turn on ClickHouse's `TimeSeries` engine and Prometheus HTTP API, fill the table from a refreshable MV, register a PromQL source, check rate and `histogram_quantile` with SQL and HTTP |
 | [labs/llm-serving-observability](labs/llm-serving-observability/) | Self-hosted LLM serving (vLLM behind LiteLLM) observed with ClickStack, runnable without a GPU: the OTel Collector configuration, an `nvidia-smi` → OTLP pusher, LiteLLM gateway-metric cardinality with and without the attribute allowlist, and the 32-tile HyperDX dashboard imported onto hand-made sources |
+| [labs/vault-audit](labs/vault-audit/) | HashiCorp Vault OSS audit trail and HA metrics in ClickStack: a three-node Raft cluster's audit files (written by whichever node is active) through `file_log` and OTTL into OTel logs — TraceId per request, issuance joined to later use on HMAC'd accessors, no secret in clear — plus per-node metrics with `unauthenticated_metrics_access`; failover checked (verified locally 2026-11-06) |
 
 ### 🎓 Workshops (`workshops/`)
 
@@ -109,6 +110,7 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 | [labs/log-pattern-exclusion](labs/log-pattern-exclusion/) | ClickStack에서 Kibana의 *Filter out pattern* 대신: Lucene 제외가 어떤 SQL이 되는지, 문구를 겹치면 남겨야 할 패턴까지 왜 지워지는지, Event Patterns 템플릿마다 정규식 하나와 노이즈 목록 테이블 (2.39.1에서 검증, 2026-11-02) |
 | [labs/promql](labs/promql/) | 로컬 ClickStack 2.42.0에서 HyperDX로 PromQL: ClickHouse `TimeSeries` 엔진과 Prometheus HTTP API를 켜고, 리프레시 MV로 테이블을 채우고, PromQL 소스를 등록해 rate와 `histogram_quantile`을 SQL과 HTTP로 확인 |
 | [labs/llm-serving-observability](labs/llm-serving-observability/) | LiteLLM 뒤의 vLLM을 ClickStack으로 관측, GPU 없이 실행: OTel Collector 설정, `nvidia-smi` → OTLP 푸셔, 속성 허용 목록 유무에 따른 LiteLLM 게이트웨이 메트릭 카디널리티, 손으로 만든 소스에 가져온 HyperDX 대시보드(타일 32개) |
+| [labs/vault-audit](labs/vault-audit/) | HashiCorp Vault OSS 감사 기록과 HA 메트릭을 ClickStack에서: Raft 3노드 클러스터의 감사 파일(그때 active인 노드가 씀)을 `file_log`와 OTTL로 OTel 로그로 — 요청마다 TraceId, HMAC 처리된 accessor로 발급과 이후 사용 연결, 평문 시크릿 없음 — 그리고 `unauthenticated_metrics_access`로 노드별 메트릭, 장애 전환 검사(2026-11-06 로컬 검증) |
 
 ### 🎓 워크숍 (`workshops/`)
 

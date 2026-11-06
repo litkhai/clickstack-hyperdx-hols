@@ -1,0 +1,177 @@
+# Vault audit device output -> OpenTelemetry logs -> ClickHouse (ClickStack).
+#
+# The same file runs locally and against Managed ClickStack; only the CH_* environment changes
+# (docker-compose.yml, .env.example). Read against otelcol-contrib 0.160.0.
+#
+#   file_log  one JSON line per audit entry (request, then response) -> one log record
+#   transform flat OTel-style attributes, severity, Timestamp from the entry, TraceId from request.id
+#   count     logs -> a vault.audit.responses sum metric, by category / mount / allowed
+#   prometheus Vault's own telemetry (/v1/sys/metrics)
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  # Remembers how far each audit file was read, so a Collector restart neither re-sends nor skips
+  # entries (check.py S6). Without it, start_at: beginning would send the whole file again.
+  file_storage:
+    directory: /var/lib/otelcol/file_storage
+    create_directory: true
+
+receivers:
+  # Every node writes the requests it handles as the active node to its own file; standbys
+  # write nothing while standby. The lab mounts the three nodes' volumes under /vault/logs/<node>/.
+  file_log/vault:
+    include: [/vault/logs/*/audit.log*]
+    start_at: beginning
+    storage: file_storage
+    include_file_name: false
+    include_file_path: true
+    max_log_size: 4MiB              # a PKI issue response is ~3 KiB; a large KV read can be more
+    operators:
+      - type: json_parser          # parses into attributes; the body keeps the original line
+        timestamp:
+          parse_from: attributes.time
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+
+  prometheus/vault:
+    config:
+      scrape_configs:
+        - job_name: vault
+          scrape_interval: 30s
+          metrics_path: /v1/sys/metrics
+          params: { format: [prometheus] }
+          # No token: the listener sets unauthenticated_metrics_access (vault/config.hcl), the
+          # only way a standby serves its own metrics. Each target becomes service.instance.id.
+          static_configs: [{ targets: ["vault-1:8200", "vault-2:8200", "vault-3:8200"] }]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              action: keep
+              # HA state, Raft, request rate and latency, token and lease counts, audit health
+              regex: "up|vault_(core_(active|unsealed|leadership_(lost|setup_failed).*|step_down.*|handle_(login_)?request.*|response_status_code|in_flight_requests)|raft_(state_.*|leader_lastContact.*|peers|commitTime.*|apply.*)|autopilot_.*|token_(creation|count.*)|expire_num_leases|audit_.*)"
+
+processors:
+  memory_limiter: { check_interval: 5s, limit_mib: 256 }
+  resource/vault:
+    attributes:
+      - { key: service.name, value: vault, action: upsert }
+      - { key: deployment.environment.name, value: "${env:DEPLOYMENT_ENV}", action: upsert }
+
+  transform/vault:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          # --- envelope ------------------------------------------------------------------------
+          - set(attributes["vault.audit.type"], attributes["type"]) where attributes["type"] != nil
+          # Which node wrote it: the directory the file sits in. On real hosts, one agent per node
+          # and resourcedetection's host.name do this instead.
+          - merge_maps(attributes, ExtractPatterns(attributes["log.file.path"], "^/vault/logs/(?P<vault_node>[^/]+)/"), "upsert")
+          - set(attributes["vault.node"], attributes["vault_node"]) where attributes["vault_node"] != nil
+          - delete_key(attributes, "vault_node")
+          - set(event_name, Concat(["vault.audit", attributes["type"]], "."))
+          # request.id is a UUID; without the hyphens it is a valid 16-byte TraceId, so a
+          # request and its response share one TraceId and HyperDX shows them together.
+          - set(cache["trace_id"], attributes["request"]["id"]) where attributes["request"]["id"] != nil
+          - replace_pattern(cache["trace_id"], "-", "")
+          - set(trace_id.string, cache["trace_id"]) where cache["trace_id"] != nil
+          - set(attributes["vault.request.id"], attributes["request"]["id"]) where attributes["request"]["id"] != nil
+          - set(attributes["vault.request.operation"], attributes["request"]["operation"]) where attributes["request"]["operation"] != nil
+          - set(attributes["vault.request.path"], attributes["request"]["path"]) where attributes["request"]["path"] != nil
+          - set(attributes["vault.namespace"], attributes["request"]["namespace"]["id"]) where attributes["request"]["namespace"]["id"] != nil
+          - set(attributes["vault.mount.type"], attributes["request"]["mount_type"]) where attributes["request"]["mount_type"] != nil
+          - set(attributes["vault.mount.point"], attributes["request"]["mount_point"]) where attributes["request"]["mount_point"] != nil
+          - set(attributes["client.address"], attributes["request"]["remote_address"]) where attributes["request"]["remote_address"] != nil
+          - set(attributes["client.port"], attributes["request"]["remote_port"]) where attributes["request"]["remote_port"] != nil
+          - set(attributes["user_agent.original"], attributes["request"]["headers"]["user-agent"][0]) where attributes["request"]["headers"]["user-agent"] != nil
+          # --- who --------------------------------------------------------------------------------
+          # Tokens and accessors stay HMAC'd as Vault wrote them; the same token gives the same
+          # HMAC everywhere in the log, which is what the correlation queries join on.
+          - set(attributes["vault.auth.display_name"], attributes["auth"]["display_name"]) where attributes["auth"]["display_name"] != nil
+          - set(attributes["vault.auth.entity_id"], attributes["auth"]["entity_id"]) where attributes["auth"]["entity_id"] != nil
+          - set(attributes["vault.auth.policies"], attributes["auth"]["policies"]) where attributes["auth"]["policies"] != nil
+          - set(attributes["vault.auth.token_type"], attributes["auth"]["token_type"]) where attributes["auth"]["token_type"] != nil
+          - set(attributes["vault.auth.accessor"], attributes["auth"]["accessor"]) where attributes["auth"]["accessor"] != nil
+          - set(attributes["vault.auth.client_token"], attributes["auth"]["client_token"]) where attributes["auth"]["client_token"] != nil
+          - set(attributes["vault.auth.role_name"], attributes["auth"]["metadata"]["role_name"]) where attributes["auth"]["metadata"]["role_name"] != nil
+          - set(attributes["vault.auth.username"], attributes["auth"]["metadata"]["username"]) where attributes["auth"]["metadata"]["username"] != nil
+          - set(attributes["vault.policy.allowed"], attributes["auth"]["policy_results"]["allowed"]) where attributes["auth"]["policy_results"]["allowed"] != nil
+          - set(attributes["vault.error"], attributes["error"]) where attributes["error"] != nil
+          # --- what was issued (responses only) -----------------------------------------------
+          - set(attributes["vault.issued.accessor"], attributes["response"]["auth"]["accessor"]) where attributes["response"]["auth"]["accessor"] != nil
+          - set(attributes["vault.issued.policies"], attributes["response"]["auth"]["policies"]) where attributes["response"]["auth"]["policies"] != nil
+          - set(attributes["vault.issued.ttl_s"], attributes["response"]["auth"]["token_ttl"]) where attributes["response"]["auth"]["token_ttl"] != nil
+          - set(attributes["vault.issued.entity_id"], attributes["response"]["auth"]["entity_id"]) where attributes["response"]["auth"]["entity_id"] != nil
+          - set(attributes["vault.lease.id"], attributes["response"]["secret"]["lease_id"]) where attributes["response"]["secret"]["lease_id"] != nil
+          - set(attributes["vault.lease.ttl_s"], attributes["response"]["secret"]["ttl"]) where attributes["response"]["secret"]["ttl"] != nil
+          - set(attributes["vault.pki.serial_number"], attributes["response"]["data"]["serial_number"]) where attributes["vault.mount.type"] == "pki"
+          - set(attributes["vault.pki.expiration"], attributes["response"]["data"]["expiration"]) where attributes["vault.mount.type"] == "pki"
+          - set(attributes["vault.transit.key_version"], attributes["response"]["data"]["key_version"]) where attributes["vault.mount.type"] == "transit"
+          # --- category: last match wins ------------------------------------------------------
+          - set(attributes["vault.event.category"], "other")
+          - set(attributes["vault.event.category"], "admin") where IsMatch(attributes["vault.request.path"], "^sys/")
+          - set(attributes["vault.event.category"], "preflight") where IsMatch(attributes["vault.request.path"], "^sys/internal/ui/mounts/")
+          - set(attributes["vault.event.category"], "secret_read") where attributes["vault.mount.type"] == "kv" and attributes["vault.request.operation"] == "read"
+          - set(attributes["vault.event.category"], "secret_write") where attributes["vault.mount.type"] == "kv" and (attributes["vault.request.operation"] == "create" or attributes["vault.request.operation"] == "update" or attributes["vault.request.operation"] == "delete")
+          - set(attributes["vault.event.category"], "key_use") where attributes["vault.mount.type"] == "transit" and IsMatch(attributes["vault.request.path"], "^[^/]+/(encrypt|decrypt|rewrap|sign|verify|hmac|datakey)/")
+          - set(attributes["vault.event.category"], "cert_issue") where attributes["vault.mount.type"] == "pki" and IsMatch(attributes["vault.request.path"], "^[^/]+/(issue|sign)/")
+          - set(attributes["vault.event.category"], "credential_issue") where IsMatch(attributes["vault.request.path"], "^[^/]+/(creds|sts)/")
+          - set(attributes["vault.event.category"], "token_issue") where IsMatch(attributes["vault.request.path"], "^auth/token/create") or IsMatch(attributes["vault.request.path"], "^auth/[^/]+/login")
+          - set(attributes["vault.event.category"], "denied") where attributes["vault.policy.allowed"] == false
+          # --- severity -----------------------------------------------------------------------
+          - set(severity_number, SEVERITY_NUMBER_INFO)
+          - set(severity_text, "INFO")
+          - set(severity_number, SEVERITY_NUMBER_WARN) where attributes["vault.event.category"] == "denied"
+          - set(severity_text, "WARN") where attributes["vault.event.category"] == "denied"
+          - set(severity_number, SEVERITY_NUMBER_ERROR) where attributes["vault.error"] != nil and attributes["vault.event.category"] != "denied"
+          - set(severity_text, "ERROR") where attributes["vault.error"] != nil and attributes["vault.event.category"] != "denied"
+          # --- drop the nested originals; the body still holds the full entry ----------------
+          - delete_key(attributes, "type")
+          - delete_key(attributes, "time")
+          - delete_key(attributes, "auth")
+          - delete_key(attributes, "request")
+          - delete_key(attributes, "response")
+          - delete_key(attributes, "error")
+          - delete_key(attributes, "forwarded_from")
+          - delete_matching_keys(attributes, "^log\\.file\\..*")
+
+  batch: { timeout: 5s, send_batch_size: 2000 }
+
+connectors:
+  count/vault:
+    logs:
+      vault.audit.responses:
+        description: Vault audit responses, by category, mount type and policy result
+        conditions:
+          - attributes["vault.audit.type"] == "response"
+        attributes:
+          - key: vault.event.category
+            default_value: other
+          - key: vault.mount.type
+            default_value: none
+          - key: vault.policy.allowed
+            default_value: "n/a"
+
+exporters:
+  clickhouse:
+    endpoint: ${env:CH_ENDPOINT}     # Managed ClickStack: tcp://<service>.clickhouse.cloud:9440?secure=true
+    username: ${env:CH_USER}
+    password: ${env:CH_PASSWORD}
+    database: ${env:CH_DATABASE}
+    create_schema: true
+    ttl: ${env:CH_TTL}
+    async_insert: true
+
+service:
+  extensions: [health_check, file_storage]
+  telemetry:
+    metrics:
+      readers: [{ pull: { exporter: { prometheus: { host: 0.0.0.0, port: 8888 } } } }]
+  pipelines:
+    logs/vault:
+      receivers: [file_log/vault]
+      processors: [memory_limiter, resource/vault, transform/vault, batch]
+      exporters: [clickhouse, count/vault]
+    metrics/vault:
+      receivers: [count/vault, prometheus/vault]
+      processors: [memory_limiter, resource/vault, batch]
+      exporters: [clickhouse]
