@@ -1,6 +1,7 @@
 #!/bin/bash
-# Rendered by templatefile() in main.tf. The collector configs and analyze.py are inserted as
+# Rendered by templatefile() in main.tf. The collector configs are inserted as
 # plain values, so their own dollar-brace references are not touched by the template.
+# bin/analyze.py and bin/timeline.py are sent by bin/run.sh through SSM when they are needed.
 set -euo pipefail
 exec > >(tee /var/log/hmv-user-data.log) 2>&1
 
@@ -18,10 +19,6 @@ EOF_CFG
 cat > /opt/otel/gateway.yaml <<'EOF_CFG'
 ${gateway_config}
 EOF_CFG
-cat > /opt/otel/analyze.py <<'EOF_PY'
-${analyze_py}
-EOF_PY
-chmod 755 /opt/otel/analyze.py
 
 # Byte counters on the gateway's input, one per port. Named counters so `nft -j list counters`
 # reads them and `nft reset counters table inet hmv` zeroes them at the window's start. The Linux

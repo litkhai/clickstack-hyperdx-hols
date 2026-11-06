@@ -1,0 +1,94 @@
+# windows-host — Tier B
+#
+# A collector running as a Windows service on the host itself (otelcol-contrib, LocalSystem),
+# exporting OTLP to ClickStack or to a central gateway (otlp/clickstack in ../../sidecar/base.yaml).
+# Tier B because ClickStack's collector build has none of these receivers; all are
+# `distributions: [contrib]`, so the public otelcol-contrib Windows release has them.
+#
+# One config for every Windows host. What differs per host comes from machine-level environment
+# variables (a list can be given as YAML, e.g. `[GameServer, LobbyServer]` — checked with
+# otelcol-contrib 0.155.0 on 2026-11-06):
+#
+#   WINDOWS_HOST_SERVICES        Windows services to report as up/down, e.g. [GameServer]
+#   WINDOWS_HOST_PROCESS_NAMES   executables for per-process CPU/memory, regexps, e.g. ['^GameServer\.exe$']
+#   WINDOWS_HOST_EC2_TAGS        EC2 tag keys to copy as resource attributes, regexps, e.g. ['^svc\.']
+#   CLICKSTACK_OTLP_ENDPOINT, CLICKSTACK_OTLP_INSECURE, CLICKSTACK_API_KEY   (base.yaml)
+#
+# Which signal answers "is the game server up" (labs/hostmetrics-volume, 2026-11-06):
+#   - a Windows service      -> windows_service/windows-host: an explicit 1 (stopped) / 4 (running)
+#   - anything else          -> the check script (process-check.ps1) through otlp/windows-host-check:
+#                               an explicit 0 per expected instance
+#   - hostmetrics `process`  -> CPU and memory per instance, NOT down-detection: a stopped process's
+#                               series just stops, and a group-by alert does not fire on a series
+#                               that is not there (labs/process-down-alerts)
+#   windowsperfcounters' Process object is deliberately absent: instance names (#1, #2) follow start
+#   order, so they change when one instance restarts.
+
+receivers:
+  hostmetrics/windows-host:
+    collection_interval: 60s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      load:
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      filesystem:
+      network:
+      paging:
+      system:
+      # `processes` is not supported on Windows.
+
+  hostmetrics/windows-host-process:
+    collection_interval: 60s
+    scrapers:
+      process:
+        include:
+          names: ${env:WINDOWS_HOST_PROCESS_NAMES}
+          match_type: regexp
+        # pid 0 (System Idle) and pid 4 (System) fail name/exe lookups even as LocalSystem, every
+        # scrape. Muting them is safe only because the agent runs as LocalSystem: under
+        # LocalService every SYSTEM process fails the same way and the include never matches.
+        mute_process_name_error: true
+        mute_process_exe_error: true
+
+  windows_service/windows-host:
+    collection_interval: 60s
+    include_services: ${env:WINDOWS_HOST_SERVICES}
+
+  # process-check.ps1 (a SYSTEM scheduled task, every minute) posts here. Loopback only.
+  otlp/windows-host-check:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+
+processors:
+  # host.id, host.type, cloud.* from the instance metadata, and the matching EC2 tags as
+  # ec2.tag.<key> (needs ec2:DescribeTags on the instance role). Runs after resourcedetection/common.
+  resourcedetection/windows-host:
+    detectors: [ec2]
+    timeout: 5s
+    override: false
+    ec2:
+      tags: ${env:WINDOWS_HOST_EC2_TAGS}
+
+  resource/windows-host:
+    attributes:
+      - key: deploy.platform
+        value: host
+        action: upsert
+      - key: service.name
+        value: windows-host
+        action: insert
+
+service:
+  pipelines:
+    metrics/windows-host:
+      receivers: [hostmetrics/windows-host, hostmetrics/windows-host-process, windows_service/windows-host, otlp/windows-host-check]
+      processors: [memory_limiter, resourcedetection/common, resourcedetection/windows-host, resource/windows-host, batch]
+      exporters: [otlp/clickstack]

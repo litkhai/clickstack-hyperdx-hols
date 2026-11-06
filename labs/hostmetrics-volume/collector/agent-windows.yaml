@@ -1,10 +1,15 @@
-# Agent on a Windows host — the Linux agent minus `processes`, which hostmetrics does not support
-# on Windows. Everything else is the same so the two counts compare.
+# Agent on a Windows host (service otelcol-agent, LocalSystem).
+#
+# Base set: the Linux agent minus `processes`, which hostmetrics does not support on Windows.
+# Process-down methods, each exported to its own gateway port so they compare side by side:
+#   A  hostmetrics `process`, include by executable name   -> GATEWAY_PROC   (4329)
+#   B  windowsperfcounters, object Process, named instances -> GATEWAY_PERF   (4359)
+#   C  windows_service, the GameServer service              -> GATEWAY_SVC    (4369)
+#   D  bin/check.ps1 posts to this agent's OTLP receiver    -> GATEWAY_SCRIPT (4379)
+# (A under LocalService is a second service, agent-windows-ls.yaml -> 4349.)
 #
 # Environment (machine-level variables set by user data before the service starts):
-#   GATEWAY_BASE   http://<gateway>:4319
-#   GATEWAY_PROC   http://<gateway>:4329
-#   TELEMETRY_PORT 8888
+#   GATEWAY_BASE, GATEWAY_PROC, GATEWAY_PERF, GATEWAY_SVC, GATEWAY_SCRIPT, TELEMETRY_PORT
 
 receivers:
   hostmetrics:
@@ -25,13 +30,48 @@ receivers:
       paging:
       system:
 
+  # A. The collector itself is matched too: its own CPU and memory are the agent overhead (W4).
   hostmetrics/process:
     collection_interval: 60s
     scrapers:
       process:
         include:
-          names: ['^otelcol-contrib(\.exe)?$']
+          names: ['^(otelcol-contrib|GameServer)\.exe$']
           match_type: regexp
+
+  # B. Named instances: "GameServer" and "GameServer#1" are the first and second process with that
+  # image name. The receiver README warns the Process object is unreliable with several
+  # instances of one image; Process V2 (PID in the instance name) is Windows 11 and later.
+  windowsperfcounters/game:
+    collection_interval: 60s
+    metrics:
+      game.perf.process.id:
+        description: Process ID of the instance, from the Process performance object
+        unit: "1"
+        gauge:
+      game.perf.process.cpu:
+        description: "% Processor Time of the instance"
+        unit: "%"
+        gauge:
+    perfcounters:
+      - object: Process
+        instances: ["GameServer", "GameServer#1"]
+        counters:
+          - name: ID Process
+            metric: game.perf.process.id
+          - name: "% Processor Time"
+            metric: game.perf.process.cpu
+
+  # C. Service state as a value: 1 stopped, 4 running (receiver documentation).
+  windows_service:
+    collection_interval: 60s
+    include_services: [GameServer]
+
+  # D. The check script posts here.
+  otlp/script:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
 
 processors:
   resourcedetection:
@@ -50,6 +90,15 @@ exporters:
     compression: gzip
   otlphttp/process:
     endpoint: ${env:GATEWAY_PROC}
+    compression: gzip
+  otlphttp/perf:
+    endpoint: ${env:GATEWAY_PERF}
+    compression: gzip
+  otlphttp/svc:
+    endpoint: ${env:GATEWAY_SVC}
+    compression: gzip
+  otlphttp/script:
+    endpoint: ${env:GATEWAY_SCRIPT}
     compression: gzip
 
 service:
@@ -70,3 +119,15 @@ service:
       receivers: [hostmetrics/process]
       processors: [resourcedetection, batch]
       exporters: [otlphttp/process]
+    metrics/perf:
+      receivers: [windowsperfcounters/game]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/perf]
+    metrics/svc:
+      receivers: [windows_service]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/svc]
+    metrics/script:
+      receivers: [otlp/script]
+      processors: [resourcedetection, batch]
+      exporters: [otlphttp/script]

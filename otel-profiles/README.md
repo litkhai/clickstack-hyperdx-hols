@@ -21,6 +21,7 @@ ingestion with no error at startup.
 | Profile | Tier | Collects | `deploy.platform` |
 |---|---|---|---|
 | [linux-host](profiles/linux-host/) | A | OS metrics and syslog from any Linux machine | `host` |
+| [windows-host](profiles/windows-host/) | B | Windows Server OS metrics, service state, per-process CPU/memory and an explicit up/down per expected process instance, as a LocalSystem service on the host | `host` |
 | [gpu-nvidia](profiles/gpu-nvidia/) | A | NVIDIA GPU telemetry via `dcgm-exporter` | `gpu` |
 | [baremetal-node](profiles/baremetal-node/) | A | in-band hwmon plus out-of-band BMC sensors | `baremetal` |
 | [virt-kvm](profiles/virt-kvm/) | A | KVM/libvirt per-domain counters and hypervisor OS | `vm` |
@@ -133,6 +134,7 @@ stability, and the `vcenter` receiver is alpha — pin your sidecar image.
 | 프로파일 | Tier | 수집 대상 | `deploy.platform` |
 |---|---|---|---|
 | [linux-host](profiles/linux-host/) | A | 모든 Linux 머신의 OS 지표와 syslog | `host` |
+| [windows-host](profiles/windows-host/) | B | Windows Server의 OS 메트릭, 서비스 상태, 프로세스별 CPU·메모리, 기대 프로세스 인스턴스마다 명시적인 up/down. 호스트에서 LocalSystem 서비스로 실행 | `host` |
 | [gpu-nvidia](profiles/gpu-nvidia/) | A | `dcgm-exporter` 경유 NVIDIA GPU 텔레메트리 | `gpu` |
 | [baremetal-node](profiles/baremetal-node/) | A | in-band hwmon과 out-of-band BMC 센서 | `baremetal` |
 | [virt-kvm](profiles/virt-kvm/) | A | KVM/libvirt 도메인별 카운터와 하이퍼바이저 OS | `vm` |

@@ -1,0 +1,4 @@
+adapters=1 disks=1 volumes=1
+otelcol-agent error events=37
+otelcol-agent-ls error events=33
+

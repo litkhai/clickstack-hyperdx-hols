@@ -1,0 +1,18 @@
+# The stand-in game server: a copy of otelcol-contrib.exe named GameServer.exe running this config.
+# It is a real Windows-service-aware binary (so the GameServer service starts and stops properly)
+# and does nothing useful. GS_PORT differs per instance: 14317 (service), 14318 (scheduled task).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:${env:GS_PORT}
+exporters:
+  nop:
+service:
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [nop]

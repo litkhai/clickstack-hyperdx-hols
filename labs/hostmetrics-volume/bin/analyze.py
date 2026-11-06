@@ -24,8 +24,10 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-SETS = ["linux-base", "linux-proc", "windows-base", "windows-proc"]
-PORTS = {"linux-base": 4318, "linux-proc": 4328, "windows-base": 4319, "windows-proc": 4329}
+SETS = ["linux-base", "linux-proc", "windows-base", "windows-proc", "windows-proc-ls", "windows-perf",
+        "windows-svc", "windows-script"]
+PORTS = {"linux-base": 4318, "linux-proc": 4328, "windows-base": 4319, "windows-proc": 4329,
+         "windows-proc-ls": 4349, "windows-perf": 4359, "windows-svc": 4369, "windows-script": 4379}
 POINT_KINDS = ["gauge", "sum", "histogram", "exponentialHistogram", "summary"]
 
 
