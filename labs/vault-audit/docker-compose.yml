@@ -1,0 +1,92 @@
+# HashiCorp Vault OSS, three-node Raft HA (one active, two standbys) -> OTel Collector -> ClickStack.
+#
+#   bin/up.sh          # compose up, init + unseal, audit device + engines, HyperDX user + sources
+#   bin/traffic.sh     # one round of logins, reads, key use, issuance and denied requests
+#   bin/check.py       # scenario checks (SQL only), including a failover of the active node
+#   docker compose down -v
+#
+# Managed ClickStack: start everything but `clickstack`, with CH_* pointed at the Cloud service:
+#   docker compose up -d --no-deps vault-1 vault-2 vault-3 otelcol     (README, "Managed ClickStack")
+# Host ports are shifted (48xxx) so the lab can sit next to _base/ and the other labs.
+name: vaultlab
+
+x-vault: &vault
+  image: hashicorp/vault:2.2.1
+  command: ["server"]                   # the entrypoint adds -config=/vault/config
+  cap_add: [IPC_LOCK]
+  restart: unless-stopped
+  networks: [vault-net]
+
+services:
+  clickstack:
+    image: clickhouse/clickstack-all-in-one:2.42.0
+    container_name: vaultlab-clickstack
+    ports:
+      - "127.0.0.1:${VAULTLAB_UI_PORT:-48080}:8080"       # HyperDX UI
+      - "127.0.0.1:${VAULTLAB_API_PORT:-48000}:8000"      # HyperDX API
+      - "127.0.0.1:${VAULTLAB_CH_HTTP_PORT:-48123}:8123"  # ClickHouse HTTP
+    volumes:
+      - clickstack-data:/data
+    networks: [vault-net]
+
+  # Each node: its own Raft data and its own audit file. The audit device is enabled once and
+  # replicated, but every node writes the entries it handles to its own local file -- so the
+  # Collector reads all three (check.py S1, S7).
+  vault-1:
+    <<: *vault
+    container_name: vaultlab-vault-1
+    environment: { VAULT_RAFT_NODE_ID: vault-1, VAULT_API_ADDR: "http://vault-1:8200", VAULT_CLUSTER_ADDR: "http://vault-1:8201" }
+    ports: ["127.0.0.1:${VAULTLAB_VAULT1_PORT:-48201}:8200"]
+    volumes: [./vault/config.hcl:/vault/config/config.hcl:ro, vault-1-data:/vault/file, vault-1-logs:/vault/logs, ./bin:/lab:ro]
+  vault-2:
+    <<: *vault
+    container_name: vaultlab-vault-2
+    environment: { VAULT_RAFT_NODE_ID: vault-2, VAULT_API_ADDR: "http://vault-2:8200", VAULT_CLUSTER_ADDR: "http://vault-2:8201" }
+    ports: ["127.0.0.1:${VAULTLAB_VAULT2_PORT:-48202}:8200"]
+    volumes: [./vault/config.hcl:/vault/config/config.hcl:ro, vault-2-data:/vault/file, vault-2-logs:/vault/logs, ./bin:/lab:ro]
+  vault-3:
+    <<: *vault
+    container_name: vaultlab-vault-3
+    environment: { VAULT_RAFT_NODE_ID: vault-3, VAULT_API_ADDR: "http://vault-3:8200", VAULT_CLUSTER_ADDR: "http://vault-3:8201" }
+    ports: ["127.0.0.1:${VAULTLAB_VAULT3_PORT:-48203}:8200"]
+    volumes: [./vault/config.hcl:/vault/config/config.hcl:ro, vault-3-data:/vault/file, vault-3-logs:/vault/logs, ./bin:/lab:ro]
+
+  # One Collector for the lab, reading the three nodes' audit files and scraping all three.
+  # On real hosts this is one agent per Vault node with the same config.yaml (README).
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    container_name: vaultlab-otelcol
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    # Root only so file_storage can write to a fresh named volume; on a host, run the Collector
+    # as its own user with a directory it owns.
+    user: "0:0"
+    environment:
+      CH_ENDPOINT: ${CH_ENDPOINT:-tcp://clickstack:9000}
+      CH_USER: ${CH_USER:-worker}          # published dev user of the all-in-one image
+      CH_PASSWORD: ${CH_PASSWORD:-worker}
+      CH_DATABASE: ${CH_DATABASE:-vault_audit}
+      CH_TTL: ${CH_TTL:-8760h}             # one year; set what the audit retention rule says
+      DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-lab}
+    volumes:
+      - ./otelcol/config.yaml:/etc/otelcol/config.yaml:ro
+      - vault-1-logs:/vault/logs/vault-1:ro
+      - vault-2-logs:/vault/logs/vault-2:ro
+      - vault-3-logs:/vault/logs/vault-3:ro
+      - otelcol-storage:/var/lib/otelcol/file_storage
+    ports:
+      - "127.0.0.1:${VAULTLAB_OTEL_METRICS_PORT:-48888}:8888"   # the Collector's own metrics
+    restart: unless-stopped
+    networks: [vault-net]
+
+volumes:
+  clickstack-data:
+  vault-1-data:
+  vault-2-data:
+  vault-3-data:
+  vault-1-logs:
+  vault-2-logs:
+  vault-3-logs:
+  otelcol-storage:
+
+networks:
+  vault-net:
