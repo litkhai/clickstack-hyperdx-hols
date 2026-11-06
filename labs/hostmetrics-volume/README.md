@@ -98,6 +98,26 @@ runs agree; [`schema-bench/`](schema-bench/), [`results/2026-11-06-schema-bench.
   key (group, then host).
 - Storage was the same within 5 % (A 107.8 MiB, B 112.0, C 106.1).
 
+**The same bench on ClickHouse Cloud** (the Seoul service Managed ClickStack reads: 26.8.1.608, 2
+replicas, `max_threads` 2; [`schema-bench/cloud_bench.py`](schema-bench/cloud_bench.py),
+[`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt), run 2 of 2,
+2026-11-06). A1 is the newer default these services' tables carry (`ORDER BY (ServiceName,
+MetricName, toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)` + a `TimeUnix` minmax index).
+
+| Query | A0 default (0.155) | A1 newer default | B materialized columns | C taxonomy in the sort key |
+|---|---|---|---|---|
+| one host, one metric | 286,720 rows · 6.52 MiB · 85 ms | 263,936 · 6.00 MiB · 22 ms | 259,456 · 4.31 MiB · 46 ms | group + host: **32,768 · 0.54 MiB · 44 ms** |
+| one group, one metric | 286,720 · 8.02 MiB · 104 ms | 263,936 · 7.38 MiB · 104 ms | 275,840 · 4.66 MiB · 203 ms | **49,152 · 0.79 MiB · 5 ms** |
+| one host, every metric | 16.8 M · 187.8 MiB · 1,369 ms (run 1: 2,701) | 15.7 M · 175.4 MiB · 2,445 ms | 16.8 M · 49.8 MiB · 845 ms (run 1: 702) | group + host: **4.8 M · 17.4 MiB · 120 ms** (run 1: 201) |
+
+- Same direction as locally: bloom filters skip nothing, the newer default does not help a host
+  filter, and only the sort key cuts what is read (8–12× fewer bytes, 11× faster on the largest query).
+- Materialized columns help less than locally: 1.4–3.8× fewer bytes, 1.6× (warm) to 3.8× (run 1)
+  faster on the largest query — and B took **46 % more storage** (47.3 → 68.9 MiB; locally +4 %).
+- Small queries' times scatter between 5 and 200 ms on Cloud; read rows and bytes are the measure.
+- A1 holds 15.69 M of 16.8 M rows: its copy from A0 started before all of A0's parts were visible
+  on the replica that ran it. Compare A1 by marks and bytes per row, not by counts.
+
 ### 4. One gateway for many networks
 
 | Check (from) | Result |
@@ -235,6 +255,20 @@ MetricName, Attributes, time)`), **B**는 A에 `MATERIALIZED` 컬럼 `host`, `sv
 - 행을 줄이는 것은 정렬 키입니다. 10–30분의 1로 줄지만, 조회가 앞쪽 키(그룹, 그다음 호스트)를 조건에
   넣을 때만입니다.
 - 저장 크기는 5% 안에서 같았습니다(A 107.8 MiB, B 112.0, C 106.1).
+
+**같은 비교를 ClickHouse Cloud에서**(Managed ClickStack이 읽는 서울 서비스: 26.8.1.608, replica 2,
+`max_threads` 2. [`schema-bench/cloud_bench.py`](schema-bench/cloud_bench.py),
+[`results/2026-11-06-schema-bench-cloud.txt`](results/2026-11-06-schema-bench-cloud.txt), 2회 중 2회째,
+2026-11-06). A1은 이 서비스 테이블들이 가진 최신 기본값입니다(`ORDER BY (ServiceName, MetricName,
+toStartOfHour(TimeUnix), cityHash64(Attributes), TimeUnix)` + `TimeUnix` minmax 인덱스). 표는 위 English 절과 같습니다.
+
+- 방향은 로컬과 같습니다. bloom filter는 건너뛰지 못했고, 최신 기본값도 호스트 조건에 도움이 되지 않았으며,
+  읽는 양을 줄인 것은 정렬 키뿐입니다(바이트 8–12분의 1, 가장 큰 조회 11배 빠름).
+- materialized 컬럼의 효과는 로컬보다 작습니다. 바이트 1.4–3.8분의 1, 가장 큰 조회 1.6배(warm)–3.8배(1회째)
+  빠름. 그리고 B는 저장을 **46% 더** 썼습니다(47.3 → 68.9 MiB, 로컬은 +4%).
+- Cloud에서 작은 조회 시간은 5–200 ms 사이로 흔들립니다. 읽은 행과 바이트를 기준으로 봅니다.
+- A1은 1,680만 행 중 1,569만 행만 들어갔습니다. A0에서 복사를 시작할 때 그 replica에 A0의 part가 다 보이지
+  않았던 것으로 보입니다. A1은 건수가 아니라 granule·바이트 비율로 비교합니다.
 
 ### 4. 여러 네트워크에서 gateway 하나로
 
