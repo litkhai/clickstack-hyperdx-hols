@@ -20,7 +20,7 @@ ClickHouse Cloud, and checks each one by SQL with a positive and a negative cont
 | # | Workflow | How it is shown | Status |
 |---|---|---|---|
 | S1 | **Slow transaction → the SQL behind it** — share of time in SQL, the statement, its service and table, the pod; N+1, connection wait, a slow external call and Kafka consumer lag told apart | `sql/s1_diagnose.sql`, the *APM workflows* dashboard, trace waterfall | **verified** |
-| S2 | **Alert on it** — six tile alerts to Slack | `clickstack/setup.py --alerts`, the *APM alerts* dashboard | built, not verified |
+| S2 | **Alert on it** — eight tile alerts to Slack: six on traces (A1–A6), two on logs — A7 error lines per service, A8 a service that stopped logging, against the services seen in the 24 hours before | `clickstack/setup.py --alerts`, the *APM alerts* dashboard | built, not verified on this lab. A7/A8: expected rows on seeded logs in `clickhouse local` 26.9.6.6 (`tests/test_log_alerts.py`, 2026-11-06); the same two shapes fired on Managed ClickStack in `labs/process-down-alerts/managed` (E1, E3) |
 | S3 | **Deploy comparison** against 24 h and 7 d ago, JSON per service | `sql/s3_deploy_compare.sql` | built, not verified |
 | S4 | **Errors as issues** | SQL / materialized view, Event Patterns | documentation only |
 | S5 | **Incident write-up from an alert** | SQL | documentation only |
@@ -265,7 +265,7 @@ labs/apm-workflows/
 | # | 업무 흐름 | 보여주는 방법 | 상태 |
 |---|---|---|---|
 | S1 | **느린 트랜잭션 → 그 뒤의 SQL**: SQL에 쓴 시간의 비중, 문장과 그 서비스·테이블, pod. N+1, 연결 대기, 느린 외부 호출, Kafka 소비 지연을 서로 구분 | `sql/s1_diagnose.sql`, *APM workflows* 대시보드, trace 워터폴 | **검증함** |
-| S2 | **알림** — 타일 알림 6개를 Slack으로 | `clickstack/setup.py --alerts`, *APM alerts* 대시보드 | 만듦, 미검증 |
+| S2 | **알림** — 타일 알림 8개를 Slack으로: trace 6개(A1–A6), 로그 2개 — A7 서비스별 에러 줄 수, A8 로그가 끊긴 서비스(직전 24시간에 보인 서비스와 비교) | `clickstack/setup.py --alerts`, *APM alerts* 대시보드 | 이 실습에서는 미검증. A7/A8은 `clickhouse local` 26.9.6.6에서 시험 로그로 기대한 행(`tests/test_log_alerts.py`, 2026-11-06). 같은 두 모양이 `labs/process-down-alerts/managed`(E1, E3)에서 Managed ClickStack 알림으로 울림 |
 | S3 | **배포 비교**: 24시간 전·7일 전과 비교, 서비스별 JSON | `sql/s3_deploy_compare.sql` | 만듦, 미검증 |
 | S4 | **오류를 이슈로** | SQL / materialized view, Event Patterns | 문서만 |
 | S5 | **알림에서 사고 보고서로** | SQL | 문서만 |
