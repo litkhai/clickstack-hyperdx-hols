@@ -164,6 +164,36 @@ Both VPCs were in one account (allowed principal = that account). A second accou
 the principal on the endpoint service; that is not run here. Transit Gateway was verified in
 [`labs/privatelink-gateway`](../privatelink-gateway/README.md).
 
+### 5. The standard profile's `install.ps1`, end to end (#141)
+
+> **Verified on** 2026-11-07, `ap-northeast-2`, the same Windows Server 2022 `t3.medium` (Windows
+> PowerShell 5.1.20348) and gateway, `terraform apply -var windows_mode=install` (stand-in game
+> servers only, no agent). [`otel-profiles/profiles/windows-host`](../../otel-profiles/profiles/windows-host/README.md)
+> `install.ps1` pushed with its built config and `process-check.ps1` through SSM Run Command
+> (`bin/install-e2e.sh`), exporting OTLP/gRPC to the gateway's 4317 through the endpoint service.
+> Apply 02:20Z → destroy 03:13Z. Raw results: [`results/2026-11-07-install-*`](results/).
+
+| Check | Result |
+|---|---|
+| **V1** install, otelcol-contrib 0.155.0 | exit clean in **108 s** (most of it the download). Service `otelcol`: Automatic, **LocalSystem**, failure actions restart 5 s / 30 s / 60 s, reset 1 day. Task `otelcol process-check`: SYSTEM, highest, every 1 min. Five machine variables and the API key set |
+| **V2** data at the gateway | **73 points per minute** (29 metric names) with `host.name`, `host.id`, `os.type`, `cloud.*`, `host.type`, `deploy.platform` and the EC2 tags `ec2.tag.lab.service.domain` / `.group`. Per-process metrics for both `GameServer.exe` instances (owner `NT AUTHORITY\SYSTEM`) |
+| **V3** service stopped (02:42:40Z) | `windows.service.status` **1** for 02:42–02:44, **4** again from 02:45 (started 02:45:44Z); process scraper: new PID |
+| **V3** task process killed | **first run: `process.check.up` was wrong** — one instance `gs1 gs2` = 0 all the time (below). Fixed run (03:00:14Z): **gs2 = 0** for 03:00–03:02 while gs1 stayed 1; 1 again after the task restart (03:02:49Z) |
+| **V4** collector process killed (02:52:55Z) | Service Control Manager 7031 "terminated unexpectedly … Restart the service" → running again at 02:53:01Z, **5.9 s**. The minute 02:52 is missing at the gateway: the in-flight batch died with the process |
+| **V5** re-run, same version | 119 s; still **one** service and **one** task; collector stopped 5 s (02:58:15 → 02:58:20Z); task last result 0 |
+| **V5** re-run, **0.164.0** (2026-10-26) | 123 s; the same config runs unchanged; 73 points per minute, all five signals; stopped 4 s |
+
+**Bug found and fixed: `process-check.ps1` on Windows PowerShell 5.1.** `@(Get-Content -Raw … | ConvertFrom-Json)`
+turned the two-entry list into one element (5.1 emits a JSON array as one object), so
+`$e.instance` was `gs1 gs2` and its `-like` pattern matched nothing: a constant 0, which an alert
+would read as "everything is down". Checked on the host: old form count 1 `[gs1 gs2]`, new form
+(`$parsed = …; @($parsed)`) count 2 `[gs1,gs2]`. The lab's `bin/check.ps1` (fixed instances) never
+took this path, which is why the 2026-11-06 run did not show it.
+
+Not run: the Application event log had no `otelcol` warn/error entries, but whether the service
+writes its log there was not checked, so no claim either way; SSM State Manager (only Run Command);
+a second account.
+
 ### AWS limits that bound one gateway (AWS documentation, read 2026-11-06)
 
 | Item | Sustained | Note |
@@ -186,6 +216,12 @@ bin/run.sh start; bin/run.sh killtest        # killtest takes ~14 min
 bin/run.sh timeline; bin/run.sh n2; bin/run.sh logs
 sleep 960; bin/run.sh end                    # end the 30-minute window
 terraform -chdir=terraform destroy
+
+# section 5: install.ps1 end to end
+terraform -chdir=terraform apply -var windows_mode=install
+bin/install-e2e.sh ready; bin/install-e2e.sh install 0.155.0; bin/install-e2e.sh state
+bin/install-e2e.sh data 3; bin/install-e2e.sh killtest; bin/install-e2e.sh logs
+terraform -chdir=terraform destroy -var windows_mode=install
 ```
 
 | Piece | What |
@@ -194,9 +230,11 @@ terraform -chdir=terraform destroy
 | `collector/agent-linux.yaml` | hostmetrics base + `process` (one executable) + `resourcedetection` (`env`, `system`, `ec2` with tag mapping) |
 | `collector/agent-windows.yaml` | base + methods A–D, one gateway port each; `agent-windows-ls.yaml` is method A under LocalService |
 | `collector/gameserver.yaml` | the stand-in game server's config |
-| `collector/gateway.yaml` | one OTLP/HTTP port per set to its own file; no batch processor |
+| `collector/gateway.yaml` | one OTLP/HTTP port per set to its own file, plus OTLP/gRPC 4317 for section 5; no batch processor |
 | `bin/analyze.py`, `bin/timeline.py` | volume report; per-minute method view. Sent to the gateway through SSM |
 | `bin/check.ps1` | method D |
+| `bin/install-e2e.sh`, `bin/install_check.py` | section 5: push and run the profile's `install.ps1` through SSM; what reached the gateway's `windows-install.jsonl` |
+| `terraform/user_data_windows_install.ps1.tftpl` | `windows_mode = install`: the two stand-in game servers only |
 | `local/` | the Linux half in Docker, to check configs before applying |
 | `managed/windows_prep.py` | Managed ClickStack side of a `managed = true` run: database, ingest user (password only in the gitignored `terraform/managed.auto.tfvars`), metric source, dashboard; `--cleanup` |
 | `collector/gateway-managed.yaml` | overlay: the gateway also writes every set to that database (clickhouse exporter) |
@@ -326,6 +364,33 @@ MetricName, Attributes, time)`), **B**는 A에 `MATERIALIZED` 컬럼 `host`, `sv
 
 두 VPC는 같은 계정에 있었습니다(허용 principal = 그 계정). 계정이 둘이면 endpoint service의 principal만
 바뀌며, 그건 여기서 돌리지 않았습니다. Transit Gateway는 [`labs/privatelink-gateway`](../privatelink-gateway/README.md)에서 검증했습니다.
+
+### 5. 표준 프로파일의 `install.ps1` 처음부터 끝까지 (#141)
+
+> **검증:** 2026-11-07, `ap-northeast-2`, 같은 Windows Server 2022 `t3.medium`(Windows PowerShell
+> 5.1.20348)과 gateway, `terraform apply -var windows_mode=install`(대역 게임 서버만, agent 없음).
+> [`otel-profiles/profiles/windows-host`](../../otel-profiles/profiles/windows-host/README.md)의 `install.ps1`을
+> 빌드한 설정·`process-check.ps1`과 함께 SSM Run Command로 보내 실행(`bin/install-e2e.sh`), OTLP/gRPC로
+> endpoint service를 거쳐 gateway 4317에 보냄. apply 02:20Z → destroy 03:13Z. 원자료 [`results/2026-11-07-install-*`](results/).
+
+| 확인 | 결과 |
+|---|---|
+| **V1** 설치, otelcol-contrib 0.155.0 | **108초**에 정상 종료(대부분 내려받기). 서비스 `otelcol`: 자동, **LocalSystem**, 실패 시 5초·30초·60초 뒤 재시작, 하루 뒤 리셋. 작업 `otelcol process-check`: SYSTEM, 최고 권한, 1분마다. 머신 변수 다섯 개와 API 키 설정됨 |
+| **V2** gateway 도착 | **분당 73 point**(metric 29종), `host.name`, `host.id`, `os.type`, `cloud.*`, `host.type`, `deploy.platform`, EC2 태그 `ec2.tag.lab.service.domain` / `.group` 포함. `GameServer.exe` 두 인스턴스의 프로세스 메트릭(소유자 `NT AUTHORITY\SYSTEM`) |
+| **V3** 서비스 중지(02:42:40Z) | `windows.service.status`가 02:42–02:44에 **1**, 02:45부터 다시 **4**(02:45:44Z 시작). process scraper는 새 PID |
+| **V3** 작업 프로세스 종료 | **첫 실행에서 `process.check.up`이 틀렸음** — 인스턴스가 `gs1 gs2` 하나로 늘 0(아래). 고친 뒤(03:00:14Z): 03:00–03:02에 **gs2 = 0**, gs1은 1 유지, 작업 재시작(03:02:49Z) 뒤 다시 1 |
+| **V4** collector 프로세스 종료(02:52:55Z) | 서비스 제어 관리자 7031 "terminated unexpectedly … Restart the service" → 02:53:01Z 다시 실행, **5.9초**. gateway에서 02:52 분이 빠짐 — 보내던 batch가 프로세스와 함께 사라짐 |
+| **V5** 같은 버전 재실행 | 119초, 서비스·작업 여전히 **하나씩**, collector 5초 멈춤(02:58:15 → 02:58:20Z), 작업 마지막 결과 0 |
+| **V5** **0.164.0**(2026-10-26)으로 재실행 | 123초, 같은 설정이 그대로 돎, 분당 73 point, 신호 다섯 가지 모두, 4초 멈춤 |
+
+**찾아서 고친 버그: Windows PowerShell 5.1의 `process-check.ps1`.** `@(Get-Content -Raw … | ConvertFrom-Json)`이
+두 항목짜리 목록을 한 항목으로 만들었습니다(5.1은 JSON 배열을 객체 하나로 내보냄). 그래서 `$e.instance`가
+`gs1 gs2`가 되고 `-like` 패턴이 아무것도 맞추지 못해 늘 0이었습니다 — 알림이 "전부 내려감"으로 읽을 값입니다.
+호스트에서 확인: 기존 형태 count 1 `[gs1 gs2]`, 새 형태(`$parsed = …; @($parsed)`) count 2 `[gs1,gs2]`.
+실습의 `bin/check.ps1`(인스턴스 고정)은 이 경로를 타지 않아서 2026-11-06 실행에서는 드러나지 않았습니다.
+
+돌리지 않은 것: Application 이벤트 로그에 `otelcol` warn/error 항목이 없었지만 서비스가 그곳에 로그를 쓰는지는
+확인하지 않아서 결론을 내리지 않음. SSM State Manager(Run Command만). 두 번째 계정.
 
 AWS 한도 표, 실행 명령, 구성 요소는 위 English 절과 같습니다. 실제 호스트에 쓸 설정은 표준 프로파일
 [`otel-profiles/profiles/windows-host`](../../otel-profiles/profiles/windows-host/README.md)를 보세요 — 이

@@ -7,8 +7,9 @@
 # windows-host) and process-check.ps1 next to it, sets the machine-level variables the config reads,
 # registers the collector as an automatic LocalSystem service that restarts on failure, and the
 # check as a 1-minute SYSTEM task. Re-running upgrades in place.
-# Pieces verified in labs/hostmetrics-volume on Windows Server 2022, 2026-11-06 (service as
-# LocalSystem, machine variables, 1-minute SYSTEM task); this script as a whole has not been run.
+# Verified end to end in labs/hostmetrics-volume section 5 on Windows Server 2022 (Windows PowerShell
+# 5.1), 2026-11-07: installed through SSM Run Command with 0.155.0 (108 s), re-run with 0.155.0 and
+# 0.164.0 (one service, one task each time).
 param(
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string] $Endpoint,

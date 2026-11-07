@@ -66,6 +66,18 @@ variable "ch_database" {
   default = ""
 }
 
+# windows_mode = "install": the Windows host gets only the two stand-in game server instances; the
+# collector comes from otel-profiles/profiles/windows-host/install.ps1, run through SSM by
+# bin/install-e2e.sh (the way a fleet would get it). "methods" (default) is the original run.
+variable "windows_mode" {
+  type    = string
+  default = "methods"
+  validation {
+    condition     = contains(["methods", "install"], var.windows_mode)
+    error_message = "windows_mode is methods or install."
+  }
+}
+
 variable "otelcol_version" {
   type    = string
   default = "0.155.0"
@@ -86,7 +98,7 @@ data "aws_caller_identity" "this" {}
 locals {
   az    = data.aws_availability_zones.this.names[0]
   vpcs  = { gw = "10.77.0.0/16", src = "10.78.0.0/16" }
-  ports = [4319, 4329, 4349, 4359, 4369, 4379] # Windows sets on the gateway (collector/gateway.yaml)
+  ports = [4317, 4319, 4329, 4349, 4359, 4369, 4379] # Windows sets on the gateway (collector/gateway.yaml); 4317 = windows_mode install
 }
 
 resource "aws_vpc" "this" {
@@ -310,7 +322,10 @@ resource "aws_instance" "windows" {
   metadata_options {
     http_tokens = "required"
   }
-  user_data = templatefile("${path.module}/user_data_windows.ps1.tftpl", {
+  user_data = var.windows_mode == "install" ? templatefile("${path.module}/user_data_windows_install.ps1.tftpl", {
+    otelcol_version   = var.otelcol_version
+    gameserver_config = file("${path.module}/../collector/gameserver.yaml")
+    }) : templatefile("${path.module}/user_data_windows.ps1.tftpl", {
     otelcol_version   = var.otelcol_version
     agent_config      = file("${path.module}/../collector/agent-windows.yaml")
     agent_ls_config   = file("${path.module}/../collector/agent-windows-ls.yaml")

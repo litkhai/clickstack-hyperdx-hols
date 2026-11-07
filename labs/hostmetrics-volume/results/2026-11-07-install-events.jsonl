@@ -1,0 +1,15 @@
+{"event":"install 0.155.0 start","t":1794019203}
+{"event":"install 0.155.0 done","t":1794019315}
+{"event":"killtest start","t":1794019356}
+{"event":"S1 gs1 service stopped","t":1794019360}
+{"event":"S2 gs1 service started","t":1794019544}
+{"event":"S3 gs2 task process killed","t":1794019669}
+{"event":"S4 gs2 task started","t":1794019853}
+{"event":"S5 collector killed: old pid 4016 new pid 2884 state Running after 5.9 s\r","t":1794019985}
+{"event":"killtest end","t":1794020105}
+{"event":"install 0.155.0 start","t":1794020180}
+{"event":"install 0.155.0 done","t":1794020303}
+{"event":"S6 gs2 killed (fixed check)","t":1794020414}
+{"event":"S7 gs2 started (fixed check)","t":1794020569}
+{"event":"install 0.164.0 start","t":1794020692}
+{"event":"install 0.164.0 done","t":1794020818}

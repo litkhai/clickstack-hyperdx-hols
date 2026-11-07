@@ -1,0 +1,24 @@
+service: otelcol state=Running start=Auto account=LocalSystem pid=4968
+path: "C:\Program Files\otelcol\otelcol-contrib.exe" --config "C:\Program Files\otelcol\config.yaml"
+services named otelcol*: 1
+        RESET_PERIOD (in seconds)    : 86400
+        FAILURE_ACTIONS              : RESTART -- Delay = 5000 milliseconds.
+                                       RESTART -- Delay = 30000 milliseconds.
+                                       RESTART -- Delay = 60000 milliseconds.
+task: user=SYSTEM runlevel=Highest interval=PT1M state=Ready tasks named otelcol*: 1
+task last run: 11/07/2026 03:08:08 result=0
+CLICKSTACK_OTLP_ENDPOINT=<endpoint-dns>:4317
+CLICKSTACK_OTLP_INSECURE=true
+WINDOWS_HOST_SERVICES=[GameServer]
+WINDOWS_HOST_PROCESS_NAMES=['^GameServer\.exe$']
+WINDOWS_HOST_EC2_TAGS=['^lab\.service\.']
+api key set: True
+otelcol-contrib version 0.164.0
+expected: [{"instance":"gs1","executable":"GameServer.exe","match":"*gs1.yaml*"},{"instance":"gs2","executable":"GameServer.exe","match":"*gs2.yaml*"}]
+-- Service Control Manager about otelcol:
+2026-11-07T03:06:56Z 7036 The OpenTelemetry Collector (windows-host) service entered the running state.
+2026-11-07T03:06:52Z 7036 The OpenTelemetry Collector (windows-host) service entered the stopped state.
+2026-11-07T02:58:20Z 7036 The OpenTelemetry Collector (windows-host) service entered the running state.
+2026-11-07T02:58:15Z 7036 The OpenTelemetry Collector (windows-host) service entered the stopped state.
+2026-11-07T02:53:01Z 7036 The OpenTelemetry Collector (windows-host) service entered the running state.
+2026-11-07T02:52:55Z 7031 The OpenTelemetry Collector (windows-host) service terminated unexpectedly.  It has done this 1 time(s).  The following corrective action will be taken in 5000 milliseconds: Restart the service.
