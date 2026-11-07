@@ -116,6 +116,9 @@ def rows_where(connection, where, language="sql"):
 # The API refuses create/update/delete on User for any custom role ("Only the Admin role can invite,
 # remove, or re-role team members"), so a custom role can never hand itself back Admin.
 KEEP = [mongo("read", "User")]
+# 2026-11-07 round 2: a role without Team read makes the whole ClickStack app answer
+# "Unauthorized" for its user, so every scenario carries it (KEEP_TEAM).
+KEEP_TEAM = KEEP + [mongo("read", "Team")]
 
 
 def scenarios(conn, ids):
@@ -126,14 +129,17 @@ def scenarios(conn, ids):
     by_tag = lambda subj, tag: mongo("read", subj, {"tags": tag})  # noqa: E731
     return {
         "full": ("Everything an Admin has except re-roling users (manage all is refused)", full),
+        "types-noteam": ("Resource-type levels without Team read (the app refuses the user)",
+                         KEEP + [mongo("read", "Dashboard"), mongo("read", "SavedSearch"), mongo("read", "Source"),
+                                 mongo("read", "Connection")]),
         "types": ("Resource-type levels: dashboards/saved searches/sources read, alerts/webhooks/notebooks none",
-                  KEEP + [mongo("read", "Dashboard"), mongo("read", "SavedSearch"), mongo("read", "Source"),
+                  KEEP_TEAM + [mongo("read", "Dashboard"), mongo("read", "SavedSearch"), mongo("read", "Source"),
                           mongo("read", "Connection")]),
         "objects-alpha": ("Fine-grained objects: only what is tagged game:alpha, the lab source by name",
-                          KEEP + [by_tag("Dashboard", "game:alpha"), by_tag("SavedSearch", "game:alpha"),
+                          KEEP_TEAM + [by_tag("Dashboard", "game:alpha"), by_tag("SavedSearch", "game:alpha"),
                                   mongo("read", "Source", {"name": SOURCE}), mongo("read", "Connection")]),
         "objects-id": ("Fine-grained by ID: the bravo dashboard only",
-                       KEEP + [mongo("read", "Dashboard", {"_id": ids.get("dash:bravo", "")}),
+                       KEEP_TEAM + [mongo("read", "Dashboard", {"_id": ids.get("dash:bravo", "")}),
                                mongo("read", "Source", {"name": SOURCE}), mongo("read", "Connection")]),
         "rows-alpha": ("Row condition Game = 'alpha' (SQL), everything else manage",
                        full + [rows_where(conn, "Game = 'alpha'")]),
@@ -143,7 +149,7 @@ def scenarios(conn, ids):
                         full + [rows_where(conn, 'LogAttributes.player.id:"p-0001" OR LogAttributes.player.id:"p-0002"',
                                            "lucene")]),
         "team-alpha": ("A realistic team role: alpha objects (read) + alpha rows + manage alerts",
-                       KEEP + [by_tag("Dashboard", "game:alpha"), by_tag("SavedSearch", "game:alpha"),
+                       KEEP_TEAM + [by_tag("Dashboard", "game:alpha"), by_tag("SavedSearch", "game:alpha"),
                                mongo("read", "Source", {"name": SOURCE}), mongo("read", "Connection"),
                                mongo("manage", "Alert"), mongo("read", "Webhook"),
                                rows_where(conn, "Game = 'alpha'")]),
@@ -324,7 +330,8 @@ def main():
     if cmd == "setup":
         setup(ch, cloud)
     elif cmd == "role":
-        set_role(cloud, args[1] if len(args) > 1 else "")
+        name = args[1] if len(args) > 1 and not args[1].startswith("--") else ""
+        set_role(cloud, name, f"{PREFIX} · {name}")
     elif cmd == "feed":
         feed(ch, int(args[1]) if len(args) > 1 else 20)
     elif cmd == "probe":
