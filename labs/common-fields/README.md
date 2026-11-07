@@ -12,7 +12,7 @@ with the configs as files and every piece checked.
 > **Verified on:** `schema/schema.sql` in `clickhouse local` 26.9.6.6 (`tests/test_schema.py`:
 > every table created, the columns fill, a filter on them uses the primary key; the negative checks
 > and the injected fault in [Tests](#tests)), 2026-11-07, and on ClickHouse Cloud 26.8.1.608 with
-> Managed ClickStack (`managed/demo.py`, the screens below), 2026-11-06.
+> Managed ClickStack (`managed/demo.py`, the screens below), 2026-11-07.
 > `collector/standard-fields.yaml` in otelcol-contrib 0.155.0 (`tests/test_collector.sh`: the
 > rename, its precedence, the negative check and the injected fault), 2026-11-07. The read-volume numbers come from
 > [`labs/hostmetrics-volume`](../hostmetrics-volume/README.md) (logs and gauge metrics, settled
@@ -116,11 +116,11 @@ finds the materialized column and rewrites a search on the map key to it.
 
 ![ClickStack source settings: cf demo logs, database common_fields_demo, table otel_logs](images/01-source-settings.webp)
 
-On the demo (ClickHouse Cloud 26.8.1.608, 2026-11-06; 2 M log rows an hour, 200 services in 20
-groups), `ResourceAttributes.svc.group:"g7"` over 15 minutes became `svc_group = 'g7'` and read 49,152 rows — six granules — for 21,856
+On the demo (ClickHouse Cloud 26.8.1.608, 2026-11-07; 2 M log rows an hour, 200 services in 20
+groups), `ResourceAttributes.svc.group:"g7"` over 15 minutes became `svc_group = 'g7'` and read 49,152 rows — six granules — for 24,836
 results:
 
-![Exact match svc.group:"g7": 21,856 results, Scanned Rows 49,152](images/02-search-exact.webp)
+![Exact match svc.group:"g7": 24,836 results, Scanned Rows 49,152](images/02-search-exact.webp)
 
 Without quotes, `svc.group:g7` is a **substring** match ("contains"), sent as
 `svc_group ILIKE '%g7%'`. On this schema it read the same 49,152 rows, because the column's set
@@ -138,8 +138,9 @@ id) and the common fields under Resource Attributes:
 
 ![A g7 error span with its four log lines in the waterfall; Resource Attributes show svc.domain d3, svc.group g7, host.name, deployment.environment.name](images/04-trace-with-logs.webp)
 
-Screens: Managed ClickStack (HyperDX 2.42.0) on ClickHouse Cloud 26.8.1.608, Seoul, 2026-11-06,
-`managed/demo.py`; rows read confirmed in `system.query_log`.
+Screens: Managed ClickStack on ClickHouse Cloud 26.8.1.608, Seoul, 2026-11-07, `managed/demo.py`,
+the 15 minutes 12:39–12:54 KST. Rows read are the screen's Scanned Rows; on the 2026-11-06 run
+(HyperDX 2.42.0) `system.query_log` showed the same 49,152.
 
 ### Run the demo on Managed ClickStack
 
@@ -178,7 +179,7 @@ and must catch (2026-11-07, `clickhouse local` 26.9.6.6 · otelcol-contrib 0.155
 > **검증:** `schema/schema.sql`은 `clickhouse local` 26.9.6.6(`tests/test_schema.py`: 테이블이 모두
 > 만들어지고, 컬럼이 채워지고, 그 컬럼 조건이 primary key를 씀. 반대 확인과 일부러 넣은 오류는
 > [테스트](#테스트) 참고)에서 2026-11-07, ClickHouse Cloud 26.8.1.608의 Managed ClickStack(`managed/demo.py`,
-> 아래 화면)에서 2026-11-06. `collector/standard-fields.yaml`은 otelcol-contrib 0.155.0(`tests/test_collector.sh`:
+> 아래 화면)에서 2026-11-07. `collector/standard-fields.yaml`은 otelcol-contrib 0.155.0(`tests/test_collector.sh`:
 > 이름 바꾸기, 우선순위, 반대 확인, 일부러 넣은 오류), 2026-11-07. 읽는 양
 > 수치는 [`labs/hostmetrics-volume`](../hostmetrics-volume/README.md)(로그와 gauge 메트릭, 병합이 끝난
 > 뒤 실행, 2026-11-06)에서 왔습니다. trace와 나머지 메트릭 종류는 같은 원칙을 따르지만 재지 않았습니다.
@@ -276,10 +277,10 @@ materialized 컬럼을 찾아 map 키 검색을 그 컬럼으로 바꿔 씁니�
 
 ![ClickStack 소스 설정: cf demo logs, 데이터베이스 common_fields_demo, 테이블 otel_logs](images/01-source-settings.webp)
 
-데모(ClickHouse Cloud 26.8.1.608, 2026-11-06. 시간당 로그 200만 행, 서비스 200개·그룹 20개)에서 15분 구간의 `ResourceAttributes.svc.group:"g7"`은
-`svc_group = 'g7'`으로 바뀌었고, granule 여섯 개인 49,152행을 읽어 결과 21,856건을 냈습니다.
+데모(ClickHouse Cloud 26.8.1.608, 2026-11-07. 시간당 로그 200만 행, 서비스 200개·그룹 20개)에서 15분 구간의 `ResourceAttributes.svc.group:"g7"`은
+`svc_group = 'g7'`으로 바뀌었고, granule 여섯 개인 49,152행을 읽어 결과 24,836건을 냈습니다.
 
-![정확 일치 svc.group:"g7": 결과 21,856건, Scanned Rows 49,152](images/02-search-exact.webp)
+![정확 일치 svc.group:"g7": 결과 24,836건, Scanned Rows 49,152](images/02-search-exact.webp)
 
 따옴표가 없는 `svc.group:g7`은 **부분 일치**("contains")로, `svc_group ILIKE '%g7%'`로 나갑니다. 이 스키마에서는
 같은 49,152행을 읽었습니다. 컬럼의 set 인덱스가 granule마다 값을 확인할 수 있기 때문입니다. 그 인덱스 없이
@@ -295,8 +296,9 @@ trace ID가 들어 있음), Resource Attributes에 공통 필드가 보입니다
 
 ![g7의 에러 span과 로그 네 줄이 한 waterfall에, Resource Attributes에 svc.domain d3, svc.group g7, host.name, deployment.environment.name](images/04-trace-with-logs.webp)
 
-화면: Managed ClickStack(HyperDX 2.42.0), ClickHouse Cloud 26.8.1.608, 서울, 2026-11-06, `managed/demo.py`.
-읽은 행은 `system.query_log`로 확인했습니다.
+화면: Managed ClickStack, ClickHouse Cloud 26.8.1.608, 서울, 2026-11-07, `managed/demo.py`, 12:39–12:54 KST의
+15분. 읽은 행은 화면의 Scanned Rows입니다. 2026-11-06 실행(HyperDX 2.42.0)에서는 `system.query_log`도 같은 49,152를
+보였습니다.
 
 ### Managed ClickStack에서 데모 돌리기
 
