@@ -1,6 +1,6 @@
 {
   "repo": "clickstack-hyperdx-hols",
-  "generated": "2026-11-05T07:44:43Z",
+  "generated": "2026-11-07T06:42:45Z",
   "labs": [
     {
       "path": "clickstack-config",
@@ -51,6 +51,26 @@
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/ch2otel/README.md#한국어",
       "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/ch2otel/README.md#english",
       "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/ch2otel/"
+    },
+    {
+      "path": "labs/common-fields",
+      "title_ko": "앱·호스트·ClickStack을 잇는 공통 필드",
+      "summary_ko": "서비스·호스트·환경 필드를 앱과 EC2 태그에서 넣고, Collector에서 이름을 맞추고, ClickStack 정렬 키에 두어 빠르게 조회합니다.",
+      "title_en": "Common fields across apps, hosts and ClickStack",
+      "summary_en": "Set service, host and environment fields in apps and EC2 tags, normalise them in the collector, and keep them in the ClickStack sort key for fast search.",
+      "category": "clickstack",
+      "target": "cloud",
+      "tier": "T1",
+      "verified_on": "clickhouse local 26.9.6.6 and otelcol-contrib 0.155.0, 2026-11-07; Managed ClickStack (ClickHouse Cloud 26.8.1.608), 2026-11-07",
+      "tags": [
+        "clickstack",
+        "opentelemetry",
+        "observability",
+        "mergetree"
+      ],
+      "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/common-fields/README.md#한국어",
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/common-fields/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/common-fields/"
     },
     {
       "path": "labs/elastic-migration",
