@@ -139,8 +139,9 @@ id) and the common fields under Resource Attributes:
 ![A g7 error span with its four log lines in the waterfall; Resource Attributes show svc.domain d3, svc.group g7, host.name, deployment.environment.name](images/04-trace-with-logs.webp)
 
 Screens: Managed ClickStack on ClickHouse Cloud 26.8.1.608, Seoul, 2026-11-07, `managed/demo.py`,
-the 15 minutes 12:39–12:54 KST. Rows read are the screen's Scanned Rows; on the 2026-11-06 run
-(HyperDX 2.42.0) `system.query_log` showed the same 49,152.
+the 15 minutes 12:39–12:54 KST. `system.query_log` shows both searches' queries
+(`svc_group = 'g7'` and `svc_group ILIKE '%g7%'`) reading 49,152 rows, and a direct `count()` on
+the window gives the 24,836 results.
 
 ### Run the demo on Managed ClickStack
 
@@ -297,8 +298,8 @@ trace ID가 들어 있음), Resource Attributes에 공통 필드가 보입니다
 ![g7의 에러 span과 로그 네 줄이 한 waterfall에, Resource Attributes에 svc.domain d3, svc.group g7, host.name, deployment.environment.name](images/04-trace-with-logs.webp)
 
 화면: Managed ClickStack, ClickHouse Cloud 26.8.1.608, 서울, 2026-11-07, `managed/demo.py`, 12:39–12:54 KST의
-15분. 읽은 행은 화면의 Scanned Rows입니다. 2026-11-06 실행(HyperDX 2.42.0)에서는 `system.query_log`도 같은 49,152를
-보였습니다.
+15분. `system.query_log`에서 두 검색의 쿼리(`svc_group = 'g7'`, `svc_group ILIKE '%g7%'`)가 모두 49,152행을 읽었고,
+같은 구간을 직접 `count()`하면 결과 24,836건이 나옵니다.
 
 ### Managed ClickStack에서 데모 돌리기
 
