@@ -1,0 +1,5 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs a ClickHouse Cloud service with Managed ClickStack.
+target: cloud
+tier: T1
+services: [clickhouse-cloud, clickstack]
+verified_on: "ClickHouse Cloud 26.8.1.608, Managed ClickStack hyperdx-chc 2.43.1 (alerts 2.42.0), 2026-11-07, one Admin user; restricted ClickStack roles not observed"

@@ -26,6 +26,7 @@ Observability on ClickHouse: OpenTelemetry ingestion, the ClickStack/HyperDX UI,
 | [labs/hostmetrics-volume](labs/hostmetrics-volume/) | Linux and Windows EC2: data points and wire bytes per host at 1-minute hostmetrics, four ways to watch a Windows game-server process stop (process scraper, perfcounters, `windows_service`, a check script) and one gateway behind an endpoint service (verified 2026-11-06) |
 | [labs/llm-serving-observability](labs/llm-serving-observability/) | Self-hosted LLM serving (vLLM behind LiteLLM) observed with ClickStack, runnable without a GPU: the OTel Collector configuration, an `nvidia-smi` → OTLP pusher, LiteLLM gateway-metric cardinality with and without the attribute allowlist, and the 32-tile HyperDX dashboard imported onto hand-made sources |
 | [labs/vault-audit](labs/vault-audit/) | HashiCorp Vault OSS audit trail and HA metrics in ClickStack: a three-node Raft cluster's audit files (written by whichever node is active) through `file_log` and OTTL into OTel logs — TraceId per request, issuance joined to later use on HMAC'd accessors, no secret in clear — plus per-node metrics with `unauthenticated_metrics_access`; failover checked (verified locally and on Managed ClickStack, 2026-11-06) |
+| [labs/managed-rbac](labs/managed-rbac/) | How finely Managed ClickStack splits access per game, user and column: ClickStack roles (resource, name/tag/ID, the API's beta row conditions), the per-user JWT identity search uses and the one shared identity alerts use, row and masking policies on each — and where alerts and Map keys leak (verified on Managed ClickStack with one Admin user, 2026-11-07) |
 
 ### 🎓 Workshops (`workshops/`)
 
@@ -117,6 +118,7 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 | [labs/hostmetrics-volume](labs/hostmetrics-volume/) | Linux·Windows EC2: 1분 hostmetrics의 호스트당 data point와 전송 바이트, Windows 게임 서버 프로세스 중지를 보는 네 방법(process scraper, perfcounters, `windows_service`, 확인 스크립트), endpoint service 뒤의 gateway 하나 (2026-11-06 검증) |
 | [labs/llm-serving-observability](labs/llm-serving-observability/) | LiteLLM 뒤의 vLLM을 ClickStack으로 관측, GPU 없이 실행: OTel Collector 설정, `nvidia-smi` → OTLP 푸셔, 속성 허용 목록 유무에 따른 LiteLLM 게이트웨이 메트릭 카디널리티, 손으로 만든 소스에 가져온 HyperDX 대시보드(타일 32개) |
 | [labs/vault-audit](labs/vault-audit/) | HashiCorp Vault OSS 감사 기록과 HA 메트릭을 ClickStack에서: Raft 3노드 클러스터의 감사 파일(그때 active인 노드가 씀)을 `file_log`와 OTTL로 OTel 로그로 — 요청마다 TraceId, HMAC 처리된 accessor로 발급과 이후 사용 연결, 평문 시크릿 없음 — 그리고 `unauthenticated_metrics_access`로 노드별 메트릭, 장애 전환 검사(2026-11-06 로컬과 Managed ClickStack에서 검증) |
+| [labs/managed-rbac](labs/managed-rbac/) | Managed ClickStack 접근 권한을 게임·사용자·열 단위로 어디까지 나눌 수 있나: ClickStack 역할(리소스, 이름·태그·ID, API의 beta 행 조건), 검색이 쓰는 사용자별 JWT 신원과 알림이 쓰는 공용 신원 하나, 각각에 대한 row·masking policy, 그리고 알림과 Map 키로 새는 지점 (Admin 사용자 한 명으로 Managed ClickStack에서 검증, 2026-11-07) |
 
 ### 🎓 워크숍 (`workshops/`)
 
