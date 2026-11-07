@@ -103,17 +103,31 @@ SELECT now64(9) - toIntervalSecond(3600) + toIntervalMillisecond(intDiv(number *
        if(number % 50 = 0, concat('timeout calling payment-gateway after ', toString(1000 + number % 4000), ' ms'),
           concat('GET /api/v1/items/', toString(number % 100000), ' completed in ', toString(number % 90), ' ms')),
        {RES}, map('http.route', '/api/v1/items/{{id}}')
-FROM (SELECT number, h % 200 AS s, h FROM (SELECT number, cityHash64(intDiv(number, 4)) % 4000 AS h FROM numbers(2000000)))"""
+FROM (SELECT number, h % 200 AS s, h FROM (SELECT number, cityHash64(intDiv(number, 4)) % 4000 AS h FROM numbers(@START, @N)))"""
 TRACES = f"""INSERT INTO otel_traces (Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, ResourceAttributes, SpanAttributes, Duration, StatusCode)
 SELECT now64(9) - toIntervalSecond(3600) + toIntervalMillisecond(intDiv(number * 4 * 3600000, 2000000)),
        lower(hex(cityHash64(number))) || lower(hex(cityHash64(number, 1))), lower(hex(cityHash64(number, 2))), '',
        'GET /api/v1/items/{{id}}', 'Server', concat('svc-', toString(s)), {RES}, map('http.route', '/api/v1/items/{{id}}'),
        (5 + number % 200) * 1000000, if(number % 50 = 0, 'Error', 'Ok')
-FROM (SELECT number, h % 200 AS s, h FROM (SELECT number, cityHash64(number) % 4000 AS h FROM numbers(500000)))"""
+FROM (SELECT number, h % 200 AS s, h FROM (SELECT number, cityHash64(number) % 4000 AS h FROM numbers(@START, @N)))"""
 METRICS = f"""INSERT INTO otel_metrics_gauge (ResourceAttributes, ServiceName, MetricName, MetricUnit, Attributes, TimeUnix, Value)
 SELECT {RES}, '', m, '1', map(), toStartOfMinute(now64(9)) - toIntervalMinute(60 - t), (cityHash64(h, t, m) % 1000) / 1000
-FROM (SELECT number % 4000 AS h, h % 200 AS s, intDiv(number, 4000) AS t FROM numbers(4000 * 60))
+FROM (SELECT number % 4000 AS h, h % 200 AS s, intDiv(number, 4000) AS t FROM numbers(@START, @N))
 ARRAY JOIN ['system.cpu.utilization', 'system.memory.utilization'] AS m"""
+
+
+# (statement, rows, rows per INSERT). As one INSERT ... SELECT, the 2 M log rows hit the Seoul
+# service's total memory limit on 2026-11-07 (MEMORY_LIMIT_EXCEEDED, maximum 6.89 GiB). The chunks
+# keep `number`, so the rows are the same as one INSERT's.
+CHUNKS = ((LOGS, 2000000, 250000), (TRACES, 500000, 125000), (METRICS, 4000 * 60, 60000))
+
+
+def inserts(base):
+    """The INSERTs, in chunks, with one base time (epoch ms) for all of them."""
+    for sql, total, step in CHUNKS:
+        sql = sql.replace("now64(9)", f"fromUnixTimestamp64Milli({base}, 'UTC')")
+        for start in range(0, total, step):
+            yield sql.replace("@START", str(start)).replace("@N", str(min(step, total - start)))
 
 
 def sources(cloud, create):
@@ -165,8 +179,8 @@ def main():
     # One base time for all three inserts, so a trace and its log lines share a timestamp
     # (now64() in each INSERT would differ by however long the previous insert took).
     base = ch.q("SELECT toUnixTimestamp64Milli(now64(3))").strip()
-    for sql in (LOGS, TRACES, METRICS):
-        ch.q(sql.replace("now64(9)", f"fromUnixTimestamp64Milli({base}, 'UTC')"), DB)
+    for sql in inserts(base):
+        ch.q(sql, DB)
     counts = ch.q("SELECT table, sum(rows) FROM system.parts WHERE database = currentDatabase() AND active "
                   "GROUP BY table ORDER BY table FORMAT TSV", DB).strip()
     sources(cloud, True)
