@@ -131,7 +131,7 @@ Round 2 (Admin and test user, trial organization):
 | r2-03 — resource level read: no Alerts menu, read-only dashboard | r2-05 — Alerts no access: "You do not have permission to view alerts" |
 | ![Tag rule, alpha only](images/r2-06-tag-rule-alpha-only.webp) | ![Tag rule, bravo by URL](images/r2-07-tag-rule-bravo-dashboard-blocked.webp) |
 | r2-06 — tag rule `game:alpha`: one dashboard listed | r2-07 — the bravo dashboard by URL: "Dashboard Not Available" |
-| ![Tag rule, bravo rows](images/r2-08-tag-rule-search-bravo-rows.webp) | ![Per-user policy, test user](images/r2-09-peruser-policy-ken-alpha.webp) |
+| ![Tag rule, bravo rows](images/r2-08-tag-rule-search-bravo-rows.webp) | ![Per-user policy, test user](images/r2-09-peruser-policy-user-alpha.webp) |
 | r2-08 — same user, same role: `Game:"bravo"` returns 7,039 rows | r2-09 — per-user row policy: the test user sees alpha only (7,036) |
 | ![Per-user policy, Admin](images/r2-10-peruser-policy-admin-all.webp) | ![Alerts for the restricted user](images/r2-12-peruser-alerts-all-games.webp) |
 | r2-10 — same range, the Admin: three games (21,109) | r2-12 — the restricted user still sees every alert; charlie firing |
