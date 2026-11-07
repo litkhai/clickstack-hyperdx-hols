@@ -10,10 +10,11 @@ set, how the collector normalises the names, and the ClickStack tables that keep
 with the configs as files and every piece checked.
 
 > **Verified on:** `schema/schema.sql` in `clickhouse local` 26.9.6.6 (`tests/test_schema.py`:
-> every table created, the columns fill, a filter on them uses the primary key) and on ClickHouse
-> Cloud 26.8 with Managed ClickStack (`managed/demo.py`, the screens below), 2026-11-06.
+> every table created, the columns fill, a filter on them uses the primary key; the negative checks
+> and the injected fault in [Tests](#tests)), 2026-11-07, and on ClickHouse Cloud 26.8.1.608 with
+> Managed ClickStack (`managed/demo.py`, the screens below), 2026-11-06.
 > `collector/standard-fields.yaml` in otelcol-contrib 0.155.0 (`tests/test_collector.sh`: the
-> rename and its precedence), 2026-11-06. The read-volume numbers come from
+> rename, its precedence, the negative check and the injected fault), 2026-11-07. The read-volume numbers come from
 > [`labs/hostmetrics-volume`](../hostmetrics-volume/README.md) (logs and gauge metrics, settled
 > run, 2026-11-06). Traces and the other metric types follow the same rule and were not measured.
 
@@ -29,8 +30,8 @@ with the configs as files and every piece checked.
 
 All are **resource attributes**: they describe who sent the data, so they are the same on every
 span, log line and metric point of that process, and they land in the `ResourceAttributes`
-column. Keep the standard to these few (20–30 % of the fields anyone filters on); everything else
-stays free-form in the attribute maps — slower to filter, still searchable.
+column. Keep the standard to these few; everything else stays free-form in the attribute maps —
+slower to filter, still searchable.
 
 ### 1. Apps (development teams)
 
@@ -98,7 +99,7 @@ clickhouse client --database otel --multiquery < schema/schema.sql
 Apply it into an empty database before the first export. ClickStack needs no change: a search on
 the map key (`svc.group:"payments"`) is rewritten to the column.
 
-What it buys, measured on ClickHouse Cloud with synthetic data the size of 4,000 hosts
+What it buys, measured on ClickHouse Cloud 26.8.1.608 with synthetic data the size of 4,000 hosts
 ([`labs/hostmetrics-volume`](../hostmetrics-volume/README.md), 2026-11-06, settled tables):
 
 | Query | Exporter default | This schema |
@@ -115,8 +116,8 @@ finds the materialized column and rewrites a search on the map key to it.
 
 ![ClickStack source settings: cf demo logs, database common_fields_demo, table otel_logs](images/01-source-settings.webp)
 
-On the demo (2 M log rows an hour, 200 services in 20 groups), `ResourceAttributes.svc.group:"g7"`
-over 15 minutes became `svc_group = 'g7'` and read 49,152 rows — six granules — for 21,856
+On the demo (ClickHouse Cloud 26.8.1.608, 2026-11-06; 2 M log rows an hour, 200 services in 20
+groups), `ResourceAttributes.svc.group:"g7"` over 15 minutes became `svc_group = 'g7'` and read 49,152 rows — six granules — for 21,856
 results:
 
 ![Exact match svc.group:"g7": 21,856 results, Scanned Rows 49,152](images/02-search-exact.webp)
@@ -158,6 +159,15 @@ python3 -m unittest discover -s tests     # schema.sql in clickhouse local (skip
 tests/test_collector.sh                    # standard-fields.yaml in otelcol-contrib 0.155.0 (Docker)
 ```
 
+Each test has a positive check, a negative check and a fault it injects into a copy of the file
+and must catch (2026-11-07, `clickhouse local` 26.9.6.6 · otelcol-contrib 0.155.0: 5/5 tests,
+6/6 checks, both faults caught):
+
+| Test | Positive | Negative | Injected fault |
+|---|---|---|---|
+| `test_schema.py` | `svc_group = 'g7'` (logs) and `svc_group` + `host` (gauge) prune primary-key granules | `ResourceAttributes['svc.group'] = 'g7'` does not use the primary key (ClickHouse does not rewrite the map lookup; ClickStack's search does); a row without `svc.*` gets `''` | `svc_group` dropped from the logs sort key: the pruning check fails |
+| `test_collector.sh` | EC2 tags become `svc.domain` / `svc.group`; an app's own `svc.group` is kept; `ec2.tag.svc.*` removed | a log with neither tags nor `svc.*` gets no `svc.*` key | the `svc.group` rule without its "app value first" guard: "app: its own svc.group kept" fails |
+
 ## 한국어
 
 플릿을 조회할 때는 매번 같은 몇 개 필드로 거릅니다. 어느 서비스 도메인·그룹인지, 어느 호스트인지,
@@ -166,9 +176,10 @@ tests/test_collector.sh                    # standard-fields.yaml in otelcol-con
 두고, 하나씩 확인했습니다.
 
 > **검증:** `schema/schema.sql`은 `clickhouse local` 26.9.6.6(`tests/test_schema.py`: 테이블이 모두
-> 만들어지고, 컬럼이 채워지고, 그 컬럼 조건이 primary key를 씀)과 ClickHouse Cloud 26.8의 Managed
-> ClickStack(`managed/demo.py`, 아래 화면)에서, 2026-11-06. `collector/standard-fields.yaml`은
-> otelcol-contrib 0.155.0(`tests/test_collector.sh`: 이름 바꾸기와 우선순위), 2026-11-06. 읽는 양
+> 만들어지고, 컬럼이 채워지고, 그 컬럼 조건이 primary key를 씀. 반대 확인과 일부러 넣은 오류는
+> [테스트](#테스트) 참고)에서 2026-11-07, ClickHouse Cloud 26.8.1.608의 Managed ClickStack(`managed/demo.py`,
+> 아래 화면)에서 2026-11-06. `collector/standard-fields.yaml`은 otelcol-contrib 0.155.0(`tests/test_collector.sh`:
+> 이름 바꾸기, 우선순위, 반대 확인, 일부러 넣은 오류), 2026-11-07. 읽는 양
 > 수치는 [`labs/hostmetrics-volume`](../hostmetrics-volume/README.md)(로그와 gauge 메트릭, 병합이 끝난
 > 뒤 실행, 2026-11-06)에서 왔습니다. trace와 나머지 메트릭 종류는 같은 원칙을 따르지만 재지 않았습니다.
 
@@ -183,8 +194,7 @@ tests/test_collector.sh                    # standard-fields.yaml in otelcol-con
 | `service.version` | 배포 버전 | 앱: `OTEL_RESOURCE_ATTRIBUTES`(빌드에서) |
 
 모두 **resource attribute**입니다. 데이터를 보낸 주체를 설명하므로 그 프로세스의 모든 span, 로그 줄,
-메트릭 point에 똑같이 붙고, `ResourceAttributes` 컬럼에 들어갑니다. 표준은 이 몇 개(사람들이 거르는
-필드의 20–30%)로 둡니다. 나머지는 attribute map에 자유롭게 둡니다. 거를 때 느릴 뿐 검색은 됩니다.
+메트릭 point에 똑같이 붙고, `ResourceAttributes` 컬럼에 들어갑니다. 표준은 이 몇 개로 둡니다. 나머지는 attribute map에 자유롭게 둡니다. 거를 때 느릴 뿐 검색은 됩니다.
 
 ### 1. 앱(개발팀)
 
@@ -249,7 +259,7 @@ clickhouse client --database otel --multiquery < schema/schema.sql
 첫 전송 전에 빈 데이터베이스에 적용합니다. ClickStack은 바꿀 것이 없습니다. map 키 검색
 (`svc.group:"payments"`)을 그 컬럼으로 바꿔 씁니다.
 
-효과는 4,000대 규모의 합성 데이터로 ClickHouse Cloud에서 쟀습니다([`labs/hostmetrics-volume`](../hostmetrics-volume/README.md),
+효과는 4,000대 규모의 합성 데이터로 ClickHouse Cloud 26.8.1.608에서 쟀습니다([`labs/hostmetrics-volume`](../hostmetrics-volume/README.md),
 2026-11-06, 병합이 끝난 테이블).
 
 | 조회 | exporter 기본 | 이 스키마 |
@@ -266,7 +276,7 @@ materialized 컬럼을 찾아 map 키 검색을 그 컬럼으로 바꿔 씁니�
 
 ![ClickStack 소스 설정: cf demo logs, 데이터베이스 common_fields_demo, 테이블 otel_logs](images/01-source-settings.webp)
 
-데모(시간당 로그 200만 행, 서비스 200개·그룹 20개)에서 15분 구간의 `ResourceAttributes.svc.group:"g7"`은
+데모(ClickHouse Cloud 26.8.1.608, 2026-11-06. 시간당 로그 200만 행, 서비스 200개·그룹 20개)에서 15분 구간의 `ResourceAttributes.svc.group:"g7"`은
 `svc_group = 'g7'`으로 바뀌었고, granule 여섯 개인 49,152행을 읽어 결과 21,856건을 냈습니다.
 
 ![정확 일치 svc.group:"g7": 결과 21,856건, Scanned Rows 49,152](images/02-search-exact.webp)
@@ -304,3 +314,11 @@ python3 managed/demo.py --cleanup
 python3 -m unittest discover -s tests     # clickhouse local의 schema.sql(바이너리가 없으면 건너뜀)
 tests/test_collector.sh                    # otelcol-contrib 0.155.0의 standard-fields.yaml(Docker)
 ```
+
+테스트마다 맞는 경우 확인, 반대 확인, 그리고 파일 사본에 일부러 넣어 잡아내야 하는 오류가 하나씩 있습니다
+(2026-11-07, `clickhouse local` 26.9.6.6 · otelcol-contrib 0.155.0: 테스트 5/5, 확인 6/6, 오류 둘 다 잡음).
+
+| 테스트 | 맞는 경우 | 반대 확인 | 일부러 넣은 오류 |
+|---|---|---|---|
+| `test_schema.py` | `svc_group = 'g7'`(로그), `svc_group` + `host`(gauge)가 primary key granule을 줄임 | `ResourceAttributes['svc.group'] = 'g7'`은 primary key를 쓰지 않음(ClickHouse는 map 조회를 컬럼으로 바꾸지 않고, ClickStack 검색이 바꿈). `svc.*`가 없는 행은 `''` | 로그 정렬 키에서 `svc_group`을 뺌: granule 줄임 확인이 실패 |
+| `test_collector.sh` | EC2 태그가 `svc.domain` / `svc.group`이 됨, 앱이 넣은 `svc.group`은 유지, `ec2.tag.svc.*` 삭제 | 태그도 `svc.*`도 없는 로그에는 `svc.*` 키가 생기지 않음 | `svc.group` 규칙에서 "앱 값 우선" 조건을 뺌: "app: its own svc.group kept"가 실패 |
