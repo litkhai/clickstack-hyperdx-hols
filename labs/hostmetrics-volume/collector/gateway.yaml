@@ -48,6 +48,12 @@ receivers:
     protocols:
       http:
         endpoint: 0.0.0.0:4379
+  # windows_mode = "install": the assembled otel-profiles windows-host profile, installed by its
+  # install.ps1, exports OTLP/gRPC (otlp/clickstack in sidecar/base.yaml) - every signal in one file.
+  otlp/windows-install:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
 exporters:
   file/linux-base:
     path: ${env:OUT_DIR}/linux-base.jsonl
@@ -66,6 +72,8 @@ exporters:
     path: ${env:OUT_DIR}/windows-svc.jsonl
   file/windows-script:
     path: ${env:OUT_DIR}/windows-script.jsonl
+  file/windows-install:
+    path: ${env:OUT_DIR}/windows-install.jsonl
 service:
   extensions: [health_check]
   telemetry:
@@ -101,3 +109,6 @@ service:
     metrics/windows-script:
       receivers: [otlp/windows-script]
       exporters: [file/windows-script]
+    metrics/windows-install:
+      receivers: [otlp/windows-install]
+      exporters: [file/windows-install]

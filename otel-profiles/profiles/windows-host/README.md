@@ -27,7 +27,13 @@ Server host. One config for every host; what differs per host is three machine-l
 > the shape of `host-silent.sql` fired in [`labs/process-down-alerts`](../../../labs/process-down-alerts/README.md).
 > The built config passes `validate` on Linux with `windows_service` removed (it only builds on
 > Windows); a list given through an environment variable was checked to reach the receiver.
-> `install.ps1` as a whole has not run.
+> **`install.ps1` end to end** ran on 2026-11-07 through SSM Run Command on Windows Server 2022
+> (Windows PowerShell 5.1) with otelcol-contrib **0.155.0**, re-run in place with 0.155.0 and
+> **0.164.0**: LocalSystem service with restart on failure (killed collector back in 5.9 s), 1-minute
+> SYSTEM task, all five signals at the gateway, service stop and instance kill reported
+> ([`labs/hostmetrics-volume` §5](../../../labs/hostmetrics-volume/README.md)). That run found and
+> fixed a `process-check.ps1` bug: on PowerShell 5.1 every expected instance merged into one,
+> always 0.
 
 ### The standard
 
@@ -102,7 +108,12 @@ CPU·메모리, 기대 프로세스 인스턴스마다 명시적인 up/down 값�
 > `host-silent.sql`과 같은 모양은 [`labs/process-down-alerts`](../../../labs/process-down-alerts/README.md)에서
 > 실제로 울렸습니다. 조립된 설정은 `windows_service`를 뺀 상태로 Linux에서 `validate`를 통과합니다
 > (`windows_service`는 Windows에서만 빌드됨). 환경 변수로 준 목록이 receiver에 들어가는 것도 확인했습니다.
-> `install.ps1` 전체는 실행하지 않았습니다.
+> **`install.ps1` 전체**는 2026-11-07 SSM Run Command로 Windows Server 2022(Windows PowerShell 5.1)에서
+> otelcol-contrib **0.155.0**으로 돌렸고, 같은 자리에서 0.155.0과 **0.164.0**으로 다시 돌렸습니다: LocalSystem
+> 서비스와 실패 시 재시작(죽인 collector가 5.9초 만에 돌아옴), 1분 SYSTEM 작업, gateway에 신호 다섯 가지,
+> 서비스 중지와 인스턴스 종료 감지([`labs/hostmetrics-volume` 5절](../../../labs/hostmetrics-volume/README.md)).
+> 이 실행에서 `process-check.ps1` 버그를 찾아 고쳤습니다 — PowerShell 5.1에서 기대 인스턴스가 모두 하나로
+> 합쳐져 늘 0이었습니다.
 
 ### 표준
 

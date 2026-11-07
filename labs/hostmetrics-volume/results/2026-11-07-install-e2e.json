@@ -1,0 +1,470 @@
+{
+ "file_lines": 34,
+ "window": [
+  1794019159.0,
+  1794020959.0
+ ],
+ "points_per_metric": {
+  "process.check.up": 35,
+  "process.cpu.time": 98,
+  "process.disk.io": 98,
+  "process.memory.usage": 49,
+  "process.memory.virtual": 49,
+  "system.cpu.load_average.15m": 29,
+  "system.cpu.load_average.1m": 29,
+  "system.cpu.load_average.5m": 29,
+  "system.cpu.logical.count": 3,
+  "system.cpu.time": 220,
+  "system.cpu.utilization": 192,
+  "system.disk.io": 58,
+  "system.disk.io_time": 29,
+  "system.disk.operation_time": 58,
+  "system.disk.operations": 58,
+  "system.disk.pending_operations": 29,
+  "system.filesystem.usage": 58,
+  "system.memory.usage": 58,
+  "system.memory.utilization": 58,
+  "system.network.connections": 348,
+  "system.network.dropped": 116,
+  "system.network.errors": 116,
+  "system.network.io": 116,
+  "system.network.packets": 116,
+  "system.paging.faults": 58,
+  "system.paging.operations": 58,
+  "system.paging.usage": 58,
+  "system.uptime": 29,
+  "windows.service.status": 29
+ },
+ "points_total": 2281,
+ "resource_attributes": {
+  "cloud.account.id": [
+   "<redacted>"
+  ],
+  "cloud.availability_zone": [
+   "ap-northeast-2a"
+  ],
+  "cloud.platform": [
+   "aws_ec2"
+  ],
+  "cloud.provider": [
+   "aws"
+  ],
+  "cloud.region": [
+   "ap-northeast-2"
+  ],
+  "deploy.platform": [
+   "host"
+  ],
+  "ec2.tag.lab.service.domain": [
+   "platform"
+  ],
+  "ec2.tag.lab.service.group": [
+   "metrics-poc"
+  ],
+  "host.id": [
+   "<redacted>"
+  ],
+  "host.image.id": [
+   "<redacted>"
+  ],
+  "host.name": [
+   "<redacted>"
+  ],
+  "host.type": [
+   "t3.medium"
+  ],
+  "os.type": [
+   "windows"
+  ],
+  "process.executable.name": [
+   "GameServer.exe"
+  ],
+  "process.executable.path": [
+   "C:\\game\\GameServer.exe"
+  ],
+  "process.owner": [
+   "NT AUTHORITY\\SYSTEM"
+  ],
+  "service.name": [
+   "windows-host"
+  ]
+ },
+ "per_minute_utc": {
+  "02:41": {
+   "pid gs1": [
+    "4348"
+   ],
+   "pid gs2": [
+    "2800"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:42": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs2": [
+    "2800"
+   ],
+   "service GameServer": [
+    1
+   ]
+  },
+  "02:43": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs2": [
+    "2800"
+   ],
+   "service GameServer": [
+    1
+   ]
+  },
+  "02:44": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs2": [
+    "2800"
+   ],
+   "service GameServer": [
+    1
+   ]
+  },
+  "02:45": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "2800"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:46": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "2800"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:47": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:48": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:49": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:50": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:51": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:53": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:54": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:55": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:56": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:57": {
+   "check gs1 gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:58": {
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "02:59": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    1
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "920"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:00": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:01": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:02": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    0
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:03": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    1
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "4408"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:04": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    1
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "4408"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:05": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    1
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "4408"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:06": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    1
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "4408"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:07": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    1
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "4408"
+   ],
+   "service GameServer": [
+    4
+   ]
+  },
+  "03:08": {
+   "check gs1": [
+    1
+   ],
+   "check gs2": [
+    1
+   ],
+   "pid gs1": [
+    "5044"
+   ],
+   "pid gs2": [
+    "4408"
+   ],
+   "service GameServer": [
+    4
+   ]
+  }
+ },
+ "note": "labs/hostmetrics-volume windows_mode=install, 2026-11-07, ap-northeast-2, Windows Server 2022 t3.medium; install.ps1 0.155.0 at 02:41Z, re-run 0.155.0 with the fixed process-check.ps1 at 02:58Z, 0.164.0 at 03:06Z. Events: 2026-11-07-install-events.jsonl. Identifiers redacted."
+}

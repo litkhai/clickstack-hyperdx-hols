@@ -1,0 +1,33 @@
+<powershell>
+# windows_mode = "install" (main.tf): only the two stand-in game server instances. The collector is
+# installed afterwards by otel-profiles/profiles/windows-host/install.ps1 through SSM (bin/install-e2e.sh).
+# Template note: a literal dollar-brace must be written with a doubled dollar here.
+$ErrorActionPreference = 'Stop'
+Start-Transcript -Path C:\hmv-user-data.log -Append
+
+New-Item -ItemType Directory -Force -Path C:\game | Out-Null
+$tgz = "C:\game\otelcol-contrib.tar.gz"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${otelcol_version}/otelcol-contrib_${otelcol_version}_windows_amd64.tar.gz" -OutFile $tgz
+tar.exe -xzf $tgz -C C:\game otelcol-contrib.exe
+# The stand-in game server: the collector binary under another name (service-aware, does nothing).
+Move-Item -Force C:\game\otelcol-contrib.exe C:\game\GameServer.exe
+
+$gs = @'
+${gameserver_config}
+'@
+$gs.Replace('$${env:GS_PORT}', '14317') | Set-Content -Encoding ascii -Path C:\game\gs1.yaml
+$gs.Replace('$${env:GS_PORT}', '14318') | Set-Content -Encoding ascii -Path C:\game\gs2.yaml
+
+# gs1: a Windows service (LocalSystem). gs2: a SYSTEM scheduled task at startup.
+New-Service -Name GameServer -DisplayName 'hmv stand-in game server' -StartupType Automatic `
+  -BinaryPathName '"C:\game\GameServer.exe" --config "C:\game\gs1.yaml"' | Out-Null
+Start-Service GameServer
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries
+Register-ScheduledTask -TaskName GameServer2 -User 'SYSTEM' -RunLevel Highest -Settings $settings `
+  -Trigger (New-ScheduledTaskTrigger -AtStartup) `
+  -Action (New-ScheduledTaskAction -Execute 'C:\game\GameServer.exe' -Argument '--config C:\game\gs2.yaml') | Out-Null
+Start-ScheduledTask -TaskName GameServer2
+Write-Output "hmv install-mode user data done $((Get-Date).ToUniversalTime().ToString('s'))Z"
+Stop-Transcript
+</powershell>
