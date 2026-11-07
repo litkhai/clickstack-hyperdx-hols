@@ -9,7 +9,7 @@ verified_on: "clickhouse local 26.9.6.6 and otelcol-contrib 0.155.0, 2026-11-07;
 web: true
 title_ko: "앱·호스트·ClickStack을 잇는 공통 필드"
 summary_ko: "서비스·호스트·환경 필드를 앱과 EC2 태그에서 넣고, Collector에서 이름을 맞추고, ClickStack 정렬 키에 두어 빠르게 조회합니다."
-title_en: "Common fields across apps, hosts and ClickStack"
+title_en: "Common fields for ClickStack"
 summary_en: "Set service, host and environment fields in apps and EC2 tags, normalise them in the collector, and keep them in the ClickStack sort key for fast search."
 category: clickstack
 tags: [clickstack, opentelemetry, observability, mergetree]
