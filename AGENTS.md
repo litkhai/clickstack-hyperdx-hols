@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Harness: khai-harness core@49e8c24 · context public · bilingual yes
+> Harness: khai-harness core@28ca273 · context public · bilingual yes
 
 Instructions for coding agents working in this repository.
 
@@ -36,9 +36,11 @@ Differences from the core repository:
 - Roadmap slots in the README are code spans, not links — a link to a lab that does not exist
   yet breaks the `links` job.
 
-<!-- harness:core start — khai-harness core@49e8c24 · context public · 손으로 고치지 마세요 -->
+<!-- harness:core start — khai-harness core@28ca273 · context public · 손으로 고치지 마세요 -->
 **Context: public.** Public sources only — nothing from company connectors, internal hosts, internal wikis or
 private repositories, and no link to them. gitleaks must pass before every commit. Claims name what was run.
+
+Cursor/Grok: read `../khai-harness/runtime/cursor/README.md`; if `~/.config/khai-harness/active` is missing, say so.
 
 ## core — procedure for every repository and agent
 
