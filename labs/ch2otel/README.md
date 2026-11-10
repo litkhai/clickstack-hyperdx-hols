@@ -29,8 +29,9 @@ ch2otel/
 ├── scripts/
 │   ├── status.sh                 # Check RMV and table status
 │   └── refresh.sh                # Manually refresh all RMVs
-└── sql/
-    └── ch2otel-template.sql      # SQL template for deployment
+├── sql/
+│   └── ch2otel-template.sql      # SQL template for deployment
+└── archive_sql_v0/               # Earlier multi-part SQL scripts (v2.1.0), kept for reference
 ```
 
 ### 🚀 Quick Start
@@ -192,8 +193,9 @@ ch2otel/
 ├── scripts/
 │   ├── status.sh                 # RMV 및 테이블 상태 확인
 │   └── refresh.sh                # 모든 RMV 수동 갱신
-└── sql/
-    └── ch2otel-template.sql      # 배포용 SQL 템플릿
+├── sql/
+│   └── ch2otel-template.sql      # 배포용 SQL 템플릿
+└── archive_sql_v0/               # 이전 버전의 분할 SQL 스크립트(v2.1.0), 참고용으로 보관
 ```
 
 ### 🚀 빠른 시작
