@@ -193,6 +193,8 @@ V5 and V7 controls ran once against a local ClickHouse 26.9.7.9 container.
 | `terraform/` | the ClickHouse service and `ip_access`, three VPCs and the Transit Gateway, the endpoint and its private hosted zone, the NLB, EC2 with SSM, and MSK behind `enable_kafka` |
 | `collector/` | `gateway-durable` (file-storage queue, long retry), `gateway-default` (defaults), `agent`, `ingest-kafka`, `consumer-kafka` — `otel/opentelemetry-collector-contrib:0.155.0` |
 | `bin/` | `setup.sh` (ingest user and databases), `check.sh <V1…V8, K1…K6>`, `outage.sh block/unblock` |
+| `sql/` | `00-ingest-user.sql` (the ingest user's grants, sent by `setup.sh`), `counts.sql` and `dupes.sql` (row counts and duplicate spans per run, used by `check.sh`) |
+| `results/` | each `check.sh` run writes its result lines to `<UTC date>-<id>.txt` here |
 
 ```bash
 export AWS_PROFILE=<profile>
@@ -489,6 +491,8 @@ SQL과 V5, V7 제어 실험은 로컬 ClickHouse 26.9.7.9 컨테이너에서 한
 | `terraform/` | ClickHouse 서비스와 `ip_access`, VPC 셋과 Transit Gateway, endpoint와 private hosted zone, NLB, SSM을 쓰는 EC2, `enable_kafka`로 켜는 MSK |
 | `collector/` | `gateway-durable`(file storage queue, 긴 retry), `gateway-default`(기본값), `agent`, `ingest-kafka`, `consumer-kafka` — `otel/opentelemetry-collector-contrib:0.155.0` |
 | `bin/` | `setup.sh`(수집 사용자와 데이터베이스), `check.sh <V1…V8, K1…K6>`, `outage.sh block/unblock` |
+| `sql/` | `00-ingest-user.sql`(수집 사용자 권한, `setup.sh`가 전송), `counts.sql`과 `dupes.sql`(run별 행 수와 중복 span, `check.sh`가 사용) |
+| `results/` | `check.sh`를 실행할 때마다 결과 줄을 `<UTC 날짜>-<id>.txt`로 여기에 씁니다 |
 
 ```bash
 export AWS_PROFILE=<profile>

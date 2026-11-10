@@ -41,7 +41,7 @@ Composable collector configuration, one fragment per class of machine — what t
 
 | | |
 |---|---|
-| [otel-profiles](otel-profiles/) | `linux-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` |
+| [otel-profiles](otel-profiles/) | `linux-host` · `windows-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` · `mysql` · `aws-rds-mysql` |
 
 ### 🧰 ClickStack config (`clickstack-config/`)
 
@@ -52,13 +52,14 @@ self-hosted and Cloud by environment alone.
 |---|---|
 | [clickstack-config](clickstack-config/) | log/trace/metric sources, a dashboard, an alert and a webhook |
 
+The local stack and the Cloud target every lab above runs against, with a readiness check and an end-to-end telemetry check, are in [`_base/`](_base/).
+
 ### 🗺 Roadmap
 
 Planned — not written yet.
 
 | Path | Plan |
 |------|------|
-| `_base/` | ClickStack all-in-one compose (Win/Mac/Linux), Cloud `.env.example`, ingestion check SQL |
 | `labs/otel-schema` | `otel_logs`, `otel_traces`, `otel_metrics_*`: layout, sort keys, attribute Map/JSON |
 | `labs/ingestion` | OTel Collector ClickHouse exporter, batching, async insert, sampling |
 | `labs/hyperdx-sources` | Log/Trace/Metric source setup and required mappings |
@@ -133,7 +134,7 @@ ClickHouse 기반 관측성 실습입니다. OpenTelemetry 수집, ClickStack/Hy
 
 | | |
 |---|---|
-| [otel-profiles](otel-profiles/) | `linux-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` |
+| [otel-profiles](otel-profiles/) | `linux-host` · `windows-host` · `gpu-nvidia` · `baremetal-node` · `virt-kvm` · `virt-vsphere` · `mysql` · `aws-rds-mysql` |
 
 ### 🧰 ClickStack 설정 (`clickstack-config/`)
 
@@ -144,13 +145,14 @@ source·대시보드·알림을 하나의 Terraform 설정으로 관리하며, s
 |---|---|
 | [clickstack-config](clickstack-config/) | log/trace/metric source, 대시보드, 알림, 웹훅 |
 
+위 실습이 모두 실행되는 로컬 스택과 Cloud 대상, 준비 상태 확인과 텔레메트리 end-to-end 확인은 [`_base/`](_base/)에 있습니다.
+
 ### 🗺 로드맵
 
 계획만 있고 아직 작성하지 않은 실습입니다.
 
 | 경로 | 계획 |
 |------|------|
-| `_base/` | ClickStack all-in-one compose(Win/Mac/Linux), Cloud 연결 `.env.example`, 수집 확인 SQL |
 | `labs/otel-schema` | `otel_logs`, `otel_traces`, `otel_metrics_*` 구조, 정렬 키, 속성 Map/JSON |
 | `labs/ingestion` | OTel Collector ClickHouse exporter, 배치·async insert, 샘플링 |
 | `labs/hyperdx-sources` | Log/Trace/Metric source 설정과 필수 매핑 |
