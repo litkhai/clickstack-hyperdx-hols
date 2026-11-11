@@ -48,7 +48,7 @@ Average of `system.memory.utilization`, Where (SQL) `Attributes['state'] = 'used
 `ResourceAttributes['host.name']`. The hostmetrics memory scraper sends one series per state
 (used, free); the filter keeps one series per host.
 
-![Chart editor: Average of system.memory.utilization, Where Attributes['state'] = 'used', Group By ResourceAttributes['host.name'], threshold band above 0.9](images/02-every-host-chart.webp)
+![Chart editor: Average of system.memory.utilization, Where state = used, Group By host.name, threshold band above 0.9](images/02-every-host-chart.webp)
 
 **2. The alert on that chart.** Edit alert → Static threshold, "is at least (≥)" 0.9, Send to a
 webhook (Slack or generic). The message template may use `{{group}}` and `{{value}}`.
@@ -62,7 +62,7 @@ interval you want when you create the alert in the UI.
 **3. One server group.** The same chart with the group in Where:
 `Attributes['state'] = 'used' AND ResourceAttributes['svc.group'] = 'game-a'`, alert at 0.8.
 
-![Chart editor with Where Attributes['state'] = 'used' AND ResourceAttributes['svc.group'] = 'game-a': only game-a hosts, threshold band above 0.8](images/04-group-filter.webp)
+![Chart editor with Where state = used AND svc.group = game-a: only game-a hosts, threshold band above 0.8](images/04-group-filter.webp)
 
 **4. Fewer notifications for short spikes.** Alert → Advanced Settings → Consecutive windows.
 
@@ -170,7 +170,7 @@ game-a-01은 0.95, game-a-02는 0.85, game-b-02는 0.93으로 올리고, 그 뒤
 `ResourceAttributes['host.name']`. hostmetrics memory scraper는 상태(used, free)마다 시계열을 보내므로,
 이 필터로 호스트당 시계열 하나만 남깁니다.
 
-![차트 편집기: system.memory.utilization의 Average, Where Attributes['state'] = 'used', Group By ResourceAttributes['host.name'], 0.9 위 임계치 띠](images/02-every-host-chart.webp)
+![차트 편집기: system.memory.utilization의 Average, Where state = used, Group By host.name, 0.9 위 임계치 띠](images/02-every-host-chart.webp)
 
 **2. 그 차트에 알림.** Edit alert → Static threshold, "is at least (≥)" 0.9, Send to에 webhook(Slack
 또는 generic). 메시지 템플릿에 `{{group}}`, `{{value}}`를 쓸 수 있습니다.
@@ -183,7 +183,7 @@ API로 `interval: 1m`을 넣어 만든 이 알림들은 패널에 "over 5 minute
 **3. 서버군 하나.** 같은 차트의 Where에 서버군을 더합니다:
 `Attributes['state'] = 'used' AND ResourceAttributes['svc.group'] = 'game-a'`, 알림은 0.8.
 
-![Where Attributes['state'] = 'used' AND ResourceAttributes['svc.group'] = 'game-a'인 차트 편집기: game-a 호스트만, 0.8 위 임계치 띠](images/04-group-filter.webp)
+![Where state = used AND svc.group = game-a인 차트 편집기: game-a 호스트만, 0.8 위 임계치 띠](images/04-group-filter.webp)
 
 **4. 짧은 튐에 알림 줄이기.** 알림 → Advanced Settings → Consecutive windows.
 
