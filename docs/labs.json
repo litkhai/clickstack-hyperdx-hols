@@ -1,6 +1,6 @@
 {
   "repo": "clickstack-hyperdx-hols",
-  "generated": "2026-11-07T06:46:41Z",
+  "generated": "2026-11-11T05:26:59Z",
   "labs": [
     {
       "path": "clickstack-config",
@@ -145,6 +145,25 @@
       "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/log-pattern-exclusion/README.md#한국어",
       "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/log-pattern-exclusion/README.md#english",
       "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/log-pattern-exclusion/"
+    },
+    {
+      "path": "labs/threshold-alerts",
+      "title_ko": "호스트 메트릭 임계치 알림: 전체 서버와 서버군",
+      "summary_ko": "차트 빌더에서 규칙 하나로 호스트마다 알림을 받고, 서버군 필터와 연속 구간까지 Managed ClickStack에서 확인했습니다.",
+      "title_en": "ClickStack threshold alerts",
+      "summary_en": "One builder alert that notifies each host, a server-group filter and consecutive windows, verified on Managed ClickStack.",
+      "category": "clickstack",
+      "target": "cloud",
+      "tier": "T1",
+      "verified_on": "Managed ClickStack (ClickHouse Cloud 26.8.1.654), 2026-11-11",
+      "tags": [
+        "clickstack",
+        "observability",
+        "opentelemetry"
+      ],
+      "readme_ko": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/threshold-alerts/README.md#한국어",
+      "readme_en": "https://github.com/litkhai/clickstack-hyperdx-hols/blob/main/labs/threshold-alerts/README.md#english",
+      "pages": "https://litkhai.github.io/clickstack-hyperdx-hols/labs/threshold-alerts/"
     },
     {
       "path": "otel-profiles",

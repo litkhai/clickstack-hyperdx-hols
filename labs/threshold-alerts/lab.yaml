@@ -4,3 +4,12 @@ target: cloud
 tier: T1
 services: [clickstack]
 verified_on: "Managed ClickStack (ClickHouse Cloud 26.8.1.654), 2026-11-11"
+
+# Publishing keys (tools/lab.schema.md)
+web: true
+title_ko: "호스트 메트릭 임계치 알림: 전체 서버와 서버군"
+summary_ko: "차트 빌더에서 규칙 하나로 호스트마다 알림을 받고, 서버군 필터와 연속 구간까지 Managed ClickStack에서 확인했습니다."
+title_en: "ClickStack threshold alerts"
+summary_en: "One builder alert that notifies each host, a server-group filter and consecutive windows, verified on Managed ClickStack."
+category: clickstack
+tags: [clickstack, observability, opentelemetry]
