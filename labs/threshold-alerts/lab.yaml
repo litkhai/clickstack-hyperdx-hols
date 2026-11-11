@@ -1,0 +1,6 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs a ClickHouse Cloud service with
+# Managed ClickStack and, for per-host evidence, a tunnel to the local webhook receiver.
+target: cloud
+tier: T1
+services: [clickstack]
+verified_on: "Managed ClickStack (ClickHouse Cloud 26.8.1.654), 2026-11-11"
