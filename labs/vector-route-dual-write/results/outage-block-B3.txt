@@ -1,0 +1,19 @@
+16:04:05 mode=block run=B3 n=3000: scale ClickStack to 0
+16:04:36 loadgen started
+16:04:46 t+ 10s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:04:57 t+ 20s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:05:07 t+ 31s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:05:17 t+ 41s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:05:28 t+ 51s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:05:38 t+ 61s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:05:48 t+ 72s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:05:59 t+ 82s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:06:09 t+ 93s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:06:20 t+103s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:06:30 t+113s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:06:40 t+124s loki kong-external=1959/3000 loadgen=0/3000 {'buffer_size_bytes:ch_kong': 1515214.0, 'buffer_size_events:ch_kong': 500.0}
+16:06:40 scale ClickStack to 1
+16:07:00 t+ 15s after recovery ch(external, internal, api)=(1995, 1995, 0) loki kong-external=2140
+16:07:16 t+ 31s after recovery ch(external, internal, api)=(3000, 3000, 6000) loki kong-external=3000
+16:07:17 final {"ch.kong_access.external": 3000, "ch.kong_access.internal": 3000, "ch.app_logs.api": 6000, "ch.any_table.loadgen": 0, "loki.kong-external": 3000, "loki.kong-internal": 3000, "loki.api": 6000, "loki.loadgen": 3000}
+16:07:17 discarded {}

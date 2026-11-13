@@ -1,0 +1,9 @@
+# Default when_full (block), small memory buffer so an outage fills it within a run.
+# Applied on top of values.yaml to both ClickHouse sinks only; the Loki
+# sink keeps Vector's default buffer.
+customConfig:
+  sinks:
+    ch_kong:
+      buffer: {type: memory, max_events: 500, when_full: block}
+    ch_app:
+      buffer: {type: memory, max_events: 500, when_full: block}

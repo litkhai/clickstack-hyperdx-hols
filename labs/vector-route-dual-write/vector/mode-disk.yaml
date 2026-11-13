@@ -1,0 +1,9 @@
+# Disk buffer at its documented minimum size (268435488 bytes), drop_newest once full.
+# Applied on top of values.yaml to both ClickHouse sinks only; the Loki
+# sink keeps Vector's default buffer.
+customConfig:
+  sinks:
+    ch_kong:
+      buffer: {type: disk, max_size: 268435488, when_full: drop_newest}
+    ch_app:
+      buffer: {type: disk, max_size: 268435488, when_full: drop_newest}

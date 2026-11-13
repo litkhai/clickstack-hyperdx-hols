@@ -1,0 +1,19 @@
+ch.kong_access.external      300
+ch.kong_access.internal      300
+ch.app_logs.api              600
+ch.any_table.loadgen         0
+loki.kong-external           300
+loki.kong-internal           300
+loki.api                     600
+loki.loadgen                 300
+
+# column checks, run R3 (expected: 6 x 500 per gateway, 12 ERROR in the API)
+┌─Gateway──┬─Service─┬─Route──┬─s500─┬───n─┬─any(Cluster)──┐
+1. │ external │ orders  │ orders │    6 │ 300 │ lab-cluster-1 │
+2. │ internal │ users   │ users  │    6 │ 300 │ lab-cluster-1 │
+   └──────────┴─────────┴────────┴──────┴─────┴───────────────┘
+┌─ServiceName─┬─SeverityText─┬─count()─┐
+1. │ api         │ ERROR        │      12 │
+2. │ api         │ INFO         │     588 │
+   └─────────────┴──────────────┴─────────┘
+

@@ -1,0 +1,23 @@
+16:07:30 mode=drop run=D2 n=3000: scale ClickStack to 0
+16:08:01 loadgen started
+16:08:11 t+ 10s loki kong-external=2866/3000 loadgen=2865/3000 {'buffer_discarded_events_total:ch_kong': 3114.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:08:22 t+ 20s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:08:32 t+ 30s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:08:42 t+ 41s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:08:52 t+ 51s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:09:03 t+ 61s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:09:13 t+ 72s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:09:23 t+ 82s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:09:34 t+ 92s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:09:44 t+103s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:09:55 t+113s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:10:05 t+124s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3184.0, 'buffer_size_bytes:ch_kong': 1524783.0, 'buffer_size_events:ch_kong': 500.0}
+16:10:05 scale ClickStack to 1
+16:10:25 t+ 16s after recovery ch(external, internal, api)=(0, 0, 2500) loki kong-external=3000
+16:10:41 t+ 32s after recovery ch(external, internal, api)=(1408, 1408, 2500) loki kong-external=3000
+16:10:58 t+ 48s after recovery ch(external, internal, api)=(1408, 1408, 2500) loki kong-external=3000
+16:11:14 t+ 64s after recovery ch(external, internal, api)=(1408, 1408, 2500) loki kong-external=3000
+16:11:31 t+ 81s after recovery ch(external, internal, api)=(1408, 1408, 2500) loki kong-external=3000
+16:11:47 t+ 97s after recovery ch(external, internal, api)=(1408, 1408, 2500) loki kong-external=3000
+16:11:48 final {"ch.kong_access.external": 1408, "ch.kong_access.internal": 1408, "ch.app_logs.api": 2500, "ch.any_table.loadgen": 0, "loki.kong-external": 3000, "loki.kong-internal": 3000, "loki.api": 6000, "loki.loadgen": 3000}
+16:11:48 discarded {"vector_buffer_discarded_events_total{buffer_id=\"ch_app\",buffer_type=\"memory\",component_id=\"ch_app\",component_kind=\"sink\",component_type=\"clickhouse\",host=\"vector-n4ddk\",intentional=\"true\",stage=\"0\"}": 3500.0, "vector_buffer_discarded_events_total{buffer_id=\"ch_kong\",buffer_type=\"memory\",component_id=\"ch_kong\",component_kind=\"sink\",component_type=\"clickhouse\",host=\"vector-n4ddk\",intentional=\"true\",stage=\"0\"}": 3184.0}
