@@ -1,0 +1,9 @@
+# Same buffer, but a full buffer drops new events instead of pushing back.
+# Applied on top of values.yaml to both ClickHouse sinks only; the Loki
+# sink keeps Vector's default buffer.
+customConfig:
+  sinks:
+    ch_kong:
+      buffer: {type: memory, max_events: 500, when_full: drop_newest}
+    ch_app:
+      buffer: {type: memory, max_events: 500, when_full: drop_newest}

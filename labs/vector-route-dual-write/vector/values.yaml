@@ -1,0 +1,175 @@
+# Vector Agent (DaemonSet) — helm chart vector/vector 0.61.0.
+#
+# The existing pipeline is `k8s -> loki_labels -> loki`: every pod's logs.
+# What is added: `by_workload` (route) splits the same source into three
+# named outputs, two remaps shape them into table rows, and two ClickHouse
+# sinks insert them. Nothing on the Loki side changes; the source simply has
+# one more consumer.
+#
+# The ClickHouse sinks' buffer is set by one of mode-*.yaml (block, drop,
+# disk) on top of this file — see README "Buffer modes".
+role: Agent
+
+env:
+  - name: CLUSTER_NAME
+    value: lab-cluster-1
+
+service:
+  ports:
+    - name: prom
+      port: 9598
+      protocol: TCP
+
+customConfig:
+  data_dir: /vector-data-dir
+  api:
+    enabled: false
+
+  sources:
+    k8s:
+      type: kubernetes_logs
+      # Default 60000: a new pod's log file can take up to a minute to be
+      # picked up. Shortened so a lab run is read within seconds.
+      glob_minimum_cooldown_ms: 5000
+    vector_metrics:
+      type: internal_metrics
+
+  transforms:
+    # --- existing pipeline -------------------------------------------------
+    loki_labels:
+      type: remap
+      inputs: [k8s]
+      source: |
+        .loki_app = .kubernetes.pod_labels.app || "none"
+        .loki_cluster = get_env_var("CLUSTER_NAME") ?? "unknown"
+
+    # --- added: route by workload -----------------------------------------
+    by_workload:
+      type: route
+      inputs: [k8s]
+      route:
+        kong_external: '.kubernetes.pod_labels.app == "kong-external"'
+        kong_internal: '.kubernetes.pod_labels.app == "kong-internal"'
+        api: '.kubernetes.pod_namespace == "api" && .kubernetes.container_name == "api"'
+      # everything else -> by_workload._unmatched, which nothing consumes
+
+    kong_rows:
+      type: remap
+      inputs: [by_workload.kong_external, by_workload.kong_internal]
+      drop_on_abort: true
+      drop_on_error: true
+      source: |
+        parsed, err = parse_json(.message)
+        if err != null || !is_object(parsed) { abort }
+        p = object!(parsed)
+        if !exists(p.request) { abort }   # Kong's own startup/error lines
+        gateway = if .kubernetes.pod_labels.app == "kong-external" { "external" } else { "internal" }
+        . = {
+          "Timestamp": from_unix_timestamp!(int!(p.started_at), unit: "milliseconds"),
+          "Cluster": get_env_var("CLUSTER_NAME") ?? "unknown",
+          "Gateway": gateway,
+          "Service": p.service.name,
+          "Route": p.route.name,
+          "Method": p.request.method,
+          "Path": p.request.uri,
+          "Status": p.response.status,
+          "LatencyMs": p.latencies.request,
+          "KongLatencyMs": p.latencies.kong,
+          "UpstreamLatencyMs": p.latencies.proxy,
+          "ClientIp": p.client_ip,
+          "Pod": .kubernetes.pod_name,
+          "Body": .message
+        }
+
+    api_rows:
+      type: remap
+      inputs: [by_workload.api]
+      drop_on_error: true
+      source: |
+        row = {
+          "Timestamp": .timestamp,
+          "Cluster": get_env_var("CLUSTER_NAME") ?? "unknown",
+          "Namespace": .kubernetes.pod_namespace,
+          "Pod": .kubernetes.pod_name,
+          "Container": .kubernetes.container_name,
+          "ServiceName": .kubernetes.pod_labels.app || "unknown",
+          "SeverityText": "INFO",
+          "Body": .message,
+          "LogAttributes": {}
+        }
+        parsed, err = parse_json(.message)
+        if err == null && is_object(parsed) {
+          p = object!(parsed)
+          row.SeverityText = p.level || "INFO"
+          row.Body = p.msg || .message
+          row.LogAttributes = {
+            "method": to_string(p.method) ?? "",
+            "path": to_string(p.path) ?? "",
+            "status": to_string(p.status) ?? "",
+            "run": to_string(p.run) ?? "",
+            "i": to_string(p.i) ?? ""
+          }
+        }
+        . = row
+
+  sinks:
+    # --- existing pipeline -------------------------------------------------
+    loki:
+      type: loki
+      inputs: [loki_labels]
+      endpoint: http://loki.loki.svc:3100
+      encoding:
+        codec: text
+      # Helm runs customConfig through tpl, so Vector's {{ field }} templates
+      # are escaped as {{ "{{" }} field {{ "}}" }}.
+      labels:
+        cluster: '{{ "{{" }} loki_cluster {{ "}}" }}'
+        namespace: '{{ "{{" }} kubernetes.pod_namespace {{ "}}" }}'
+        app: '{{ "{{" }} loki_app {{ "}}" }}'
+        container: '{{ "{{" }} kubernetes.container_name {{ "}}" }}'
+
+    # --- added: ClickHouse ---------------------------------------------------
+    ch_kong:
+      type: clickhouse
+      inputs: [kong_rows]
+      endpoint: http://clickstack.clickstack.svc:8123
+      database: logs
+      table: kong_access
+      format: json_each_row
+      skip_unknown_fields: true
+      date_time_best_effort: true
+      # The all-in-one image's own HTTP user (users.d/default-user.xml, the
+      # same one ClickStack's Vector guide uses). On ClickHouse Cloud: a
+      # user with INSERT on these two tables only, password from a Secret.
+      auth:
+        strategy: basic
+        user: api
+        password: api
+      batch:
+        max_events: 1000
+        timeout_secs: 2
+
+    ch_app:
+      type: clickhouse
+      inputs: [api_rows]
+      endpoint: http://clickstack.clickstack.svc:8123
+      database: logs
+      table: app_logs
+      format: json_each_row
+      skip_unknown_fields: true
+      date_time_best_effort: true
+      # The all-in-one image's own HTTP user (users.d/default-user.xml, the
+      # same one ClickStack's Vector guide uses). On ClickHouse Cloud: a
+      # user with INSERT on these two tables only, password from a Secret.
+      auth:
+        strategy: basic
+        user: api
+        password: api
+      batch:
+        max_events: 1000
+        timeout_secs: 2
+
+    prom:
+      type: prometheus_exporter
+      inputs: [vector_metrics]
+      address: 0.0.0.0:9598

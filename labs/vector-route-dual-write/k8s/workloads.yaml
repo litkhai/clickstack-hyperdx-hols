@@ -1,0 +1,181 @@
+# The workloads whose logs are routed: two Kong gateways (external and
+# internal, same DB-less config, told apart only by the pod label `app`)
+# in front of one API deployment. The two Deployments differ only in name
+# and label. Kong writes one JSON line per request
+# (file-log plugin to stdout); its own nginx access log is off so a request
+# is logged once. The API writes one JSON line per request.
+apiVersion: v1
+kind: Namespace
+metadata: {name: kong}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: kong-declarative, namespace: kong}
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    services:
+      - name: orders
+        url: http://api.api.svc:8080/orders
+        routes:
+          - name: orders
+            paths: [/orders]
+      - name: users
+        url: http://api.api.svc:8080/users
+        routes:
+          - name: users
+            paths: [/users]
+    plugins:
+      - name: file-log
+        config:
+          path: /dev/stdout
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kong-external, namespace: kong}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: kong-external}}
+  template:
+    metadata: {labels: {app: kong-external}}
+    spec:
+      containers:
+        - name: kong
+          image: kong:3.9.4
+          env:
+            - {name: KONG_DATABASE, value: "off"}
+            - {name: KONG_DECLARATIVE_CONFIG, value: /kong/kong.yml}
+            - {name: KONG_PROXY_LISTEN, value: "0.0.0.0:8000"}
+            - {name: KONG_ADMIN_LISTEN, value: "off"}
+            - {name: KONG_PROXY_ACCESS_LOG, value: "off"}
+            - {name: KONG_PROXY_ERROR_LOG, value: /dev/stderr}
+            - {name: KONG_NGINX_WORKER_PROCESSES, value: "1"}
+          ports: [{containerPort: 8000}]
+          readinessProbe:
+            tcpSocket: {port: 8000}
+            periodSeconds: 5
+          volumeMounts:
+            - {name: declarative, mountPath: /kong}
+      volumes:
+        - name: declarative
+          configMap: {name: kong-declarative}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kong-internal, namespace: kong}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: kong-internal}}
+  template:
+    metadata: {labels: {app: kong-internal}}
+    spec:
+      containers:
+        - name: kong
+          image: kong:3.9.4
+          env:
+            - {name: KONG_DATABASE, value: "off"}
+            - {name: KONG_DECLARATIVE_CONFIG, value: /kong/kong.yml}
+            - {name: KONG_PROXY_LISTEN, value: "0.0.0.0:8000"}
+            - {name: KONG_ADMIN_LISTEN, value: "off"}
+            - {name: KONG_PROXY_ACCESS_LOG, value: "off"}
+            - {name: KONG_PROXY_ERROR_LOG, value: /dev/stderr}
+            - {name: KONG_NGINX_WORKER_PROCESSES, value: "1"}
+          ports: [{containerPort: 8000}]
+          readinessProbe:
+            tcpSocket: {port: 8000}
+            periodSeconds: 5
+          volumeMounts:
+            - {name: declarative, mountPath: /kong}
+      volumes:
+        - name: declarative
+          configMap: {name: kong-declarative}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kong-external, namespace: kong}
+spec:
+  selector: {app: kong-external}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: kong-internal, namespace: kong}
+spec:
+  selector: {app: kong-internal}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: api}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: api-app, namespace: api}
+data:
+  app.py: |
+    # One JSON log line per request. Every 50th request (i % 50 == 0)
+    # answers 500 and logs ERROR, so severity is not constant.
+    import json, sys, time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import urlparse, parse_qs
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            u = urlparse(self.path)
+            q = parse_qs(u.query)
+            i = int(q.get("i", ["0"])[0])
+            status = 500 if i and i % 50 == 0 else 200
+            body = json.dumps({"path": u.path, "ok": status == 200}).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            print(json.dumps({
+                "ts": time.time(), "level": "ERROR" if status == 500 else "INFO",
+                "msg": f"{u.path.strip('/')} request handled",
+                "method": "GET", "path": u.path, "status": status,
+                "run": q.get("run", [""])[0], "i": i,
+            }), flush=True)
+
+        def log_message(self, *a):
+            pass
+
+    print("api listening on 8080", flush=True)  # not JSON: kept as a plain body
+    ThreadingHTTPServer(("0.0.0.0", 8080), H).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: api}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      containers:
+        - name: api
+          image: python:3.12-alpine
+          command: ["python", "-u", "/app/app.py"]
+          ports: [{containerPort: 8080}]
+          readinessProbe:
+            tcpSocket: {port: 8080}
+            periodSeconds: 5
+          volumeMounts:
+            - {name: app, mountPath: /app}
+      volumes:
+        - name: app
+          configMap: {name: api-app}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api, namespace: api}
+spec:
+  selector: {app: api}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+# Traffic comes from Jobs in this namespace (`lab.py run`). Their own log
+# lines name the run too, and must reach Loki only.
+apiVersion: v1
+kind: Namespace
+metadata: {name: loadgen}

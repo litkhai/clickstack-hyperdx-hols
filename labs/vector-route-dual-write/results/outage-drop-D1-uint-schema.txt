@@ -1,0 +1,32 @@
+15:57:48 mode=drop run=D1 n=3000: scale ClickStack to 0
+15:58:20 loadgen started
+15:58:30 t+ 10s loki kong-external=2336/3000 loadgen=2336/3000 {'buffer_discarded_events_total:ch_kong': 1166.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:58:40 t+ 20s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:58:51 t+ 31s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:59:01 t+ 41s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:59:12 t+ 52s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:59:22 t+ 62s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:59:32 t+ 72s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:59:43 t+ 83s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+15:59:53 t+ 93s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+16:00:03 t+103s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+16:00:14 t+114s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+16:00:24 t+124s loki kong-external=3000/3000 loadgen=3000/3000 {'buffer_discarded_events_total:ch_kong': 3395.0, 'buffer_size_bytes:ch_kong': 1525203.0, 'buffer_size_events:ch_kong': 500.0}
+16:00:24 scale ClickStack to 1
+16:00:44 t+ 15s after recovery ch(external, internal, api)=(1302, 303, 2501) loki kong-external=3000
+16:01:00 t+ 31s after recovery ch(external, internal, api)=(1302, 303, 2501) loki kong-external=3000
+16:01:16 t+ 47s after recovery ch(external, internal, api)=(1302, 303, 2501) loki kong-external=3000
+16:01:31 t+ 63s after recovery ch(external, internal, api)=(1302, 303, 2501) loki kong-external=3000
+16:01:48 t+ 79s after recovery ch(external, internal, api)=(1302, 303, 2501) loki kong-external=3000
+16:01:49 final {"ch.kong_access.external": 1302, "ch.kong_access.internal": 303, "ch.app_logs.api": 2501, "ch.any_table.loadgen": 0, "loki.kong-external": 3000, "loki.kong-internal": 3000, "loki.api": 6000, "loki.loadgen": 3000}
+16:01:49 discarded {"vector_buffer_discarded_events_total{buffer_id=\"ch_kong\",buffer_type=\"memory\",component_id=\"ch_kong\",component_kind=\"sink\",component_type=\"clickhouse\",host=\"vector-bj4t7\",intentional=\"true\",stage=\"0\"}": 3395.0, "vector_buffer_discarded_events_total{buffer_id=\"ch_app\",buffer_type=\"memory\",component_id=\"ch_app\",component_kind=\"sink\",component_type=\"clickhouse\",host=\"vector-bj4t7\",intentional=\"true\",stage=\"0\"}": 3499.0}
+
+# First drop run, while kong_access still had UInt32 latency columns.
+# kong: 1302 + 303 = 1605 rows arrived, 3395 discarded by the buffer, 1000 missing besides.
+# Vector metrics after the run (pod vector-bj4t7):
+#   vector_component_discarded_events_total{component_id="ch_kong",intentional="false"} 1000
+#   vector_component_errors_total{component_id="ch_kong",error_type="request_failed",stage="sending"} 1
+# Vector log, 07:00:37Z: "Not retriable; dropping the request. reason=\"Default retry strategy: Bad Request\"" ... "Events dropped intentional=false count=1000"
+# ClickHouse system.query_log, 07:00:37, user api, ExceptionWhileProcessing:
+#   Code: 72. DB::Exception: Unsigned type must not contain '-' symbol: (while reading the value of key UpstreamLatencyMs): (at row 137)
+# Loki: one Kong line with latencies {"request": 0, "kong": 0, "proxy": -3, "receive": 0}, kong-internal, /users?run=D1&i=137

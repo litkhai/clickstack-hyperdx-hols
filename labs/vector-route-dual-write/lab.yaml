@@ -1,0 +1,5 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs a local k3d cluster (bin/lab.py).
+target: oss
+tier: T1
+services: [clickstack, loki, vector, kong]
+verified_on: "k3d (k3s v1.35.5), Vector 0.61.0 (chart 0.61.0), clickstack-all-in-one 2.44.0 (ClickHouse 26.8.36.3), Loki 3.7.9, Kong 3.9.4, 2026-11-13"
