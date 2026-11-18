@@ -1,0 +1,18 @@
+# 2026-11-18 run R1 (N=100), Vector 0.44.0, ClickHouse sinks with a 256 MiB disk buffer + drop_newest.
+# First run after the ClickHouse branch was added (new pods). 30 s after the run:
+
+ClickHouse logs.kong_access: external/internal x band, catalog, home, live, search = 100 each (complete)
+ClickHouse logs.app_logs:    catalog json 100, search text 100   (band, home, live missing)
+Loki pod-logs:               band 100, catalog 100, home 100, live 100, member 100, payment 100, search 100
+
+vector_buffer_events{ch_app}                       300
+vector_buffer_events{ch_kong}                      0
+vector_component_received_events_total{ch_app}     200
+vector_component_sent_events_total{pod_ch_rows}    500
+
+# 2 minutes later: still vector_buffer_events{ch_app} = 300, ch_app received 200.
+# The 300 rows reached ClickHouse when the Vector pods were restarted (next helm upgrade):
+# band 100, catalog 100, home 100, live 100, search 100 for R1.
+# Not seen again in R2-R9 (results/routing-R9.txt). Seen once locally with
+# docker compose (Vector 0.44.0, file sources): 250 events held in the ch_app
+# buffer until more lines arrived.

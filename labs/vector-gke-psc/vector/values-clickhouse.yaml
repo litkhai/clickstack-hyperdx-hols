@@ -1,0 +1,154 @@
+# Added on top of values-existing.yaml (helm -f values-existing.yaml -f values-clickhouse.yaml).
+# Helm merges the two maps: nothing in the existing config is edited, the
+# ClickHouse branch only adds two transforms and two sinks that read the same
+# outputs the Loki sinks read.
+#
+#   kong_access_log_route.kong_external_log ─┬─▶ loki-kong-external-output   (existing)
+#                                            └─▶ kong_ch_rows ─▶ ch_kong      (added)
+#   kong_access_log_route.kong_internal_log ─┬─▶ loki-kong-internal-output   (existing)
+#                                            └─▶ kong_ch_rows
+#   pod_logs_add_labels ─────────────────────┬─▶ loki-pod-output             (existing)
+#                                            └─▶ pod_ch_rows  ─▶ ch_app       (added)
+#
+# Which APIs go to ClickHouse is an allow list in two env vars, so adding an
+# API is a values change, not a pipeline change. Anything not on the list is
+# dropped from the ClickHouse branch only; Loki still gets every line.
+
+env:
+  - name: CLUSTER_NAME
+    value: lab-gke
+  # Kong: the upstream field of the access log (4th from the end).
+  - name: CH_KONG_APIS
+    value: band,home,live,catalog,search
+  # Pods: the app label (pod_logs_add_labels puts it in .container_name).
+  - name: CH_POD_APPS
+    value: band,home,live,catalog,search
+
+# CH_ENDPOINT (https://<service>.<region>.p.gcp.clickhouse.cloud:8443 over
+# Private Service Connect), CH_USER, CH_PASSWORD.
+envFrom:
+  - secretRef:
+      name: clickhouse-ingest
+
+customConfig:
+  transforms:
+    kong_ch_rows:
+      type: remap
+      inputs:
+        - kong_access_log_route.kong_external_log
+        - kong_access_log_route.kong_internal_log
+      drop_on_abort: true
+      drop_on_error: true
+      # Columns only. Not stored: client IP, X-Forwarded-For, the Azure client
+      # IP, the last field (info) and the query string.
+      source: |-
+        apis = split(get_env_var("CH_KONG_APIS") ?? "", ",")
+        api = string(.kong_upstream_host) ?? ""
+        if !includes(apis, api) { abort }
+        ct = if is_string(.kong_upstream_connect_time) { to_float(.kong_upstream_connect_time) ?? null } else { null }
+        ht = if is_string(.kong_upstream_header_time) { to_float(.kong_upstream_header_time) ?? null } else { null }
+        rt = if is_string(.kong_upstream_response_time) { to_float(.kong_upstream_response_time) ?? null } else { null }
+        qt = if is_string(.kong_request_time) { to_float(.kong_request_time) ?? null } else { null }
+        gateway = if .container_name == "kong-proxy-external" { "external" } else { "internal" }
+        . = {
+          "Timestamp": .timestamp,
+          "Cluster": get_env_var("CLUSTER_NAME") ?? "unknown",
+          "Gateway": gateway,
+          "Api": api,
+          "Method": .kong_request_method,
+          "Path": .kong_request_uri,
+          "Status": to_int(.kong_status) ?? 0,
+          "BytesSent": to_int(.kong_body_bytes_sent) ?? 0,
+          "Host": .kong_host,
+          "UserAgent": .kong_user_agent,
+          "Country": .kong_cloudfront_viewer_country,
+          "UpstreamConnectTime": ct,
+          "UpstreamHeaderTime": ht,
+          "UpstreamResponseTime": rt,
+          "RequestTime": qt,
+          "Pod": .kubernetes.pod_name,
+          "Node": .kubernetes.pod_node_name
+        }
+
+    pod_ch_rows:
+      type: remap
+      inputs:
+        - pod_logs_add_labels
+      drop_on_abort: true
+      drop_on_error: true
+      # JSON lines: fields into LogAttributes (as strings), level and msg
+      # lifted. Text lines: kept whole in Body, level taken from the text.
+      source: |-
+        apps = split(get_env_var("CH_POD_APPS") ?? "", ",")
+        app = string(.container_name) ?? ""
+        if !includes(apps, app) { abort }
+        row = {
+          "Timestamp": .timestamp,
+          "Cluster": get_env_var("CLUSTER_NAME") ?? "unknown",
+          "Namespace": .kubernetes.pod_namespace,
+          "Pod": .kubernetes.pod_name,
+          "ServiceName": app,
+          "SeverityText": "INFO",
+          "Format": "text",
+          "Body": .message,
+          "LogAttributes": {}
+        }
+        parsed, err = parse_json(.message)
+        if err == null && is_object(parsed) {
+          p = object!(parsed)
+          row.Format = "json"
+          row.SeverityText = upcase(string(p.level || p.severity || "INFO") ?? "INFO")
+          row.Body = string(p.msg || p.message) ?? .message
+          row.LogAttributes = map_values(p) -> |v| { if is_string(v) { string!(v) } else { encode_json(v) } }
+        } else {
+          lv, lerr = parse_regex(.message, r'\b(?P<lv>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b')
+          if lerr == null { row.SeverityText = lv.lv }
+        }
+        . = row
+
+  sinks:
+    ch_kong:
+      type: clickhouse
+      inputs:
+        - kong_ch_rows
+      endpoint: "${CH_ENDPOINT}"
+      database: logs
+      table: kong_access
+      format: json_each_row
+      skip_unknown_fields: true
+      date_time_best_effort: true
+      auth:
+        strategy: basic
+        user: "${CH_USER}"
+        password: "${CH_PASSWORD}"
+      batch:
+        max_events: 1000
+        timeout_secs: 2
+      # A ClickHouse outage must not stop the Loki sinks: the default
+      # (memory, block) back-pressures the shared kubernetes_logs sources.
+      buffer:
+        type: disk
+        max_size: 268435488
+        when_full: drop_newest
+
+    ch_app:
+      type: clickhouse
+      inputs:
+        - pod_ch_rows
+      endpoint: "${CH_ENDPOINT}"
+      database: logs
+      table: app_logs
+      format: json_each_row
+      skip_unknown_fields: true
+      date_time_best_effort: true
+      auth:
+        strategy: basic
+        user: "${CH_USER}"
+        password: "${CH_PASSWORD}"
+      batch:
+        max_events: 1000
+        timeout_secs: 2
+      buffer:
+        type: disk
+        max_size: 268435488
+        when_full: drop_newest

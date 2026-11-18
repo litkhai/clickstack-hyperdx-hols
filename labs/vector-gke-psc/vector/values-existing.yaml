@@ -1,0 +1,246 @@
+# The existing Vector Agent config, as a GKE team runs it today (Vector 0.44.0,
+# helm chart vector/vector 0.40.0): Kong text logs parsed with grok and sent to
+# Loki with their own labels, every other pod log to Loki as is.
+#
+# Changed for the lab only: the Kong app labels (kong-proxy-external /
+# kong-proxy-internal), the Loki endpoint, cluster_name, and no
+# podPriorityClassName. Everything else is unchanged, typos included.
+# The ClickHouse branch is added by values-clickhouse.yaml on top of this file;
+# nothing here is edited for it.
+role: "Agent"
+
+logLevel: "error"
+
+service:
+  enabled: false
+
+containerPorts:
+  - name: prom-exporter
+    containerPort: 9595
+    protocol: TCP
+
+customConfig:
+  data_dir: /vector-data-dir
+
+  api:
+    enabled: false
+    playground: false
+
+  sources:
+    prom_internal_metrics:
+      type: internal_metrics
+    kubernetes_kong_external_logs:
+      type: kubernetes_logs
+      max_line_bytes: 1024000
+      extra_label_selector: "app=kong-proxy-external"
+    kubernetes_kong_internal_logs:
+      type: kubernetes_logs
+      max_line_bytes: 1024000
+      extra_label_selector: "app=kong-proxy-internal"
+    kubernetes_pod_logs:
+      type: kubernetes_logs
+      max_line_bytes: 1024000
+      extra_label_selector: "app!=kong-proxy-external,app!=kong-proxy-internal"  
+
+  transforms:
+    pod_logs_add_labels:
+      type: remap
+      inputs:
+        - kubernetes_pod_logs
+      source: |-
+        if exists(.kubernetes.pod_labels."app") {
+          .container_name = .kubernetes.pod_labels."app"
+        } else {
+          .container_name = .kubernetes.container_name
+        }
+
+    kong_logs_add_labels:
+      type: remap
+      inputs:
+        - kubernetes_kong_external_logs
+        - kubernetes_kong_internal_logs
+      source: |-
+        if exists(.kubernetes.pod_labels."app") {
+          .container_name = .kubernetes.pod_labels."app"
+        } else {
+          .container_name = .kubernetes.container_name
+        }    
+
+    kong_access_log_grok:
+      type: remap
+      inputs:
+        - kong_logs_add_labels
+      source: >-
+          parsed, err = parse_groks(.message, 
+                        patterns: [ 
+                          "%{IPORHOST:kong_remote_addr} - - \\[%{HTTPDATE:kong_time_local}\\] \"%{WORD:kong_request_method} %{NOTSPACE:kong_request_uri_total} %{NOTSPACE:httpversion}\" %{DATA:kong_status} %{DATA:kong_body_bytes_sent} \"%{DATA:kong_referer}\" \"%{DATA:kong_user_agent}\"\t\"%{IPORHOST:kong_host}\"\t\"%{DATA:kong_x_forwarded_for}\"\t(:?%{NUMBER:kong_upstream_connect_time}|-)\t(:?%{NUMBER:kong_upstream_header_time}|-)\t(:?%{NUMBER:kong_upstream_response_time}|-)\t(:?%{NUMBER:kong_request_time}|-)\t%{DATA:kong_upstream_host}\t%{DATA:kong_x_azure_clientip}\t%{NOTSPACE:kong_cloudfront_viewer_country}\t%{NOTSPACE:info}",
+                          "%{IPORHOST:kong_remote_addr} - - \\[%{HTTPDATE:kong_time_local}\\] \"%{WORD:kong_request_method} %{NOTSPACE:kong_request_uri_total} %{NOTSPACE:httpversion}\" %{DATA:kong_status} %{DATA:kong_body_bytes_sent} \"%{DATA:kong_referer}\" \"%{DATA:kong_user_agent}\"\t\"%{IPORHOST:kong_host}\"\t\"%{DATA:kong_x_forwarded_for}\"\t(:?%{NUMBER:kong_upstream_connect_time}|-)\t(:?%{NUMBER:kong_upstream_header_time}|-)\t(:?%{NUMBER:kong_upstream_response_time}|-)\t(:?%{NUMBER:kong_request_time}|-)\t%{DATA:kong_upstream_host}\t%{DATA:kong_x_azure_clientip}\t%{NOTSPACE:kong_cloudfront_viewer_country}",
+                          "%{IPORHOST:kong_remote_addr} - - \\[%{HTTPDATE:kong_time_local}\\] \"%{WORD:kong_request_method} %{NOTSPACE:kong_request_uri_total} %{NOTSPACE:httpversion}\" %{DATA:kong_status} %{DATA:kong_body_bytes_sent} \"%{DATA:kong_referer}\" \"%{DATA:kong_user_agent}\"\t\"%{IPORHOST:kong_host}\"\t\"%{DATA:kong_x_forwarded_for}\"\t(:?%{NUMBER:kong_upstream_connect_time}|-)\t(:?%{NUMBER:kong_upstream_header_time}|-)\t(:?%{NUMBER:kong_upstream_response_time}|-)\t(:?%{NUMBER:kong_request_time}|-)\t%{DATA:kong_upstream_host}\t%{DATA:kong_x_azure_clientip}",
+                          "%{IPORHOST:kong_remote_addr} - - \\[%{HTTPDATE:kong_time_local}\\] \"%{WORD:kong_request_method} %{NOTSPACE:kong_request_uri_total} %{NOTSPACE:httpversion}\" %{DATA:kong_status} %{DATA:kong_body_bytes_sent} \"%{DATA:kong_referer}\" \"%{DATA:kong_user_agent}\"\t\"%{IPORHOST:kong_host}\"\t\"%{DATA:kong_x_forwarded_for}\"\t(:?%{NUMBER:kong_upstream_connect_time}|-)\t(:?%{NUMBER:kong_upstream_header_time}|-)\t(:?%{NUMBER:kong_upstream_response_time}|-)\t(:?%{NUMBER:kong_request_time}|-)\t%{DATA:kong_upstream_host}",
+                          "%{IPORHOST:kong_remote_addr} - - \\[%{HTTPDATE:kong_time_local}\\] \"%{WORD:kong_request_method} %{NOTSPACE:kong_request_uri_total} %{NOTSPACE:httpversion}\" %{DATA:kong_status} %{DATA:kong_body_bytes_sent} \"%{DATA:kong_referer}\" \"%{DATA:kong_user_agent}\"",
+                          "(?<timestamp>%{YEAR}[./]%{MONTHNUM}[./]%{MONTHDAY} %{TIME}) \\[%{LOGLEVEL:severity}\\] %{GREEDYDATA}",
+                          "%{IPORHOST:kong_remote_addr} - - \\[%{HTTPDATE:kong_time_local}\\] \"%{DATA:kong_request_uri_total}\" %{DATA:kong_status} %{DATA:kong_body_bytes_sent} \"%{DATA:kong_referer}\" \"%{DATA:kong_user_agent}\"\t\"%{IPORHOST:kong_host}\"\t\"%{DATA:kong_x_forwarded_for}\"\t(:?%{NUMBER:kong_upstream_connect_time}|-)\t(:?%{NUMBER:kong_upstream_header_time}|-)\t(:?%{NUMBER:kong_upstream_response_time}|-)\t(:?%{NUMBER:kong_request_time}|-)\t%{DATA:kong_upstream_host}\t%{DATA:kong_x_azure_clientip}\t%{NOTSPACE:kong_cloudfront_viewer_country}\t%{NOTSPACE:info}"
+                          ])
+          
+          if (err == null) {
+            # parse_groks func is worked
+
+            . |= parsed
+            
+            .grok_success = "true"
+
+            if exists(.kong_time_local) {
+              .timestamp = parse_timestamp!(.kong_time_local, format: "%d/%b/%Y:%H:%M:%S %z")
+            }
+
+            if exists(.kong_request_method) {
+              if exists(.kong_request_uri_total) {
+                .tmp_kong_request_uri = split!(.kong_request_uri_total, "?")
+                .kong_request_uri = .tmp_kong_request_uri[0]
+                }
+            }
+
+            if !exists(.kong_request_uri) {
+              .kong_request_uri= ""
+            }
+            
+            if !exists(.kong_host) {
+              .kong_host= ""
+            }
+  
+            if !exists(.kong_request_method) {
+              .kong_request_method= ""
+            }
+
+            if !exists(.kong_x_forwarded_for) {
+              .kong_x_forwarded_for= ""
+            }
+  
+            if !exists(.kong_request_time) {
+              .kong_request_time= ""
+            }
+  
+            if !exists(.kong_upstream_host) {
+              .kong_upstream_host= ""
+            }
+  
+            if !exists(.info) {
+              .info= ""
+            }
+
+            if !exists(.kong_user_agent) {
+              .kong_user_agent= ""
+            }
+
+            if !exists(.kong_body_bytes_sent) {
+              .kong_body_bytes_sent= ""
+            }
+
+            if !exists(.kong_status) {
+              .kong_status= ""
+            }
+          }
+
+    kong_access_log_route:
+      type: route
+      inputs:
+        - kong_access_log_grok
+      reroute_unmatched: true
+      route:
+        kong_external_log:
+          source: ".container_name == \"kong-proxy-external\" && exists(.grok_success)"
+          type: vrl
+        kong_internal_log:
+          source: ".container_name == \"kong-proxy-internal\" && exists(.grok_success)"
+          type: vrl
+
+  sinks:
+    loki-pod-output:
+      type: "loki"
+      inputs:
+        - pod_logs_add_labels
+        - kong_access_log_route._unmatched
+      endpoint: "http://loki.loki.svc:3100"
+      labels:
+        cluster_name : "lab-gke"
+        service_name : "pod-logs"
+        kubernetes_container: >-
+          {{`{{ container_name }}`}}
+        kubernetes_pod_info: >-
+          {{`{{ kubernetes.pod_name }}({{ kubernetes.pod_ip }})`}} 
+        kubernetes_node: >-
+          {{`{{ kubernetes.pod_node_name }}`}}
+      encoding:
+        codec: "text"
+
+    loki-kong-external-output:
+      type: "loki"
+      inputs:
+        - kong_access_log_route.kong_external_log
+      endpoint:  "http://loki.loki.svc:3100"
+      labels:
+        cluster_name : "lab-gke"
+        service_name : "kong-access-logs"
+        kubernetes_container: >-
+          {{`{{ container_name }}`}}
+        kubernetes_pod_info: >-
+          {{`{{ kubernetes.pod_name }}({{ kubernetes.pod_ip }})`}} 
+        kubernetes_node: >-
+          {{`{{ kubernetes.pod_node_name }}`}}
+        kong_request_method: >-
+          {{`{{ kong_request_method }}`}}
+        kong_request_uri: >-
+          {{`{{ kong_request_uri }}`}}
+        kong_status: >-
+          {{`{{ kong_status }}`}}
+        kong_body_bytes_sent: >-
+          {{`{{ kong_body_bytes_sent }}`}}
+        kong_host: >-
+          {{`{{ kong_host }}`}}
+        kong_upstream_host: >-
+          {{`{{ kong_upstream_host }}`}}
+        kong_request_time: >-
+          {{`{{ kong_request_time }}`}}
+      encoding:
+        codec: "text"
+
+    loki-kong-internal-output:
+      type: "loki"
+      inputs:
+        - kong_access_log_route.kong_internal_log
+      endpoint:  "http://loki.loki.svc:3100"
+      labels:
+        cluster_name : "lab-gke"
+        service_name : "kong-access-logs"
+        kubernetes_container: >-
+          {{`{{ container_name }}`}}
+        kubernetes_pod_info: >-
+          {{`{{ kubernetes.pod_name }}({{ kubernetes.pod_ip }})`}} 
+        kubernetes_node: >-
+          {{`{{ kubernetes.pod_node_name }}`}}
+        kong_request_method: >-
+          {{`{{ kong_request_method }}`}}
+        kong_request_uri: >-
+          {{`{{ kong_request_uri }}`}}
+        kong_status: >-
+          {{`{{ kong_status }}`}}
+        kong_body_bytes_sent: >-
+          {{`{{ kong_body_bytes_sent }}`}}
+        kong_host: >-
+          {{`{{ kong_host }}`}}
+        kong_upstream_host: >-
+          {{`{{ kong_upstream_host }}`}}
+
+        kong_request_time: >-
+          {{`{{ kong_request_time }}`}}
+
+      encoding:
+        codec: "text"
+
+    prometheus:
+      type: prometheus_exporter
+      inputs:
+        - prom_internal_metrics
+      address: 0.0.0.0:9595
+      flush_period_secs: 60
+

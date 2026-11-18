@@ -1,0 +1,5 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs a GKE cluster, a ClickHouse Cloud service on GCP and a PSC endpoint (README).
+target: cloud
+tier: T2
+services: [clickhouse-cloud, gke, private-service-connect, loki, vector]
+verified_on: "GKE 1.36.4 asia-northeast3-a (private nodes, Cloud NAT), ClickHouse Cloud GCP us-central1 (26.6), Vector 0.44.0 (chart 0.40.0), Loki 3.7.9, 2026-11-18"
