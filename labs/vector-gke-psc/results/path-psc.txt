@@ -1,0 +1,36 @@
+# 2026-11-18 GKE asia-northeast3-a (private nodes, Cloud NAT) -> ClickHouse Cloud GCP us-central1 (26.6), Vector 0.44.0 (chart 0.40.0)
+# bin/lab.py path, after the IP access list was emptied (private endpoint only)
+command terminated with exit code 35
+== <id>.us-central1.p.gcp.clickhouse.cloud   # gitleaks:allow
+Name:	<id>.us-central1.p.gcp.clickhouse.cloud   # gitleaks:allow
+Address: 10.20.0.2
+ping 200 via 10.20.0.2 in 0.528030s
+1
+== <id>.us-central1.gcp.clickhouse.cloud   # gitleaks:allow
+Name:	<id>.us-central1.gcp.clickhouse.cloud   # gitleaks:allow
+Address: 136.68.246.228
+curl: (35) TLS connect error: error:00000000:lib(0)::reason(0)
+ping 000 via  in 0.206551s
+curl: (35) TLS connect error: error:00000000:lib(0)::reason(0)
+
+# 10 x 'SELECT 1' over PSC from the toolbox pod: time_connect time_appconnect time_total (s)
+0.176089 0.354899 0.529024
+0.176638 0.356960 0.533117
+0.175204 0.353593 0.528115
+0.175619 0.354981 0.530646
+0.175336 0.355768 0.531409
+0.179381 0.361107 0.537784
+0.176503 0.356804 0.532943
+0.175470 0.354995 0.530376
+0.175588 0.354573 0.530007
+0.175627 0.355735 0.531459
+
+# Every Cloud NAT log entry since the gateway was created (4 h window, read 09:2x UTC), --log-filter ALL.
+# All six are the toolbox's own `path` checks (2 curls each): 08:48 (list open), 08:49 and 09:15 (list empty).
+# 10.10.0.3 is the node the toolbox runs on. Nothing from the Vector pods (both nodes), nothing else.
+2026-11-18T08:48:55.851815381Z	10.10.0.3	136.68.246.228	8443
+2026-11-18T08:48:56.470815814Z	10.10.0.3	136.68.246.228	8443
+2026-11-18T08:49:42.220470988Z	10.10.0.3	136.68.246.228	8443
+2026-11-18T08:49:42.634040759Z	10.10.0.3	136.68.246.228	8443
+2026-11-18T09:15:15.388058140Z	10.10.0.3	136.68.246.228	8443
+2026-11-18T09:15:15.978753080Z	10.10.0.3	136.68.246.228	8443

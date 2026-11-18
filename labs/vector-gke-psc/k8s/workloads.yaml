@@ -1,0 +1,37 @@
+# Log emitters standing in for the real workloads. Each pod only sleeps;
+# bin/lab.py runs gen.py inside it and writes to /proc/1/fd/1, so the lines
+# land in the container log that Vector's kubernetes_logs sources read.
+#
+#   kong/kong-proxy-external, kong/kong-proxy-internal : Kong access log text,
+#       7 upstreams (band, home, live, catalog, search + member, payment)
+#   apps/<app> : band, home, catalog (JSON), live, search (text) on the allow
+#       list; member (JSON with personal data), payment (text) not on it
+apiVersion: v1
+kind: Namespace
+metadata: {name: kong}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: apps}
+---
+apiVersion: v1
+kind: Namespace
+metadata: {name: lab}
+---
+# toolbox: DNS and HTTPS checks from inside the cluster (the same path Vector takes)
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: toolbox, namespace: lab}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: toolbox}}
+  template:
+    metadata: {labels: {app: toolbox}}
+    spec:
+      containers:
+        - name: toolbox
+          image: curlimages/curl:8.11.1
+          command: ["sh", "-c", "exec sleep infinity"]
+          # CH_HOST, CH_ADMIN_USER, CH_ADMIN_PASSWORD (bin/lab.py creates it)
+          envFrom:
+            - secretRef: {name: clickhouse-admin, optional: true}

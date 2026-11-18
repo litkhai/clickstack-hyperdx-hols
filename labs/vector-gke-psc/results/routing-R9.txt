@@ -1,0 +1,42 @@
+# 2026-11-18 run R9 (100 lines per upstream per Kong pod, 100 per app pod), Vector 0.44.0
+ClickHouse logs.kong_access (Gateway, Api, rows)
+external	band	100
+external	catalog	100
+external	home	100
+external	live	100
+external	search	100
+internal	band	100
+internal	catalog	100
+internal	home	100
+internal	live	100
+internal	search	100
+ClickHouse logs.app_logs (ServiceName, Format, rows)
+band	json	100
+catalog	json	100
+home	json	100
+live	text	100
+search	text	100
+Loki kong-access-logs {'kong-proxy-external': 701, 'kong-proxy-internal': 701}
+Loki pod-logs         {'band': 100, 'catalog': 100, 'home': 100, 'live': 100, 'member': 100, 'payment': 100, 'search': 100}
+
+# personal-data checks over every row in the tables
+Row 1:
+──────
+query_strings: 0
+excluded_apis: 0
+rows:          8100
+Row 1:
+──────
+excluded_apps: 0
+emails:        0
+rows:          4050
+
+# runs R2-R9: kong_access rows / app_logs rows (expected 1000 / 500; R4 had N=10)
+R2 1000	500
+R3 1000	500
+R4 100	50
+R5 1000	500
+R6 1000	500
+R7 1000	500
+R8 1000	500
+R9 1000	500
