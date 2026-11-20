@@ -1,0 +1,6 @@
+-- tile: S1 · the same split by service and pod
+-- display: table
+-- layout: 0 32 24 7
+-- from: sql/s1_diagnose.sql
+-- statement: 2
+-- service: game-gateway
