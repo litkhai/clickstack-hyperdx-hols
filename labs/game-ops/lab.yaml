@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — not published: the owner decides
+web: false
+title_ko: "Managed ClickStack에서 보는 게임 백엔드 관측"
+summary_ko: "Cloud 서비스 안에서 게임 백엔드(상점·결제 trace)와 게임 서버 이벤트 로그를 SQL로 만들고, 패치 장애를 ClickStack 검색·trace·대시보드·알림으로 따라갑니다."
+title_en: "Game backend observability on Managed ClickStack"
+summary_en: "Generate a game backend (shop and billing traces) and game server event logs in SQL inside a Cloud service, then follow a patch-day incident through ClickStack search, traces, dashboards and alerts."
+category: clickstack
+tags: [clickstack, observability, opentelemetry, gaming]
