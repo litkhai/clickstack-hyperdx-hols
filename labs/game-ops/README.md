@@ -52,12 +52,15 @@ minute come from the fleet at the daily peak (12:00 UTC = 21:00 KST), about 30 f
 
 | Minute | Switch | What it looks like |
 |---|---|---|
-| +0 | `purchase` 4.2.0 with a regression, `game-server` 1.9.0 | release markers; purchase calls pricing once per cart item, ~3% errors; the fleet restarts one server every 15 s |
+| +0 | `purchase` next minor version with a regression (4.2.1 → 4.3.0), `game-server` next minor (1.9.0 → 1.10.0) | release markers; purchase calls pricing once per cart item, ~3% errors; the fleet restarts one server every 15 s |
 | +3 | `downstream-latency` on billing | purchase time moves into the call to `pg.example.com` |
 | +6 | `server-crash` on gs-kr-07 | one ERROR (process exited, 0xC0000005), one WARN (players dropped), then no logs and no gauges |
 | +10 | gs-kr-07 restarts | startup lines, users come back at 30% |
 | +12 | billing recovers | |
-| +14 | `purchase` 4.2.1 | the hotfix: errors back to the background level |
+| +14 | `purchase` hotfix (4.3.1) | the hotfix: errors back to the background level |
+
+Versions move forward from what each service runs at the start (latest deploy row, else the base version), so every run
+shows new release markers; the examples are the second run on a service that had the first one.
 
 Single switches: `python3 bin/fault.py on|off <fault> [--target <pod or server>]`, `python3 bin/deploy.py <service> <version>
 [--regression]`. The faults of apm-workflows are all here (`slow-query`, `n-plus-one`, `pool-exhaustion`,
@@ -172,12 +175,15 @@ ClickHouse Cloud 서비스 하나 안에서 도는 게임 백엔드와 게임 �
 
 | 분 | 스위치 | 보이는 것 |
 |---|---|---|
-| +0 | `purchase` 4.2.0(회귀 있음), `game-server` 1.9.0 | 배포 마커. purchase가 장바구니 아이템마다 pricing을 부르고 오류 약 3%. 게임 서버는 15초마다 한 대씩 재시작 |
+| +0 | `purchase` 다음 minor 버전(회귀 있음, 4.2.1 → 4.3.0), `game-server` 다음 minor(1.9.0 → 1.10.0) | 배포 마커. purchase가 장바구니 아이템마다 pricing을 부르고 오류 약 3%. 게임 서버는 15초마다 한 대씩 재시작 |
 | +3 | billing에 `downstream-latency` | 구매 시간이 `pg.example.com` 호출로 옮겨감 |
 | +6 | gs-kr-07에 `server-crash` | ERROR 하나(프로세스 종료, 0xC0000005), WARN 하나(플레이어 끊김), 그 뒤 로그도 게이지도 없음 |
 | +10 | gs-kr-07 재시작 | 시작 로그, 사용자 30%로 복귀 |
 | +12 | billing 회복 | |
-| +14 | `purchase` 4.2.1 | 핫픽스: 오류가 평소 수준으로 |
+| +14 | `purchase` 핫픽스(4.3.1) | 핫픽스: 오류가 평소 수준으로 |
+
+버전은 시작 시점에 각 서비스가 쓰는 버전(마지막 배포 행, 없으면 기본 버전)에서 올라가므로 실행할 때마다 새 배포 마커가
+생깁니다. 예시는 첫 실행을 한 서비스에서 두 번째로 실행한 경우입니다.
 
 스위치 하나씩: `python3 bin/fault.py on|off <fault> [--target <pod 또는 서버>]`, `python3 bin/deploy.py <서비스> <버전>
 [--regression]`. apm-workflows의 결함이 모두 있고, `server-crash`가 더해졌습니다.
