@@ -49,12 +49,13 @@ FROM (SELECT StartTimeUnix FROM otel_metrics_gauge
       WHERE ServiceName = 'game-server' AND MetricName = 'game.server.ccu' AND ResourceAttributes['host.name'] = 'gs-kr-07'
         AND StartTimeUnix >= s0 + 300 AND StartTimeUnix < s0 + 720 ORDER BY StartTimeUnix);
 
--- 4. the rolling update: every server's restart line and the version it reports afterwards
+-- 4. the rolling update: every server's restart line and the version it reports afterwards (the scenario's game-server deploy)
 WITH {start:DateTime} AS s0
 SELECT countIf(LogAttributes['game.event'] = 'update_start') AS servers_restarted,
        min(if(LogAttributes['game.event'] = 'update_start', Timestamp, NULL)) AS first_restart,
        max(if(LogAttributes['game.event'] = 'update_start', Timestamp, NULL)) AS last_restart,
-       uniqExactIf(ResourceAttributes['host.name'], ResourceAttributes['service.version'] = '1.9.0' AND Timestamp >= s0 + 300) AS servers_on_1_9_0
+       (SELECT argMax(version, ts) FROM deploy_events WHERE service = 'game-server' AND ts >= {start:DateTime} AND ts < {start:DateTime} + 900) AS new_version,
+       uniqExactIf(ResourceAttributes['host.name'], ResourceAttributes['service.version'] = new_version AND Timestamp >= s0 + 300) AS servers_on_new_version
 FROM otel_logs
 WHERE ServiceName = 'game-server' AND Timestamp >= s0 AND Timestamp < s0 + 900;
 
