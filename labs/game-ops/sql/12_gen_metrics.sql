@@ -1,7 +1,8 @@
 -- Metrics derived from the spans of the same window, one view per target table:
 --   gen_metrics_histogram -> otel_metrics_histogram   http.server.request.duration, db.client.connections.wait_time
 --   gen_metrics_sum       -> otel_metrics_sum         db.client.connections.{usage,max,pending_requests,timeouts}, jvm.memory.used
---   gen_metrics_gauge     -> otel_metrics_gauge       jvm.cpu.recent_utilization
+--   gen_metrics_gauge     -> otel_metrics_gauge       jvm.cpu.recent_utilization, kafka.consumer.records_lag{,_max}
+--   ... and both of the last two end with the infrastructure metrics of sql/15_gen_infra.sql (k8s.*, system.*)
 --
 --   SELECT * FROM gen_metrics_histogram(start_minute = <DateTime>, n_minutes = <UInt32>)   (same for the others)
 --
@@ -132,7 +133,12 @@ FROM
     FROM spans
     GROUP BY ServiceName, pod, minute
 )
-ARRAY JOIN rows AS r;
+ARRAY JOIN rows AS r
+
+UNION ALL
+
+-- the cluster and the game server hosts (sql/15_gen_infra.sql)
+SELECT * FROM gen_infra_sum(start_minute = {start_minute:DateTime}, n_minutes = {n_minutes:UInt32});
 
 -- ============================================================================================
 CREATE OR REPLACE VIEW gen_metrics_gauge AS
@@ -224,4 +230,9 @@ SELECT
     CAST([] AS Array(DateTime64(9))) AS `Exemplars.TimeUnix`, CAST([] AS Array(Float64)) AS `Exemplars.Value`,
     CAST([] AS Array(String)) AS `Exemplars.SpanId`, CAST([] AS Array(String)) AS `Exemplars.TraceId`
 FROM lag_rows
-GROUP BY ServiceName, pod, minute;
+GROUP BY ServiceName, pod, minute
+
+UNION ALL
+
+-- the cluster and the game server hosts (sql/15_gen_infra.sql)
+SELECT * FROM gen_infra_gauge(start_minute = {start_minute:DateTime}, n_minutes = {n_minutes:UInt32});
