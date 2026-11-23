@@ -13,8 +13,8 @@ The engine is [`labs/apm-workflows`](../apm-workflows/) with the shop renamed in
 the game servers. How spans, logs and metrics are modelled, the switches, the backfill and the live views are described
 there and work the same way here.
 
-> **Status (2026-11-20).** Installed on a Managed ClickStack service, backfilled and live; the patch-day scenario was played
-> once and checked by SQL (below). The S1 replay check of apm-workflows (`bin/s1_check.py`) was copied with the renames
+> **Status (2026-11-23).** Installed on a Managed ClickStack service, backfilled and live. The patch-day scenario was played
+> twice and checked by SQL (below), the second time with the game-first dashboard, store revenue and infrastructure metrics. The S1 replay check of apm-workflows (`bin/s1_check.py`) was copied with the renames
 > and **not re-run** here.
 
 ### What is in it
@@ -25,10 +25,12 @@ ClickHouse Cloud service with Managed ClickStack
 │   ├── game backend   game-gateway → catalog · cart · player · purchase → pricing · inventory · billing (→ pg.example.com)
 │   │                  · order → Kafka → notification · reward            traces + logs + metrics (from apm-workflows)
 │   ├── game servers   gs-kr-01 .. gs-kr-12 on ch-1 .. ch-4               event logs + 2 gauges (sql/14_gen_game.sql)
+│   ├── infrastructure the game servers' hosts, the Kubernetes cluster      hostmetrics + kubeletstats / k8s_cluster metrics (sql/15_gen_infra.sql)
 │   ├── switches       fault_events · deploy_events · lab_settings        rows you INSERT (bin/fault.py, bin/deploy.py, bin/scenario.py)
 │   ├── live           rmv_traces → rmv_logs · rmv_metrics_* · rmv_game_logs · rmv_game_gauge   every minute
 │   └── telemetry      otel_traces · otel_logs · otel_metrics_*           OTel exporter schema, TTL 30 days
-└── ClickStack         sources Game Traces ⇄ Game Logs ⇄ Game Metrics, dashboard "Game ops" (27 tiles)
+└── ClickStack         sources Game Traces ⇄ Game Logs ⇄ Game Metrics, dashboards "Game ops" (28 tiles) and
+                       "Game ops · backend" (21 tiles), seven saved searches "Demo N · ..." (clickstack/searches.json)
 ```
 
 | Service | What it does |
@@ -66,6 +68,39 @@ Single switches: `python3 bin/fault.py on|off <fault> [--target <pod or server>]
 [--regression]`. The faults of apm-workflows are all here (`slow-query`, `n-plus-one`, `pool-exhaustion`,
 `downstream-latency`, `kafka-consumer-lag`, `exception-storm`, …) plus `server-crash`.
 
+### Dashboards, saved searches, store revenue, infrastructure
+
+- **"Game ops"** is the game-first screen, in five sections with a header tile each:
+  - *Live game*: players online, servers reporting, purchases, store revenue (KRW), purchase failures, game server errors.
+  - *Patch day*: purchase failures and purchase / payment-gateway p95 with release and fault markers, game servers by
+    version (the rolling update), and a server status table (version, players, host CPU, seconds since the last log line,
+    `NO LOGS` for a server whose process is down).
+  - *Players*: logins by platform, login latency, matches by mode.
+  - *Infrastructure*: game host CPU and network, pod CPU by deployment, nodes.
+  - *What changed*: the switch and deploy table, warnings and errors by message, purchase steps, error and warning logs.
+- **Markers.** A marker is a series of its own (`deploy purchase 4.3.0`, `downstream-latency on`, …). It carries the
+  chart's maximum in the interval of the event and 0 everywhere else, so it shows as a spike. SQL tiles have no annotation
+  layer.
+- **"Game ops · backend"** holds the 21 tiles of apm-workflows: S1, Kafka, Hikari, the MySQL slow log, alerts' sources.
+- **Saved searches.** One per demo step, named `Demo N · …`, from `clickstack/searches.json`. `setup.py --apply` creates
+  them with the dashboards and matches them by name.
+- **Store revenue.** The root span of `POST /purchase` carries `game.item` (the first package in the cart), `game.cart.items`
+  (2–6) and `game.order.amount_krw`. Packages run from gem-100 at 1,200 KRW to legend-skin at 29,000 KRW. A failed purchase
+  keeps its amount, which is what the "failed (lost)" series adds up. Only spans written after the change have these
+  attributes; the backfill was not rewritten.
+- **Infrastructure** (`sql/15_gen_infra.sql`):
+  - *Kubernetes.* Metrics named as the collector's kubeletstats and k8s_cluster receivers name them: pod CPU and memory
+    (with limit utilisation), phase, restarts, filesystem and uptime; node CPU, memory, readiness, filesystem and uptime;
+    namespace phase, two samples a minute (the receivers' 30-second interval). These
+    are what ClickStack's Kubernetes page and the Infrastructure tab of a log or span read. The pods are those of the
+    spans (same names, renamed by a deploy). A pod's CPU grows with the spans it served, so the purchase regression shows
+    on pricing.
+  - *Game server hosts.* Hostmetrics for each game server, also every 30 seconds: CPU by state, load, memory, filesystem and network. A crashed
+    game process leaves its host up but idle: CPU near 2%, network down to a trickle. The process's own logs and gauges
+    stop.
+  - *How it is written.* `gen_metrics_gauge` and `gen_metrics_sum` end with these rows, so the live views and the backfill
+    write them along with the rest. A lab installed before them gets their history from `bin/backfill_infra.sh`.
+
 ### Running it
 
 You need a ClickHouse Cloud service with Managed ClickStack, a credentials file with `CH_HOST`, `CH_USER`, `CH_PASSWORD`,
@@ -79,7 +114,8 @@ cp .env.example .env            # set CH_ENV_FILE (and CHC_ENV_FILE) to the cred
 bin/install.sh                  # database, tables, topology, switches, generator views
 bin/backfill.sh                 # 8 days of history; prints the plan first
 bin/install.sh rmvs             # live generation, every minute
-python3 clickstack/setup.py --test && python3 clickstack/setup.py --apply   # sources and the "Game ops" dashboard
+python3 clickstack/setup.py --test && python3 clickstack/setup.py --apply   # sources, both dashboards, saved searches
+bin/backfill_infra.sh           # only on a lab installed before sql/15_gen_infra.sql: infra history after bin/install.sh
 python3 bin/scenario.py         # the patch-day incident, starting in one minute
 bin/stop.sh                     # stop live generation on every replica (data stays); --resume starts it again
 bin/uninstall.sh                # DROP DATABASE game_ops (asks first)
@@ -113,6 +149,31 @@ ClickStack build was not read: the UI was not opened in this run.
 - After the hotfix the run is **not a clean negative control**: an automatic `pricing-timeouts` incident (rmv_incidents,
   13:05–13:11 UTC) overlapped it. `bin/scenario.py` now refuses an overlapping incident, and `incidents` is 0 on this service.
 - Unit tests: 34 pass (`python3 -m unittest discover -s tests`).
+- **2026-11-23, same service, ClickHouse 26.8.1.780**: the dashboards, store revenue, infrastructure and saved searches.
+  - A second scenario, `scenario-20261123T172107Z`, ran as the rehearsal. Its versions moved forward from the first run:
+    purchase 4.2.1 → 4.3.0 → 4.3.1, game-server 1.9.0 → 1.10.0.
+  - `verify_scenario.sql` on that run:
+    - purchase errors 1.4% before, 10.5% in the first three minutes of the regression, 6.5% with the slow gateway, 0% after
+      the hotfix
+    - pricing calls per purchase 1.0 → 3.4–4.3 → 1.0
+    - billing's external call p95 17 → 1,086 → 18 ms
+    - gs-kr-07: the crash line, the dropped-players line and the restart lines
+    - all twelve servers on 1.10.0
+  - Purchase p95 after the hotfix was 1,124 ms over 23 purchases. Background pricing retries (about 1 s, a few percent of
+    purchases) set the p95 of so few purchases.
+  - The generators were replaced on the live service after the run (`sql/10`, `12`, `15`). The revenue attributes appear
+    from 17:38 UTC. The new trace view left the spans unchanged: an anti-join on (TraceId, SpanId, Duration) against 30
+    generated minutes found 0 differences.
+  - `bin/backfill_infra.sh` wrote 16,134 minutes (2026-11-12 12:44 to 2026-11-23 17:44 UTC) in 125 s: 9,362,940 gauge rows
+    and 2,034,018 sum rows.
+  - In the ClickStack UI:
+    - The Kubernetes page lists the 23 pods: Running, CPU and memory against limits, age; the hotfix pods 13 minutes old,
+      the rest 23 days.
+    - The Infrastructure tab of a purchase span shows pod and node CPU, memory and disk.
+    - On "Game ops", gs-kr-07's host CPU and network drop while its process is down, and the server status table lists it
+      as `NO LOGS` from the crash to the restart (checked by SQL at two points inside that window).
+    - The saved searches open with their queries; the gs-kr-07 search shows the gap.
+  - Unit tests: 35 pass (`python3 -m unittest discover -s tests`).
 - **Not run:** `setup.py --alerts`, `bin/s1_check.py`, `bin/uninstall.sh`. The change that keeps a server's events from before
   the crash in its crash minute was made after the run and checked in `clickhouse local` 26.9.6.6 only.
 
@@ -128,11 +189,11 @@ ClickStack build was not read: the UI was not opened in this run.
 
 ```
 labs/game-ops/
-├── bin/          install.sh · backfill.sh · scenario.py · fault.py · deploy.py · stop.sh · uninstall.sh · s1_check.py
+├── bin/          install.sh · backfill.sh · backfill_infra.sh · scenario.py · fault.py · deploy.py · stop.sh · uninstall.sh · s1_check.py
 ├── lib/ch.py     HTTPS client; refuses writes outside game_ops
 ├── sql/          00–05 tables, switches, topology · 10–13 backend generators and watermark · 14 game servers ·
-│                 30 live views · backfill_*.sql · verify_*.sql · s1_*.sql
-├── clickstack/   setup.py · tiles/*.sql (dashboard) · alerts/*.sql
+│                 15 infrastructure · 30 live views · backfill_*.sql · verify_*.sql · s1_*.sql
+├── clickstack/   setup.py · tiles/*.sql ("Game ops") · backend/*.sql ("Game ops · backend") · searches.json · alerts/*.sql
 └── tests/        unit tests (python3 -m unittest discover -s tests)
 ```
 
@@ -148,8 +209,8 @@ ClickHouse Cloud 서비스 하나 안에서 도는 게임 백엔드와 게임 �
 엔진은 [`labs/apm-workflows`](../apm-workflows/)입니다. 쇼핑몰을 게임 백엔드로 이름만 바꾸고, 게임 서버 생성기를 새로
 더했습니다. span·로그·메트릭을 본뜨는 방식, 스위치, 백필, 실시간 뷰는 그쪽 설명과 같습니다.
 
-> **상태 (2026-11-20).** Managed ClickStack 서비스에 설치하고 백필한 뒤 실시간으로 돌고 있습니다. 패치 날 시나리오를 한 번
-> 돌리고 SQL로 확인했습니다(아래). apm-workflows의 S1 재생 검사(`bin/s1_check.py`)는 이름만 바꿔 가져왔고 여기서
+> **상태 (2026-11-23).** Managed ClickStack 서비스에 설치하고 백필한 뒤 실시간으로 돌고 있습니다. 패치 날 시나리오를 두 번
+> 돌리고 SQL로 확인했습니다(아래). 두 번째는 게임 중심 대시보드, 상점 매출, 인프라 메트릭과 함께였습니다. apm-workflows의 S1 재생 검사(`bin/s1_check.py`)는 이름만 바꿔 가져왔고 여기서
 > **다시 돌리지 않았습니다**.
 
 ### 들어 있는 것
@@ -188,6 +249,36 @@ ClickHouse Cloud 서비스 하나 안에서 도는 게임 백엔드와 게임 �
 스위치 하나씩: `python3 bin/fault.py on|off <fault> [--target <pod 또는 서버>]`, `python3 bin/deploy.py <서비스> <버전>
 [--regression]`. apm-workflows의 결함이 모두 있고, `server-crash`가 더해졌습니다.
 
+### 대시보드, 저장된 검색, 상점 매출, 인프라
+
+- **"Game ops"**는 게임 중심 화면입니다. 다섯 구역으로 나뉘고, 구역마다 머리 타일이 있습니다.
+  - *Live game*: 동시 접속, 보고 중인 서버 수, 구매 건수, 상점 매출(KRW), 구매 실패율, 게임 서버 에러.
+  - *Patch day*: 구매 실패율, 구매와 결제 대행 호출의 p95(배포·장애 마커 포함), 버전별 게임 서버 수(롤링 업데이트),
+    서버 상태 표. 상태 표에는 버전, 접속자, 호스트 CPU, 마지막 로그 뒤 지난 초가 나오고, 프로세스가 죽은 서버는
+    `NO LOGS`로 표시됩니다.
+  - *Players*: 플랫폼별 로그인, 로그인 지연, 모드별 매치.
+  - *Infrastructure*: 게임 호스트 CPU와 네트워크, 디플로이먼트별 파드 CPU, 노드.
+  - *What changed*: 스위치·배포 표, 메시지별 경고·에러, 구매 단계별 시간, 서비스별 에러·경고 로그.
+- **마커.** 마커는 따로 하나의 시리즈입니다(`deploy purchase 4.3.0`, `downstream-latency on` 등). 사건이 있던 구간에서는
+  차트 최댓값, 나머지 구간에서는 0이어서 뾰족하게 솟아 보입니다. SQL 타일에는 주석 레이어가 없습니다.
+- **"Game ops · backend"**에는 apm-workflows의 타일 21개(S1, Kafka, Hikari, MySQL slow log, 알림의 원본)가 있습니다.
+- **저장된 검색.** 데모 단계마다 하나씩, `Demo N · …`이라는 이름으로 `clickstack/searches.json`에 있습니다.
+  `setup.py --apply`가 대시보드와 함께 만들고, 이름으로 맞춥니다.
+- **상점 매출.** `POST /purchase`의 루트 span에 `game.item`(장바구니의 첫 패키지), `game.cart.items`(2–6개),
+  `game.order.amount_krw`가 붙습니다. 패키지는 gem-100 1,200원부터 legend-skin 29,000원까지입니다. 실패한 구매도 금액을
+  가지고 있어서, "failed (lost)" 시리즈가 그 합입니다. 이 속성은 변경 뒤에 쓴 span에만 있고, 백필은 다시 쓰지 않았습니다.
+- **인프라** (`sql/15_gen_infra.sql`):
+  - *Kubernetes.* 컬렉터의 kubeletstats와 k8s_cluster 리시버가 쓰는 이름 그대로입니다. 파드는 CPU·메모리(limit 대비
+    사용률 포함), phase, 재시작, 파일시스템, uptime이 있고, 노드는 CPU·메모리·Ready·파일시스템·uptime, 네임스페이스는
+    phase가 있습니다. 리시버의 30초 간격처럼 1분에 두 번 씁니다.
+    ClickStack의 Kubernetes 화면과 로그·span의 Infrastructure 탭이 이 값을 읽습니다. 파드는 span의 파드와 같고(이름도
+    같고, 배포하면 이름이 바뀝니다), 처리한 span이 많을수록 CPU가 올라서 purchase 회귀가 pricing CPU에 보입니다.
+  - *게임 서버 호스트.* 게임 서버마다 hostmetrics가 있습니다(상태별 CPU, load, 메모리, 파일시스템, 네트워크). 게임
+    프로세스가 죽어도 호스트는 살아 있습니다. CPU는 2% 안팎으로 떨어지고 네트워크는 거의 끊기며, 그 프로세스의 로그와
+    게이지만 멈춥니다.
+  - *쓰는 방식.* `gen_metrics_gauge`와 `gen_metrics_sum` 끝에 이 행들이 붙어서, 실시간 뷰와 백필이 나머지 메트릭과 함께
+    씁니다. 이 변경 전에 설치한 실습은 `bin/backfill_infra.sh`로 과거분을 채웁니다.
+
 ### 실행
 
 Managed ClickStack이 켜진 ClickHouse Cloud 서비스와 `CH_HOST`, `CH_USER`, `CH_PASSWORD`가 든 접속 정보 파일이 필요합니다.
@@ -222,6 +313,29 @@ Slack webhook이 필요합니다. 여기서는 돌리지 않았습니다.
 - 핫픽스 뒤 구간은 **깨끗한 음성 대조가 아닙니다**: 자동 `pricing-timeouts` 사고(rmv_incidents, 13:05–13:11 UTC)가 겹쳤습니다.
   이제 `bin/scenario.py`는 겹치는 자동 사고가 있으면 거부하고, 이 서비스의 `incidents`는 0입니다.
 - 단위 테스트 34개 통과(`python3 -m unittest discover -s tests`).
+- **2026-11-23, 같은 서비스, ClickHouse 26.8.1.780**: 대시보드, 상점 매출, 인프라, 저장된 검색.
+  - 리허설로 두 번째 시나리오 `scenario-20261123T172107Z`를 돌렸습니다. 버전은 첫 실행에서 이어서 올라갔습니다:
+    purchase 4.2.1 → 4.3.0 → 4.3.1, game-server 1.9.0 → 1.10.0.
+  - 이 실행의 `verify_scenario.sql` 결과:
+    - 구매 에러: 이전 1.4%, 회귀 첫 3분 10.5%, 결제 대행이 느린 동안 6.5%, 핫픽스 뒤 0%
+    - 구매당 pricing 호출: 1.0 → 3.4–4.3 → 1.0
+    - billing 외부 호출 p95: 17 → 1,086 → 18 ms
+    - gs-kr-07: 크래시 줄, 접속 끊김 줄, 재시작 줄
+    - 서버 12대 모두 1.10.0
+  - 핫픽스 뒤 구매 p95는 구매 23건에서 1,124 ms였습니다. 평소에도 구매 몇 %에서 일어나는 pricing 재시도(약 1초)가 이렇게
+    적은 건수의 p95를 정합니다.
+  - 실행 뒤 라이브 서비스의 생성기를 바꿨습니다(`sql/10`, `12`, `15`). 매출 속성은 17:38 UTC부터 있습니다. 새 trace 뷰는
+    span을 바꾸지 않았습니다. 30분을 만들어 (TraceId, SpanId, Duration)으로 anti-join했더니 차이는 0건이었습니다.
+  - `bin/backfill_infra.sh`가 16,134분(2026-11-12 12:44 ~ 2026-11-23 17:44 UTC)을 125초에 썼습니다. 게이지 9,362,940행,
+    합계 2,034,018행입니다.
+  - ClickStack 화면:
+    - Kubernetes 화면에 파드 23개가 나옵니다. 모두 Running이고, limit 대비 CPU·메모리와 나이가 보입니다. 핫픽스 파드는
+      13분, 나머지는 23일입니다.
+    - purchase span의 Infrastructure 탭에 파드와 노드의 CPU·메모리·디스크가 나옵니다.
+    - "Game ops"에서 gs-kr-07의 호스트 CPU와 네트워크는 프로세스가 죽어 있는 동안 떨어집니다. 서버 상태 표는 크래시부터
+      재시작까지 이 서버를 `NO LOGS`로 보여 줍니다(그 구간 안 두 시점에서 SQL로 확인).
+    - 저장된 검색은 쿼리와 함께 열리고, gs-kr-07 검색에서 공백이 보입니다.
+  - 단위 테스트 35개 통과(`python3 -m unittest discover -s tests`).
 - **돌리지 않은 것:** `setup.py --alerts`, `bin/s1_check.py`, `bin/uninstall.sh`. 크래시가 난 분에 크래시 전 이벤트를 남기는
   수정은 이 실행 뒤에 했고 `clickhouse local` 26.9.6.6에서만 확인했습니다.
 

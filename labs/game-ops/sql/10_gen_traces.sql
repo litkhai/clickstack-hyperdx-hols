@@ -48,6 +48,12 @@ WITH
     (_m, _i, _s, _med, _sig) -> _med * exp(_sig * z(_m, _i, _s)) AS lognorm,                         -- lognormal, median _med
     (_m, _i, _s, _lo, _hi) -> _lo + (_hi - _lo) * u(_m, _i, _s) AS unif,
     (_x) -> lower(leftPad(hex(_x), 16, '0')) AS hex16,
+    -- the in-game store: packages, their price in KRW, and how often each is bought (cumulative weights)
+    ['gem-100', 'gem-550', 'gem-1200', 'battle-pass', 'legend-skin'] AS pkg_names,
+    [1200, 5900, 11000, 14900, 29000] AS pkg_prices,
+    [0.40, 0.65, 0.80, 0.95, 1.00] AS pkg_cum,
+    (_m, _i, _k) -> arrayFirstIndex(c -> c > u(_m, _i, concat('pkg', toString(_k))), pkg_cum) AS pkg_ix,
+    (_m, _i) -> 2 + cityHash64(_m, _i, 'items') % 5 AS cart_n,                                       -- = n_items of L1a
     (_ms) -> toUInt64(round(_ms * 1000000)) AS ns,                                                   -- milliseconds -> nanoseconds
     -- ---- switches and topology come from the one-row view gen_cfg (columns fe, deps, base_ver, svc_pods, svc_ns, ep_names, ep_cum, base_rpm, noise_scale, err_specs, fk_specs, fk_dlo, fk_dhi)
     -- a fault is on for (fault, time, pod): the latest matching event decides ('' and '*' match every pod)
@@ -100,7 +106,13 @@ SELECT
                                       shape IN ('cli', 'ext') AND sc != '', if(toUInt16OrZero(st_code) >= 400, st_code, if(st_code = '', ev_type, '')),
                                       ''),
                 'client.address', if(shape = 'srv', cip, ''), 'network.peer.address', if(shape = 'srv', cip, ''),
-                'network.peer.port', if(shape = 'srv', toString(32768 + cityHash64(mu, ridx, sidx, 'pp') % 28000), '')))) AS SpanAttributes,
+                'network.peer.port', if(shape = 'srv', toString(32768 + cityHash64(mu, ridx, sidx, 'pp') % 28000), ''),
+                -- the in-game store order on the root span of POST /purchase: the cart's packages (2-6, the same draw as
+                -- n_items in L1a), the first one by name, and the total in KRW; a failed purchase carries the amount it lost
+                'game.item', if(ep_name = 'POST /purchase' AND parent_idx < 0, pkg_names[pkg_ix(mu, ridx, 1)], ''),
+                'game.cart.items', if(ep_name = 'POST /purchase' AND parent_idx < 0, toString(cart_n(mu, ridx)), ''),
+                'game.order.amount_krw', if(ep_name = 'POST /purchase' AND parent_idx < 0,
+                                            toString(arraySum(arrayMap(k -> pkg_prices[pkg_ix(mu, ridx, k)], range(1, cart_n(mu, ridx) + 1)))), '')))) AS SpanAttributes,
     ns(dur_ms) AS Duration,
     if(sc != '', st_status, 'Unset') AS StatusCode,
     '' AS StatusMessage,

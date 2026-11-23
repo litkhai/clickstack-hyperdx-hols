@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""ClickStack side of labs/game-ops on Managed ClickStack: three sources and one dashboard.
+"""ClickStack side of labs/game-ops on Managed ClickStack: three sources, two dashboards and the demo's saved searches.
 
   setup.py --test     run every tile's SQL against ClickHouse (last hour) and print row counts
-  setup.py --apply    create or update the sources and the dashboard through the Cloud API
+  setup.py --apply    create or update the sources, the dashboards "Game ops" (clickstack/tiles/*.sql) and
+                      "Game ops · backend" (clickstack/backend/*.sql), and the saved searches (clickstack/searches.json)
   setup.py --alerts   create or update the "Game ops alerts" dashboard (clickstack/alerts/*.sql), a Slack webhook from
                       APM_SLACK_WEBHOOK_URL in the same env file, and one alert per tile (header line "-- alert:")
 
@@ -10,7 +11,7 @@ Credentials come from the file named by CH_ENV_FILE (process environment, or the
 the same lookup as lib/ch.py: CH_HOST, CH_USER, CH_PASSWORD for SQL; CHC_ORG_ID, CHC_KEY_ID,
 CHC_KEY_SECRET for the Cloud API (or a second file named by CHC_ENV_FILE with CHC_KEY / CHC_SECRET; the
 organisation is looked up when the key sees exactly one). Nothing is printed from it. Objects are matched by name
-(Game Traces / Game Logs / Game Metrics, dashboard "Game ops"), so a second --apply updates in place
+(Game Traces / Game Logs / Game Metrics, the two dashboards, the searches), so a second --apply updates in place
 and nothing else in the service's ClickStack is touched.
 """
 import base64, glob, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
@@ -22,7 +23,8 @@ import ch  # noqa: E402  (the lab's own client: env-file parsing)
 DB = "game_ops"
 API = "https://api.clickhouse.cloud/v1"
 NAMES = {"trace": "Game Traces", "log": "Game Logs", "metric": "Game Metrics"}
-DASHBOARD = "Game ops"
+DASHBOARDS = [("Game ops", "tiles"), ("Game ops · backend", "backend")]
+SEARCHES = os.path.join(HERE, "searches.json")
 
 
 def load_env():
@@ -115,7 +117,9 @@ def test(env):
     params = {"startDateMilliseconds": end - 3600 * 1000, "endDateMilliseconds": end, "intervalSeconds": 60,
               "intervalMilliseconds": 60000}
     bad = 0
-    for t in tiles() + tiles("alerts"):
+    for t in tiles() + tiles("backend") + tiles("alerts"):
+        if t["display"] == "markdown":
+            continue
         try:
             r = sql(env, t["sql"], params)
             print(f"ok   {t['file']:<34} rows={r['rows']:<5} cols={','.join(c['name'] for c in r['meta'])}")
@@ -167,17 +171,31 @@ def apply(env):
     print("sources:", ", ".join(f"{s['name']} ({s['kind']})" for s in (t, l, m)))
 
     source_for = {"otel_logs": l["id"], "otel_metrics": m["id"]}
-    dash_tiles = []
-    for tl in tiles():
-        src = next((v for k, v in source_for.items() if k in tl["sql"]), t["id"])
-        dash_tiles.append({"name": tl["name"], "x": tl["x"], "y": tl["y"], "w": tl["w"], "h": tl["h"],
-                           "config": {"configType": "sql", "displayType": tl["display"], "connectionId": connection,
-                                      "sourceId": src, "sqlTemplate": tl["sql"]}})
-    body = {"name": DASHBOARD, "tags": ["game-ops"], "tiles": dash_tiles}
     dashboards = api(env, svc, "GET", "/dashboards")
-    cur = next((d for d in dashboards if d["name"] == DASHBOARD), None)
-    d = api(env, svc, "PUT", f"/dashboards/{cur['id']}", body) if cur else api(env, svc, "POST", "/dashboards", body)
-    print(f"dashboard: {d['name']} — {len(d.get('tiles', []))} tiles ({'updated' if cur else 'created'})")
+    for name, folder in DASHBOARDS:
+        dash_tiles = []
+        for tl in tiles(folder):
+            if tl["display"] == "markdown":  # a section header: builder config, no SQL
+                config = {"displayType": "markdown", "markdown": tl["sql"]}
+            else:
+                src = next((v for k, v in source_for.items() if k in tl["sql"]), t["id"])
+                config = {"configType": "sql", "displayType": tl["display"], "connectionId": connection,
+                          "sourceId": src, "sqlTemplate": tl["sql"]}
+            dash_tiles.append({"name": tl["name"], "x": tl["x"], "y": tl["y"], "w": tl["w"], "h": tl["h"], "config": config})
+        body = {"name": name, "tags": ["game-ops"], "tiles": dash_tiles}
+        cur = next((d for d in dashboards if d["name"] == name), None)
+        d = api(env, svc, "PUT", f"/dashboards/{cur['id']}", body) if cur else api(env, svc, "POST", "/dashboards", body)
+        print(f"dashboard: {d['name']} — {len(d.get('tiles', []))} tiles ({'updated' if cur else 'created'})")
+
+    # saved searches, one per demo step; matched by name
+    source_id = {"trace": t["id"], "log": l["id"]}
+    existing = {x["name"]: x for x in api(env, svc, "GET", "/saved-searches")}
+    for sv in json.load(open(SEARCHES)):
+        body = {"name": sv["name"], "select": sv.get("select", ""), "where": sv["where"], "whereLanguage": "sql",
+                "orderBy": "", "sourceId": source_id[sv["source"]], "tags": ["game-ops"]}
+        cur = existing.get(sv["name"])
+        api(env, svc, "PUT", f"/saved-searches/{cur['id']}", body) if cur else api(env, svc, "POST", "/saved-searches", body)
+        print(f"saved search: {sv['name']} ({'updated' if cur else 'created'})")
 
 
 def apply_alerts(env):

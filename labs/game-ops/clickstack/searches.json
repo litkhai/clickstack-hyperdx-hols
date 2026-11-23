@@ -1,0 +1,19 @@
+[
+  {"name": "Demo 1 · Game server logs, live", "source": "log",
+   "where": "ServiceName = 'game-server'", "select": ""},
+  {"name": "Demo 2 · Rolling update on the game servers", "source": "log",
+   "where": "ServiceName = 'game-server' AND LogAttributes['game.event'] IN ('update_stop', 'update_start')", "select": ""},
+  {"name": "Demo 3 · Failed purchases", "source": "trace",
+   "where": "ServiceName = 'game-gateway' AND SpanName = 'POST /purchase' AND StatusCode = 'Error'",
+   "select": "Timestamp, ServiceName as service, SpanName, round(Duration / 1e6) as duration, SpanAttributes['game.item'] as item, SpanAttributes['game.order.amount_krw'] as amount_krw, SpanAttributes['error.type'] as error"},
+  {"name": "Demo 3 · Warnings and errors (open Patterns)", "source": "log",
+   "where": "SeverityText IN ('WARN', 'ERROR')", "select": ""},
+  {"name": "Demo 4 · Slow payment-gateway calls (over 500 ms)", "source": "trace",
+   "where": "ServiceName = 'billing' AND SpanAttributes['server.address'] = 'pg.example.com' AND Duration > 500000000",
+   "select": "Timestamp, ServiceName as service, SpanName, round(Duration / 1e6) as duration, ResourceAttributes['k8s.pod.name'] as pod"},
+  {"name": "Demo 5 · gs-kr-07: crash and restart", "source": "log",
+   "where": "ResourceAttributes['host.name'] = 'gs-kr-07'", "select": ""},
+  {"name": "Demo 7 · purchase requests by version (hotfix check)", "source": "trace",
+   "where": "ServiceName = 'purchase' AND SpanKind = 'Server'",
+   "select": "Timestamp, ResourceAttributes['service.version'] as version, StatusCode as level, round(Duration / 1e6) as duration, ResourceAttributes['k8s.pod.name'] as pod"}
+]

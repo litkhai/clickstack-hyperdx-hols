@@ -1,5 +1,7 @@
-"""The dashboard tiles: every file parses, the grid is 24 columns wide and no two tiles overlap,
-and a tile derived from the lab's SQL resolves to exactly one statement with every lab table qualified."""
+"""The dashboard tiles of both dashboards (clickstack/tiles, clickstack/backend): every file parses, the grid is 24 columns
+wide and no two tiles overlap, and a SQL tile resolves to exactly one statement with every lab table qualified.
+Also the saved searches: unique names, a known source, a where clause."""
+import json
 import importlib.util
 import os
 import re
@@ -11,12 +13,16 @@ spec = importlib.util.spec_from_file_location("clickstack_setup", SETUP)
 setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
 
-DISPLAYS = {"line", "number", "table"}  # the display types this dashboard was verified with
+# the display types verified on Managed ClickStack (markdown = a section header, no SQL)
+DISPLAYS = {"line", "number", "table", "stacked_bar", "pie", "markdown"}
+FOLDERS = ("tiles", "backend")
 
 
 class Tiles(unittest.TestCase):
     def setUp(self):
-        self.tiles = setup.tiles()
+        self.by_folder = {f: setup.tiles(f) for f in FOLDERS}
+        self.tiles = [t for f in FOLDERS for t in self.by_folder[f]]
+        self.sql_tiles = [t for t in self.tiles if t["display"] != "markdown"]
 
     def test_every_tile_parses(self):
         self.assertGreater(len(self.tiles), 0)
@@ -26,8 +32,12 @@ class Tiles(unittest.TestCase):
             self.assertTrue(t["sql"].strip(), t["file"])
 
     def test_grid(self):
+        for folder in FOLDERS:
+            self._grid(self.by_folder[folder])
+
+    def _grid(self, tiles):
         cells = {}
-        for t in self.tiles:
+        for t in tiles:
             self.assertLessEqual(t["x"] + t["w"], 24, t["file"])
             for x in range(t["x"], t["x"] + t["w"]):
                 for y in range(t["y"], t["y"] + t["h"]):
@@ -35,7 +45,7 @@ class Tiles(unittest.TestCase):
                     cells[(x, y)] = t["file"]
 
     def test_time_range_and_tables(self):
-        for t in self.tiles:
+        for t in self.sql_tiles:
             sql = t["sql"]
             self.assertIn("{startDateMilliseconds:Int64}", sql, t["file"])
             self.assertEqual(len(setup.ch.split_statements(sql)), 1, t["file"] + ": one statement per tile")
@@ -48,6 +58,16 @@ class Tiles(unittest.TestCase):
         for t in self.tiles:
             if t["display"] == "line":
                 self.assertIn("{intervalSeconds:Int64}", t["sql"], t["file"])
+
+
+class Searches(unittest.TestCase):
+    def test_searches(self):
+        searches = json.load(open(setup.SEARCHES))
+        self.assertGreater(len(searches), 0)
+        self.assertEqual(len({s["name"] for s in searches}), len(searches), "saved search names must be unique")
+        for s in searches:
+            self.assertIn(s["source"], ("trace", "log"), s["name"])
+            self.assertTrue(s["where"].strip(), s["name"])
 
 
 if __name__ == "__main__":
