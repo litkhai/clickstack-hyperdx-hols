@@ -21,6 +21,13 @@ ClickStack queries with, row policies, and masking policies.
 >
 > **Not run:** the `objects-id` role and the system `ReadOnly` role on the test user; masking in
 > round 2 (round 1 only); whether the JWT name's hash changes on a new login.
+>
+> **2026-11-24 follow-up:** a Cloud console custom role with Data → Custom GRANT (applies in the SQL
+> console and in ClickStack through the person's JWT user), row policy on the `cloud:` role vs the JWT
+> user, column GRANTs in ClickStack, the JWT name changing when the console role is edited (row
+> policies follow it), and per-dashboard edit rights. ClickStack `2.47.0`, steps in
+> [`results/2026-11-24-console-role.md`](results/2026-11-24-console-role.md), SQL in
+> [`sql/console-role.sql`](sql/console-role.sql), screens `images/r4-*`.
 
 ### Result
 
@@ -159,6 +166,12 @@ masking policy입니다.
 >
 > **돌리지 않은 것:** 시험 사용자에게 `objects-id` 역할과 시스템 `ReadOnly` 역할 배정, 2차의
 > masking(1차만), 새로 로그인할 때 JWT 이름의 해시가 바뀌는지.
+>
+> **2026-11-24 후속:** Cloud 콘솔 custom role의 Data → Custom GRANT(사람의 JWT 사용자를 통해 SQL 콘솔과
+> ClickStack에 같이 걸림), `cloud:` 역할과 JWT 사용자에 건 row policy 비교, ClickStack에서의 열 GRANT,
+> 콘솔 역할을 고치면 JWT 이름이 바뀌고 row policy가 따라가는 것, 대시보드별 편집 권한. ClickStack
+> `2.47.0`, 단계별 기록은 [`results/2026-11-24-console-role.md`](results/2026-11-24-console-role.md),
+> SQL은 [`sql/console-role.sql`](sql/console-role.sql), 화면은 `images/r4-*`.
 
 ### 결과
 
