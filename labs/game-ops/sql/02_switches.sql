@@ -19,7 +19,7 @@ ORDER BY (fault, ts)
 TTL toDateTime(ts) + toIntervalDay(30);
 
 -- The version of a request, per service, is the latest deploy <= its timestamp (default: topo_services.base_version).
--- regression = 1 (purchase only): purchase calls pricing once per cart item and ~3% errors. A new version also
+-- regression = 1 (purchase only): purchase calls pricing once per cart item and ~15% errors. A new version also
 -- gives the service new pod names.
 CREATE TABLE IF NOT EXISTS deploy_events
 (

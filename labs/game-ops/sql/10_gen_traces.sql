@@ -194,7 +194,7 @@ FROM
                                 -- failure kind (topo_failures), one per request, first match wins. The background ones scale with
                                 -- noise_scale and the daily curve (nf); the incident ones need their fault on.
                                 multiIf(ep_name = 'POST /purchase',
-                                            multiIf(regr = 1 AND u(mu, ridx, 'rerr') < 0.03, 3,
+                                            multiIf(regr = 1 AND u(mu, ridx, 'rerr') < 0.15, 3,
                                                     f_pool = 1 AND u(mu, ridx, 'pto') < 0.10, 1,
                                                     u(mu, ridx, 'decl') < 0.005, 2,
                                                     u(mu, ridx, 'gw') < 0.009 * nf, 5,
