@@ -2,4 +2,4 @@
 target: cloud
 tier: T1
 services: [clickhouse-cloud, clickstack]
-verified_on: "ClickHouse Cloud 26.8.1.780, Cloud API 2026-11-24 incl. table grants and cloud: role; ClickStack version not read; sync --apply, SAML login and a member through the row policy not run"
+verified_on: "ClickHouse Cloud 26.8.1.780 (roles, grants) and 26.6.1.2455 + ClickStack 2.47.0 (sync --apply on a real member), 2026-11-24; first SAML login not run"

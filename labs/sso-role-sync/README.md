@@ -21,9 +21,12 @@ work today. `bin/rolesync.py` uses only the Cloud API and the Python standard li
 > **Not run:** `sync --apply` on a real member (no non-Admin member in that organization); a
 > new user's first SAML login; whether Service Reader alone opens ClickStack; ClickStack's
 > *Default New User Role* applied to an SSO user. ClickStack version not read.
-> **Added the same day (11:38–11:48 UTC):** `ensure-role --grant` (table and column scope), the
-> `cloud:` role it creates on the service, and a row policy on that role ([results](results/2026-11-24-seoul.md#table-and-row-scope)).
-> Not run: a member reading through that row policy.
+> **Added the same day.** `ensure-role --grant` and the `cloud:` role it creates, on that service
+> (11:38–11:48 UTC, [results](results/2026-11-24-seoul.md#table-and-row-scope)). Then, in a trial
+> organization with one Member (ClickHouse 26.6.1.2455, ClickStack 2.47.0, 12:33–13:05 UTC,
+> [results](results/2026-11-24-trial.md)): `sync --apply` on that member, what the member sees
+> afterwards in the SQL console and ClickStack, and Service Reader alone. **Still not run:** a new
+> user's first SAML login, and ClickStack's *Default New User Role* for a user ClickStack has never seen.
 
 ### What the system roles grant (measured)
 
@@ -48,6 +51,10 @@ work today. `bin/rolesync.py` uses only the Cloud API and the Python standard li
 
 Pick **A** when the organization has only the observability service, or when every SSO user may
 read every service. Pick **B** when other services must stay out of reach.
+
+Option A measured in the trial organization: with Service Reader alone, the member read every
+database (20,000 rows in one the custom role had hidden), `CREATE TABLE` was refused with `497`, and
+ClickStack opened with data. That member was already a ClickStack user.
 
 In both, the ClickStack layer is the same: create a ClickStack role once
 (`ensure-cs-role`: read everything, manage dashboards) and set it as **Team Settings → Default New
@@ -76,20 +83,25 @@ system.processes`, `READ ON REMOTE`, `KILL QUERY ON *.*`). Measured on 2026-11-2
 | `cloud:clickstack-viewer` on the service | appeared about 2.5 minutes after the write, with exactly those grants, before any member held the role |
 | Role updated (a second table, as a column list) | on the service about 4 minutes 20 seconds later, as `SELECT(env, ts) ON …` |
 | `GRANT … TO cloud:clickstack-viewer` by hand | refused with `ACCESS_STORAGE_READONLY`: the role lives in the read-only `cloud` access storage, so it cannot drift from the Cloud role |
-| `CREATE ROW POLICY … TO cloud:clickstack-viewer` | accepted, and still attached after the role update |
+| `CREATE ROW POLICY … TO cloud:clickstack-viewer` | accepted and still attached after the update, but it filters nothing for users (below) |
 
-These grants also bind ClickStack. Measured the same day in a second organization (trial,
-ClickHouse 26.6.1.2455) with a Member holding a custom role that grants `SELECT` on one table:
+These grants also bind ClickStack, and they reach a user by copy, not by role membership. Measured
+in the trial organization with a real Member ([results](results/2026-11-24-trial.md)):
 
-- The table returned rows in both the SQL console and ClickStack.
-- Another table in the same database, and a table in another database, returned `ACCESS_DENIED` in
-  the SQL console and "Not enough privileges" in ClickStack.
-- `query_log` shows ClickStack's queries running as the same `JWT::…` user as the SQL console.
-- ClickStack's source list still showed the sources the user could not read.
+- After `sync --apply` gave the member a role granting two tables, the SQL console listed only that
+  database. Both tables returned rows, another database returned `497 ACCESS_DENIED`, and ClickStack
+  searched the allowed source.
+- Adding a table to the role reached the signed-in member by the first check, 5½ minutes later, without signing out.
+- `system.role_grants` is empty for the member's `JWT::…` user: the role's grants are copied onto it.
+  The name ends in a hash that changes with the grant set; the same set gave the same name again.
+- So a row policy on `cloud:<role>` filters nothing. A row policy on the JWT user does, and it stayed
+  attached while the member moved through three role sets (custom role → synced role → Service Reader).
+- Column GRANTs break parts of ClickStack (filters, row detail):
+  [managed-rbac results](../managed-rbac/results/2026-11-24-console-role.md).
 
-So in option B one Cloud role carries the service, table and column scope, and a row policy on
-`cloud:<role>` adds rows. The sync job hands that role to each new SSO user; nothing has to be
-written per user on the service.
+So in option B one Cloud role carries the service, database and table scope, and the sync job hands
+it to each new SSO user. Rows stay per user: a row policy names a JWT user, which exists only after
+that user's first query.
 
 ### What `sync` does
 
@@ -149,9 +161,11 @@ Workspace는 없습니다 ([SCIM](https://clickhouse.com/docs/products/cloud/gui
 > 같은 자리 갱신), `ensure-cs-role`, `sync` dry run. **실행 안 함:** 실제 member에 대한
 > `sync --apply`(그 조직에 Admin 아닌 member가 없음), 새 사용자의 첫 SAML 로그인, Service Reader만으로
 > ClickStack이 열리는지, ClickStack *Default New User Role*이 SSO 사용자에게 적용되는지.
-> ClickStack 버전은 읽지 못함. **같은 날 추가(11:38–11:48 UTC):** `ensure-role --grant`(테이블·컬럼 범위),
-> 그것이 서비스에 만드는 `cloud:` 역할, 그 역할에 건 row policy([결과](results/2026-11-24-seoul.md#table-and-row-scope)).
-> 실행 안 함: member가 그 row policy를 거쳐 읽는 것.
+> ClickStack 버전은 읽지 못함. **같은 날 추가.** 같은 서비스에서 `ensure-role --grant`와 그것이 만드는
+> `cloud:` 역할(11:38–11:48 UTC, [결과](results/2026-11-24-seoul.md#table-and-row-scope)). 이어서 Member 한 명이
+> 있는 trial 조직(ClickHouse 26.6.1.2455, ClickStack 2.47.0, 12:33–13:05 UTC, [결과](results/2026-11-24-trial.md))에서
+> 그 member에 대한 `sync --apply`, 그 뒤 member의 SQL console과 ClickStack 화면, Service Reader만 준 경우.
+> **아직 실행 안 함:** 새 사용자의 첫 SAML 로그인, ClickStack이 처음 보는 사용자에게 *Default New User Role*이 붙는지.
 
 ### system 역할이 주는 것 (측정)
 
@@ -177,6 +191,10 @@ Workspace는 없습니다 ([SCIM](https://clickhouse.com/docs/products/cloud/gui
 조직에 관측 서비스만 있거나 SSO 사용자가 모든 서비스를 읽어도 되면 **A**, 다른 서비스를 막아야
 하면 **B**입니다.
 
+A를 trial 조직에서 쟀습니다. Service Reader만 준 member는 모든 DB를 읽었고(custom 역할이 숨기던 DB에서
+20,000행), `CREATE TABLE`은 `497`로 거부됐고, ClickStack은 데이터와 함께 열렸습니다. 이 member는 이미
+ClickStack 사용자였습니다.
+
 ClickStack 쪽은 둘 다 같습니다. ClickStack 역할을 한 번 만들고(`ensure-cs-role`: 전부 읽기,
 대시보드 관리) **Team Settings → Default New User Role**로 지정합니다
 ([ClickStack RBAC](https://clickhouse.com/docs/use-cases/observability/clickstack/rbac)).
@@ -198,19 +216,24 @@ system.processes`, `READ ON REMOTE`, `KILL QUERY ON *.*`)을 함께 넣습니다
 | 서비스의 `cloud:clickstack-viewer` | 쓰기 후 약 2분 30초 뒤 생김. GRANT가 그대로이고, 역할을 가진 member가 없어도 생김 |
 | 역할 갱신(테이블 하나 추가, 컬럼 목록으로) | 약 4분 20초 뒤 서비스에 반영, `SELECT(env, ts) ON …` |
 | `cloud:clickstack-viewer`에 손으로 `GRANT` | `ACCESS_STORAGE_READONLY`로 거부. 이 역할은 읽기 전용 `cloud` access storage에 있어서 Cloud 역할과 어긋날 수 없음 |
-| `cloud:clickstack-viewer`에 `CREATE ROW POLICY` | 받아들여지고, 역할 갱신 뒤에도 그대로 붙어 있음 |
+| `cloud:clickstack-viewer`에 `CREATE ROW POLICY` | 받아들여지고 갱신 뒤에도 붙어 있지만, 사용자에게는 아무것도 거르지 않음(아래) |
 
-이 GRANT는 ClickStack에도 걸립니다. 같은 날 다른 조직(trial, ClickHouse 26.6.1.2455)에서 테이블 하나에만
-`SELECT`를 주는 custom 역할을 가진 Member로 재 봤습니다.
+이 GRANT는 ClickStack에도 걸리고, 사용자에게는 역할 소속이 아니라 복사로 붙습니다. trial 조직의 실제
+Member로 쟀습니다([결과](results/2026-11-24-trial.md)).
 
-- 그 테이블은 SQL console과 ClickStack 모두에서 행이 나왔습니다.
-- 같은 DB의 다른 테이블과 다른 DB의 테이블은 SQL console에서 `ACCESS_DENIED`, ClickStack에서 "Not
-  enough privileges"였습니다.
-- `query_log`를 보면 ClickStack 쿼리가 SQL console과 같은 `JWT::…` 사용자로 실행됩니다.
-- 읽을 수 없는 소스도 ClickStack 소스 목록에는 보였습니다.
+- `sync --apply`로 테이블 두 개를 주는 역할이 붙은 뒤, SQL console에는 그 DB만 보였습니다. 두 테이블은 행이
+  나왔고 다른 DB는 `497 ACCESS_DENIED`였습니다. ClickStack은 허용한 소스를 검색했습니다.
+- 역할에 테이블을 하나 더하자 로그인해 있던 member에게 첫 확인 시점(5분 30초 뒤)에 반영돼 있었습니다. 로그아웃은 필요 없었습니다.
+- member의 `JWT::…` 사용자에는 `system.role_grants`가 비어 있습니다. 역할의 GRANT가 사용자에게 복사됩니다.
+  이름 끝의 해시는 GRANT 묶음에 따라 바뀌고, 같은 묶음이면 같은 이름이 다시 나왔습니다.
+- 그래서 `cloud:<역할>`에 건 row policy는 아무것도 거르지 않습니다. JWT 사용자에 건 row policy는 걸리고, member가
+  역할 묶음 세 가지(custom 역할 → sync 역할 → Service Reader)를 거치는 동안 계속 붙어 있었습니다.
+- 컬럼 GRANT는 ClickStack 일부 기능(필터, 행 상세)을 깨뜨립니다:
+  [managed-rbac 결과](../managed-rbac/results/2026-11-24-console-role.md).
 
-그래서 B에서는 Cloud 역할 하나가 서비스, 테이블, 컬럼 범위를 갖고, `cloud:<역할>`에 건 row policy가 행을
-더합니다. sync job이 새 SSO 사용자마다 그 역할을 붙이므로, 서비스 쪽에 사용자별로 쓸 것이 없습니다.
+그래서 B에서는 Cloud 역할 하나가 서비스, DB, 테이블 범위를 갖고, sync job이 새 SSO 사용자마다 그 역할을
+붙입니다. 행은 사용자 단위로 남습니다. row policy는 JWT 사용자 이름을 적어야 하고, 그 이름은 사용자가 처음
+쿼리한 뒤에야 생깁니다.
 
 ### `sync`가 하는 일
 
