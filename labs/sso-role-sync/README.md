@@ -21,6 +21,9 @@ work today. `bin/rolesync.py` uses only the Cloud API and the Python standard li
 > **Not run:** `sync --apply` on a real member (no non-Admin member in that organization); a
 > new user's first SAML login; whether Service Reader alone opens ClickStack; ClickStack's
 > *Default New User Role* applied to an SSO user. ClickStack version not read.
+> **Added the same day (11:38–11:48 UTC):** `ensure-role --grant` (table and column scope), the
+> `cloud:` role it creates on the service, and a row policy on that role ([results](results/2026-11-24-seoul.md#table-and-row-scope)).
+> Not run: a member reading through that row policy.
 
 ### What the system roles grant (measured)
 
@@ -40,7 +43,7 @@ work today. `bin/rolesync.py` uses only the Cloud API and the Python standard li
 | | SAML default role | Extra moving part | A new user, on first login | Trade-off |
 |---|---|---|---|---|
 | **A** | Service Reader | none | read-only SQL console on every service, view their settings | wider than ClickStack: every service's data is readable |
-| **B** | Member | `rolesync.py sync` on a schedule | after the next run: read-only SQL console on **one** service | a few minutes' wait; the job needs an API key that can change members |
+| **B** | Member | `rolesync.py sync` on a schedule | after the next run: read-only SQL console on **one** service, or only the tables given with `--grant` | a few minutes' wait; the job needs an API key that can change members |
 | C | a custom role | — | — | not possible today: the SAML default takes system roles only |
 
 Pick **A** when the organization has only the observability service, or when every SSO user may
@@ -52,6 +55,41 @@ User Role** ([ClickStack RBAC](https://clickhouse.com/docs/use-cases/observabili
 The Cloud OpenAPI read on 2026-11-24 has no endpoint for that setting, so it is one console step.
 A custom ClickStack role needs **Team read**, or its user gets one `Unauthorized` page
 ([labs/managed-rbac](../managed-rbac/)).
+
+### Narrower than one service: tables, columns, rows
+
+`ensure-role --grant` replaces the read-only SQL console with what the console calls **Data:
+Custom**. The role carries GRANT statements in `tags.grants`, and the service turns them into a
+database role named `cloud:<role>`:
+
+```bash
+python3 bin/rolesync.py ensure-role <service> \
+  --grant "SELECT ON otel.otel_logs" --grant "SELECT(Timestamp, ServiceName, Body) ON otel.otel_traces" --apply
+```
+
+The script adds the three grants the console's role editor pre-fills (`SELECT ON
+system.processes`, `READ ON REMOTE`, `KILL QUERY ON *.*`). Measured on 2026-11-24, same service:
+
+| Step | Result |
+|---|---|
+| `tags.grants` through `POST`/`PATCH /roles` | accepted |
+| `cloud:clickstack-viewer` on the service | appeared about 2.5 minutes after the write, with exactly those grants, before any member held the role |
+| Role updated (a second table, as a column list) | on the service about 4 minutes 20 seconds later, as `SELECT(env, ts) ON …` |
+| `GRANT … TO cloud:clickstack-viewer` by hand | refused with `ACCESS_STORAGE_READONLY`: the role lives in the read-only `cloud` access storage, so it cannot drift from the Cloud role |
+| `CREATE ROW POLICY … TO cloud:clickstack-viewer` | accepted, and still attached after the role update |
+
+These grants also bind ClickStack. Measured the same day in a second organization (trial,
+ClickHouse 26.6.1.2455) with a Member holding a custom role that grants `SELECT` on one table:
+
+- The table returned rows in both the SQL console and ClickStack.
+- Another table in the same database, and a table in another database, returned `ACCESS_DENIED` in
+  the SQL console and "Not enough privileges" in ClickStack.
+- `query_log` shows ClickStack's queries running as the same `JWT::…` user as the SQL console.
+- ClickStack's source list still showed the sources the user could not read.
+
+So in option B one Cloud role carries the service, table and column scope, and a row policy on
+`cloud:<role>` adds rows. The sync job hands that role to each new SSO user; nothing has to be
+written per user on the service.
 
 ### What `sync` does
 
@@ -73,6 +111,7 @@ It prints what it would do and changes nothing without `--apply`. Run it every f
 export CHC_KEY=… CHC_SECRET=…                    # org API key; CHC_ORG optional
 python3 bin/rolesync.py roles                    # what each role grants
 python3 bin/rolesync.py ensure-role <service>    # dry run, then add --apply
+python3 bin/rolesync.py ensure-role <service> --grant "SELECT ON db.table"   # tables only
 python3 bin/rolesync.py ensure-cs-role <service> # dry run, then add --apply
 python3 bin/rolesync.py sync                     # dry run, then add --apply (schedule it)
 python3 bin/rolesync.py cleanup <service> --apply
@@ -80,7 +119,8 @@ python3 bin/rolesync.py cleanup <service> --apply
 
 The custom Cloud role `clickstack-viewer` has three policies: organization view, service view on
 one service, and SQL console access on that service with `roleV2: sql-console-readonly`. That is
-Service Reader's shape narrowed to one service. Creating a role needs `actors: []` in the body
+Service Reader's shape narrowed to one service. With `--grant`, the third policy carries
+`tags.grants` instead of `roleV2`. Creating a role needs `actors: []` in the body
 (refused without it); on update `actors` is left out, because PATCH replaces the role's members.
 
 ### Terraform for the static pieces
@@ -109,7 +149,9 @@ Workspace는 없습니다 ([SCIM](https://clickhouse.com/docs/products/cloud/gui
 > 같은 자리 갱신), `ensure-cs-role`, `sync` dry run. **실행 안 함:** 실제 member에 대한
 > `sync --apply`(그 조직에 Admin 아닌 member가 없음), 새 사용자의 첫 SAML 로그인, Service Reader만으로
 > ClickStack이 열리는지, ClickStack *Default New User Role*이 SSO 사용자에게 적용되는지.
-> ClickStack 버전은 읽지 못함.
+> ClickStack 버전은 읽지 못함. **같은 날 추가(11:38–11:48 UTC):** `ensure-role --grant`(테이블·컬럼 범위),
+> 그것이 서비스에 만드는 `cloud:` 역할, 그 역할에 건 row policy([결과](results/2026-11-24-seoul.md#table-and-row-scope)).
+> 실행 안 함: member가 그 row policy를 거쳐 읽는 것.
 
 ### system 역할이 주는 것 (측정)
 
@@ -129,7 +171,7 @@ Workspace는 없습니다 ([SCIM](https://clickhouse.com/docs/products/cloud/gui
 | | SAML 기본 역할 | 추가 구성 | 새 사용자가 첫 로그인에서 | 대가 |
 |---|---|---|---|---|
 | **A** | Service Reader | 없음 | 모든 서비스에 read-only SQL console, 설정 보기 | ClickStack보다 넓음: 모든 서비스의 데이터를 읽을 수 있음 |
-| **B** | Member | `rolesync.py sync`를 주기 실행 | 다음 실행 뒤: 서비스 **하나**에 read-only SQL console | 몇 분 대기, job에 member를 바꿀 수 있는 API 키 필요 |
+| **B** | Member | `rolesync.py sync`를 주기 실행 | 다음 실행 뒤: 서비스 **하나**에 read-only SQL console, 또는 `--grant`로 준 테이블만 | 몇 분 대기, job에 member를 바꿀 수 있는 API 키 필요 |
 | C | custom 역할 | — | — | 지금은 불가: SAML 기본 역할은 system 역할만 받음 |
 
 조직에 관측 서비스만 있거나 SSO 사용자가 모든 서비스를 읽어도 되면 **A**, 다른 서비스를 막아야
@@ -141,6 +183,34 @@ ClickStack 쪽은 둘 다 같습니다. ClickStack 역할을 한 번 만들고(`
 2026-11-24에 읽은 Cloud OpenAPI에는 이 설정의 endpoint가 없어서 콘솔에서 한 번 합니다.
 custom ClickStack 역할에는 **Team read**가 있어야 합니다. 없으면 그 사용자 화면은 `Unauthorized`
 한 장입니다([labs/managed-rbac](../managed-rbac/)).
+
+### 서비스보다 좁게: 테이블, 컬럼, 행
+
+`ensure-role --grant`는 read-only SQL console 대신 콘솔의 **Data: Custom** 설정을 씁니다. 역할의
+`tags.grants`에 GRANT 문이 들어가고, 서비스는 이를 `cloud:<역할>`이라는 DB 역할로 만듭니다(명령은
+English 쪽 예와 같습니다). 스크립트는 콘솔 역할 편집기가 미리 채우는 GRANT 셋(`SELECT ON
+system.processes`, `READ ON REMOTE`, `KILL QUERY ON *.*`)을 함께 넣습니다. 2026-11-24 같은 서비스에서 잰
+결과입니다.
+
+| 단계 | 결과 |
+|---|---|
+| `POST`/`PATCH /roles`에 `tags.grants` | 받아들여짐 |
+| 서비스의 `cloud:clickstack-viewer` | 쓰기 후 약 2분 30초 뒤 생김. GRANT가 그대로이고, 역할을 가진 member가 없어도 생김 |
+| 역할 갱신(테이블 하나 추가, 컬럼 목록으로) | 약 4분 20초 뒤 서비스에 반영, `SELECT(env, ts) ON …` |
+| `cloud:clickstack-viewer`에 손으로 `GRANT` | `ACCESS_STORAGE_READONLY`로 거부. 이 역할은 읽기 전용 `cloud` access storage에 있어서 Cloud 역할과 어긋날 수 없음 |
+| `cloud:clickstack-viewer`에 `CREATE ROW POLICY` | 받아들여지고, 역할 갱신 뒤에도 그대로 붙어 있음 |
+
+이 GRANT는 ClickStack에도 걸립니다. 같은 날 다른 조직(trial, ClickHouse 26.6.1.2455)에서 테이블 하나에만
+`SELECT`를 주는 custom 역할을 가진 Member로 재 봤습니다.
+
+- 그 테이블은 SQL console과 ClickStack 모두에서 행이 나왔습니다.
+- 같은 DB의 다른 테이블과 다른 DB의 테이블은 SQL console에서 `ACCESS_DENIED`, ClickStack에서 "Not
+  enough privileges"였습니다.
+- `query_log`를 보면 ClickStack 쿼리가 SQL console과 같은 `JWT::…` 사용자로 실행됩니다.
+- 읽을 수 없는 소스도 ClickStack 소스 목록에는 보였습니다.
+
+그래서 B에서는 Cloud 역할 하나가 서비스, 테이블, 컬럼 범위를 갖고, `cloud:<역할>`에 건 row policy가 행을
+더합니다. sync job이 새 SSO 사용자마다 그 역할을 붙이므로, 서비스 쪽에 사용자별로 쓸 것이 없습니다.
 
 ### `sync`가 하는 일
 
@@ -156,7 +226,8 @@ custom ClickStack 역할에는 **Team read**가 있어야 합니다. 없으면 �
 
 위 English의 Run 블록과 같습니다. custom Cloud 역할 `clickstack-viewer`는 정책 셋입니다. 조직 보기,
 서비스 하나에 대한 서비스 보기, 그 서비스의 SQL console 접근(`roleV2: sql-console-readonly`).
-Service Reader 모양을 서비스 하나로 좁힌 것입니다. 역할 생성 요청에는 `actors: []`가 있어야 하고(없으면
+Service Reader 모양을 서비스 하나로 좁힌 것입니다. `--grant`를 주면 세 번째 정책에 `roleV2` 대신
+`tags.grants`가 들어갑니다. 역할 생성 요청에는 `actors: []`가 있어야 하고(없으면
 거부), 갱신에서는 `actors`를 빼야 합니다. PATCH의 `actors`는 역할의 member 목록을 통째로 바꿉니다.
 
 ### 고정된 부분은 Terraform으로
