@@ -6,7 +6,8 @@ a system role. This script covers the two ways around it that work today (README
 
     rolesync.py roles                     what every org role grants: SQL console level and scope
     rolesync.py members                   members and their roles (emails masked)
-    rolesync.py ensure-role    SERVICE    custom Cloud role: SQL console read-only on SERVICE only
+    rolesync.py ensure-role    SERVICE    custom Cloud role: SQL console read-only on SERVICE only, or
+                                          with --grant, only the listed tables (Data: Custom)
     rolesync.py ensure-cs-role SERVICE    custom ClickStack role: read everything, edit dashboards
     rolesync.py sync                      add the custom Cloud role to members who only hold the
                                           SAML default role (run it on a schedule)
@@ -15,7 +16,8 @@ a system role. This script covers the two ways around it that work today (README
 Every command that writes prints the request and stops unless --apply is given.
 Options: --role NAME (custom Cloud role, default clickstack-viewer), --cs-role NAME (default
 "Dashboard Editor"), --base NAMES (comma list of roles a member may hold to be synced, default
-Member), --exclude EMAILS (comma list never touched).
+Member), --exclude EMAILS (comma list never touched), --grant "SELECT ON db.table" (repeatable;
+the console's three base grants are added, as its role editor does).
 
 API env: CHC_KEY, CHC_SECRET (an org API key whose role can manage members and roles); optional
 CHC_ORG (otherwise the key's first organization). Values are never printed.
@@ -91,7 +93,7 @@ def cmd_roles(cloud, args):
     for r in sorted(cloud.call("GET", f"{cloud.o}/roles"), key=lambda r: (r["type"], r["name"])):
         sql = [p for p in r["policies"] if SQL_CONSOLE in p["permissions"]]
         svc = [p for p in r["policies"] if any(x.startswith("control-plane:service:") for x in p["permissions"])]
-        level = ", ".join((p.get("tags") or {}).get("roleV2", "custom grants") for p in sql) or "none"
+        level = ", ".join((p.get("tags") or {}).get("roleV2") or "custom grants" for p in sql) or "none"
         out.append("| {} | {} | {} | {} | {} | {} |".format(
             r["name"], r["type"], level,
             "; ".join(scope(p["resources"], names) for p in sql) or "—",
@@ -105,19 +107,33 @@ def cmd_members(cloud, args):
         print(f"{mask(m['email']):32} {', '.join(r['roleName'] for r in m['assignedRoles'])}")
 
 
-def viewer_policies(org, service_id):
-    """Service Reader's shape, narrowed to one service: see it in the console, read-only SQL console."""
+# What the console's role editor pre-fills when Data is set to Custom (2026-11-24).
+BASE_GRANTS = ["GRANT SELECT ON system.processes;", "GRANT READ ON REMOTE;", "GRANT KILL QUERY ON *.*;"]
+
+
+def grant_lines(grants):
+    """'SELECT ON db.t' -> 'GRANT SELECT ON db.t;' (the form the API stores in tags.grants)."""
+    out = []
+    for g in grants:
+        g = g.strip().rstrip(";")
+        out.append((g if g.upper().startswith("GRANT ") else f"GRANT {g}") + ";")
+    return out
+
+
+def viewer_policies(org, service_id, grants=None):
+    """Service Reader's shape, narrowed to one service: see it in the console, then either the
+    read-only SQL console (every table) or, with grants, only those tables (Data: Custom)."""
+    data = {"grants": BASE_GRANTS + grant_lines(grants)} if grants else {"roleV2": "sql-console-readonly"}
     return [
         {"allowDeny": "ALLOW", "permissions": ["control-plane:organization:view"], "resources": [f"organization/{org}"]},
         {"allowDeny": "ALLOW", "permissions": ["control-plane:service:view"], "resources": [f"instance/{service_id}"]},
-        {"allowDeny": "ALLOW", "permissions": [SQL_CONSOLE], "resources": [f"instance/{service_id}"],
-         "tags": {"roleV2": "sql-console-readonly"}},
+        {"allowDeny": "ALLOW", "permissions": [SQL_CONSOLE], "resources": [f"instance/{service_id}"], "tags": data},
     ]
 
 
 def cmd_ensure_role(cloud, args):
     svc = cloud.service(args.service)
-    body = {"name": args.role, "policies": viewer_policies(cloud.org, svc["id"])}
+    body = {"name": args.role, "policies": viewer_policies(cloud.org, svc["id"], args.grant)}
     old = cloud.role(args.role)
     # POST requires actors; on PATCH, actors would REPLACE the role's members, so it is left out.
     if old:
@@ -130,7 +146,8 @@ def cmd_ensure_role(cloud, args):
     r = cloud.call(method, path, body)
     print(f"{args.role}: {len(r['policies'])} policies, scoped to {svc['name']}")
     for p in r["policies"]:
-        print("  ", p.get("allowDeny") or p.get("effect"), p["permissions"], (p.get("tags") or {}).get("roleV2", ""))
+        tags = p.get("tags") or {}
+        print("  ", p.get("allowDeny"), p["permissions"], tags.get("roleV2") or " ".join(tags.get("grants", [])))
 
 
 def perm(action, subject):
@@ -211,6 +228,7 @@ def main():
     p.add_argument("--cs-role", default="Dashboard Editor")
     p.add_argument("--base", default="Member")
     p.add_argument("--exclude", default="")
+    p.add_argument("--grant", action="append", default=[], metavar="'SELECT ON db.table'")
     p.add_argument("--apply", action="store_true")
     args = p.parse_args()
     if args.command in ("ensure-role", "ensure-cs-role", "cleanup") and not args.service:
