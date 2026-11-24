@@ -39,10 +39,10 @@ Invite with Member + the role, accepted by the test person at about 11:31.
 |---|---|
 | SQL console table tree | `rbac4_alpha`, `system` only |
 | `SELECT count() FROM rbac4_alpha.server` | 13,323 |
-| `… rbac4_alpha.access` | `497 ACCESS_DENIED`, needs `SELECT ON rbac4_alpha.access` |
+| `… rbac4_alpha.access` | `497 ACCESS_DENIED`, needs `SELECT ON rbac4_alpha.access` (text only, no capture) |
 | `… rbac4_bravo.server` | `497`, needs `SELECT ON rbac4_bravo.server` (image 02) |
 | ClickStack source `RBAC4 rbac4_alpha.server` | rows returned |
-| ClickStack sources for `access` and `bravo` | listed; selecting one gives `ClickHouseQueryError … SHOW COLUMNS ON <db.table>`, no results (image 03) |
+| ClickStack sources for `access` and `bravo` | listed; selecting one gives `ClickHouseQueryError … SHOW COLUMNS ON <db.table>`, no results (images 03, 34) |
 | `currentRoles()`, `enabledRoles()`, `defaultRoles()` | `[]`, `[]`, `[]` |
 
 Admin side (`query_log`, `system.users`, `system.grants`):
@@ -61,12 +61,12 @@ Admin side (`query_log`, `system.users`, `system.grants`):
 
 | Step | Test person `SELECT Env, count() … GROUP BY Env` |
 |---|---|
-| `CREATE ROW POLICY rbac4_prod_only … USING Env = 'prod' TO \`cloud:rbac4-alpha-server-reader\`` | prod 10,608, qa 2,715 (no effect) |
+| `CREATE ROW POLICY rbac4_prod_only … USING Env = 'prod' TO \`cloud:rbac4-alpha-server-reader\`` | prod 10,608, qa 2,715 (no effect; read from the result text, no capture) |
 | `CREATE ROW POLICY rbac4_admin_all … USING 1 TO default, <admin JWT>` | — (Admin still sees prod + qa) |
 | `ALTER ROW POLICY rbac4_prod_only … TO <cloud role>, <test person JWT>` | prod 10,608 only (image 08) |
 
-ClickStack, the same person: the Env filter lists `prod` only (image 09); before the policy it listed prod
-and qa.
+ClickStack, the same person: the Env filter lists `prod` only (images 35 at 11:41, 09 at 12:13); before the
+policy it listed prod and qa.
 
 ## 3. Editing the console role renames the JWT user (11:44–11:57)
 
@@ -82,9 +82,9 @@ Data block changed to `GRANT SELECT(Timestamp, ServiceName, SeverityText, Body, 
 
 | Where | Result |
 |---|---|
-| SQL console, `LogAttributes['player.id']` | `497`, needs `SELECT ON rbac4_alpha.server` |
+| SQL console, `LogAttributes['player.id']` | `497`, needs `SELECT ON rbac4_alpha.server` (text only, no capture) |
 | ClickStack search | fails at `DESCRIBE rbac4_alpha.server`: needs `SHOW COLUMNS ON rbac4_alpha.server` (missing: `SHOW COLUMNS ON …`, `SHOW COLUMNS(Body, Env, Game, ServiceName, SeverityText, Timestamp) ON …`) (image 05) |
-| Editor, adding `GRANT SHOW COLUMNS ON rbac4_alpha.server;` | refused: "Line 5: Invalid syntax at 'GRANT'", toast "Error while updating a role" |
+| Editor, adding `GRANT SHOW COLUMNS ON rbac4_alpha.server;` | refused: "Line 5: Invalid syntax at 'GRANT'", "Line 5: Invalid syntax after 'GRANTSHOWCOLUMNS'"; saving gives the toast "Error while updating a role" (image 31, re-captured 12:39 without saving) |
 | Editor, adding `GRANT SHOW ON rbac4_alpha.server;` | accepted |
 | ClickStack search after `SHOW` | 53 results, default columns only; Filters "No filters available" (image 06) |
 | ClickStack row detail | `ClickHouseQueryError … SELECT(ScopeAttributes, Timestamp) ON rbac4_alpha.server` (image 07) |
@@ -122,7 +122,7 @@ dashboards on `RBAC4 rbac4_alpha.server`: `RBAC4 edit-me` (tag `rbac4:edit`) and
 | Untagged dashboard by URL | "Dashboard Not Available — You do not have access to this dashboard. It may have been deleted or you may not have the required permissions." (image 23) |
 | New Dashboard → Saved Dashboard | `POST /api/dashboards` 200, then the same "Dashboard Not Available" for the creator (image 18); the Admin sees "My Dashboard", 0 tiles, created by the test person (image 26) |
 | Admin tags it `rbac4:edit` | the test person sees it again (images 19, 27) |
-| Delete | card ⋮ menu has Delete only (image 24); dashboard ⋮ menu: Export, Import, Add Group, Save Query & Filters as Default, Delete Dashboard (image 25). Deleting the re-tagged dashboard: confirm dialog, `DELETE` 204, "Dashboard deleted" (images 28, 29) |
+| Delete | card ⋮ menu has Delete only (image 24); dashboard ⋮ menu: Export, Import, Add Group, Save Query & Filters as Default, Delete Dashboard (image 25). Deleting the re-tagged dashboard: confirm dialog, `DELETE` 204, "Dashboard deleted" (images 28, 29). The card stays on the list until a reload; after reloading, the 0-tile dashboard is gone for the test person (12:10, text; 12:36, image 33) and for the Admin (12:36, image 32). The remaining untagged "My Dashboard" (2 tiles) is the Admin's dashboard from step 5; it shows for the test person in image 33 because their ClickStack role was back on `RBAC4 alpha viewer` (Dashboards Read on all) by then |
 | Duplicate | no dashboard-level duplicate item in this version |
 | Role without Team Read | not possible in this editor: the Team row offers Read and Manage only (image 30) |
 
@@ -176,5 +176,14 @@ dashboards on `RBAC4 rbac4_alpha.server`: `RBAC4 edit-me` (tag `rbac4:edit`) and
 | 28 | `images/r4-28-dash-user-delete-confirm.webp` | delete confirmation |
 | 29 | `images/r4-29-dash-user-dashboard-deleted.webp` | "Dashboard deleted" |
 | 30 | `images/r4-30-role-editor-team-read-manage-only.webp` | role editor, Team Read / Manage only |
+| 31 | `images/r4-31-editor-rejects-show-columns.webp` | role editor refusing `GRANT SHOW COLUMNS` (12:39, not saved) |
+| 32 | `images/r4-32-dash-admin-list-after-delete-reload.webp` | Admin list after the delete, reloaded (12:36) |
+| 33 | `images/r4-33-dash-user-list-after-delete-reload.webp` | test person's list after the delete, reloaded (12:36) |
+| 34 | `images/r4-34-clickstack-same-db-other-table-no-results.webp` | test person, `RBAC4 rbac4_alpha.access` source, no results (11:33) |
+| 35 | `images/r4-35-clickstack-row-policy-prod-only-earlier.webp` | test person, ClickStack right after the JWT-user policy, Env prod only (11:41) |
 
 Captures from the test person's browser are 676–800 px wide; Admin captures are 1512 px.
+
+Text-only evidence (no screenshot): the `cloud:`-role row policy having no effect, `rbac4_alpha.access` → 497 in the
+SQL console, and the column-GRANT 497 in the SQL console. They were not re-captured: by 12:37 the test member had
+been given another role (`sso-sync-viewer`) by a different test in the same organization.
