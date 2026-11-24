@@ -5,4 +5,4 @@ summary_ko: "Cloud 서비스 안에서 게임 백엔드(상점·결제 trace)와
 title_en: "Game backend observability on Managed ClickStack"
 summary_en: "Generate a game backend (shop and billing traces) and game server event logs in SQL inside a Cloud service, then follow a patch-day incident through ClickStack search, traces, dashboards and alerts."
 category: clickstack
-tags: [clickstack, observability, opentelemetry, gaming]
+tags: [clickstack, observability, opentelemetry]
