@@ -13,8 +13,8 @@ The engine is [`labs/apm-workflows`](../apm-workflows/) with the shop renamed in
 the game servers. How spans, logs and metrics are modelled, the switches, the backfill and the live views are described
 there and work the same way here.
 
-> **Status (2026-11-23).** Installed on a Managed ClickStack service, backfilled and live. The patch-day scenario was played
-> twice and checked by SQL (below), the second time with the game-first dashboard, store revenue and infrastructure metrics. The S1 replay check of apm-workflows (`bin/s1_check.py`) was copied with the renames
+> **Status (2026-11-24).** Installed on a Managed ClickStack service, backfilled and live. The patch-day scenario was played
+> three times and checked by SQL (below), the second time with the game-first dashboard, store revenue and infrastructure metrics. The S1 replay check of apm-workflows (`bin/s1_check.py`) was copied with the renames
 > and **not re-run** here.
 
 ### What is in it
@@ -54,7 +54,7 @@ minute come from the fleet at the daily peak (12:00 UTC = 21:00 KST), about 30 f
 
 | Minute | Switch | What it looks like |
 |---|---|---|
-| +0 | `purchase` next minor version with a regression (4.2.1 → 4.3.0), `game-server` next minor (1.9.0 → 1.10.0) | release markers; purchase calls pricing once per cart item, ~3% errors; the fleet restarts one server every 15 s |
+| +0 | `purchase` next minor version with a regression (4.2.1 → 4.3.0), `game-server` next minor (1.9.0 → 1.10.0) | release markers; purchase calls pricing once per cart item, ~15% errors; the fleet restarts one server every 15 s |
 | +3 | `downstream-latency` on billing | purchase time moves into the call to `pg.example.com` |
 | +6 | `server-crash` on gs-kr-07 | one ERROR (process exited, 0xC0000005), one WARN (players dropped), then no logs and no gauges |
 | +10 | gs-kr-07 restarts | startup lines, users come back at 30% |
@@ -174,6 +174,13 @@ ClickStack build was not read: the UI was not opened in this run.
       as `NO LOGS` from the crash to the restart (checked by SQL at two points inside that window).
     - The saved searches open with their queries; the gs-kr-07 search shows the gap.
   - Unit tests: 35 pass (`python3 -m unittest discover -s tests`).
+- **2026-11-24, same service**: a third run, `scenario-20261124T003910Z` (00:39 UTC, a quiet hour: ~3.4 purchases a minute).
+  - purchase 4.3.1 → 4.4.0 → 4.4.1, game-server 1.10.0 → 1.11.0; pricing calls per purchase 1 → 2.9–4.3 → 1; billing's
+    external call p95 17 → 1,063 → 13 ms; gs-kr-07 crash, silence and restart; all twelve servers on 1.11.0.
+  - Purchase errors were 2.9% before and ~2.3% during the regression (1 of 43), so the failure chart did not move. The
+    regression's error share was raised from 3% to 15% (`sql/10_gen_traces.sql`) and applied on the live service.
+  - The new view, run over the past regression windows: 6 of 41 purchases (14.6%) for this run, 13 of 80 (16.2%) for the
+    2026-11-23 run, against 1 and 4 with 3%. Only requests under a regression deploy change.
 - **Not run:** `setup.py --alerts`, `bin/s1_check.py`, `bin/uninstall.sh`. The change that keeps a server's events from before
   the crash in its crash minute was made after the run and checked in `clickhouse local` 26.9.6.6 only.
 
@@ -209,7 +216,7 @@ ClickHouse Cloud 서비스 하나 안에서 도는 게임 백엔드와 게임 �
 엔진은 [`labs/apm-workflows`](../apm-workflows/)입니다. 쇼핑몰을 게임 백엔드로 이름만 바꾸고, 게임 서버 생성기를 새로
 더했습니다. span·로그·메트릭을 본뜨는 방식, 스위치, 백필, 실시간 뷰는 그쪽 설명과 같습니다.
 
-> **상태 (2026-11-23).** Managed ClickStack 서비스에 설치하고 백필한 뒤 실시간으로 돌고 있습니다. 패치 날 시나리오를 두 번
+> **상태 (2026-11-24).** Managed ClickStack 서비스에 설치하고 백필한 뒤 실시간으로 돌고 있습니다. 패치 날 시나리오를 세 번
 > 돌리고 SQL로 확인했습니다(아래). 두 번째는 게임 중심 대시보드, 상점 매출, 인프라 메트릭과 함께였습니다. apm-workflows의 S1 재생 검사(`bin/s1_check.py`)는 이름만 바꿔 가져왔고 여기서
 > **다시 돌리지 않았습니다**.
 
@@ -236,7 +243,7 @@ ClickHouse Cloud 서비스 하나 안에서 도는 게임 백엔드와 게임 �
 
 | 분 | 스위치 | 보이는 것 |
 |---|---|---|
-| +0 | `purchase` 다음 minor 버전(회귀 있음, 4.2.1 → 4.3.0), `game-server` 다음 minor(1.9.0 → 1.10.0) | 배포 마커. purchase가 장바구니 아이템마다 pricing을 부르고 오류 약 3%. 게임 서버는 15초마다 한 대씩 재시작 |
+| +0 | `purchase` 다음 minor 버전(회귀 있음, 4.2.1 → 4.3.0), `game-server` 다음 minor(1.9.0 → 1.10.0) | 배포 마커. purchase가 장바구니 아이템마다 pricing을 부르고 오류 약 15%. 게임 서버는 15초마다 한 대씩 재시작 |
 | +3 | billing에 `downstream-latency` | 구매 시간이 `pg.example.com` 호출로 옮겨감 |
 | +6 | gs-kr-07에 `server-crash` | ERROR 하나(프로세스 종료, 0xC0000005), WARN 하나(플레이어 끊김), 그 뒤 로그도 게이지도 없음 |
 | +10 | gs-kr-07 재시작 | 시작 로그, 사용자 30%로 복귀 |
@@ -336,6 +343,13 @@ Slack webhook이 필요합니다. 여기서는 돌리지 않았습니다.
       재시작까지 이 서버를 `NO LOGS`로 보여 줍니다(그 구간 안 두 시점에서 SQL로 확인).
     - 저장된 검색은 쿼리와 함께 열리고, gs-kr-07 검색에서 공백이 보입니다.
   - 단위 테스트 35개 통과(`python3 -m unittest discover -s tests`).
+- **2026-11-24, 같은 서비스**: 세 번째 실행 `scenario-20261124T003910Z`(00:39 UTC, 구매가 분당 약 3.4건인 한가한 시간).
+  - purchase 4.3.1 → 4.4.0 → 4.4.1, game-server 1.10.0 → 1.11.0. 구매당 pricing 호출 1 → 2.9–4.3 → 1, billing 외부 호출
+    p95 17 → 1,063 → 13 ms. gs-kr-07 크래시, 공백, 재시작. 서버 12대 모두 1.11.0.
+  - 구매 에러가 이전 2.9%, 회귀 중 약 2.3%(43건 중 1건)라 실패율 차트가 움직이지 않았습니다. 회귀의 에러 비율을 3%에서
+    15%로 올리고(`sql/10_gen_traces.sql`) 라이브 서비스에 적용했습니다.
+  - 새 뷰를 지난 회귀 구간에 돌린 결과: 이번 실행은 구매 41건 중 6건(14.6%), 2026-11-23 실행은 80건 중 13건(16.2%)입니다.
+    3%일 때는 1건과 4건이었습니다. 회귀 배포 아래의 요청만 바뀝니다.
 - **돌리지 않은 것:** `setup.py --alerts`, `bin/s1_check.py`, `bin/uninstall.sh`. 크래시가 난 분에 크래시 전 이벤트를 남기는
   수정은 이 실행 뒤에 했고 `clickhouse local` 26.9.6.6에서만 확인했습니다.
 

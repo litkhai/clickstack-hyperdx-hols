@@ -6,7 +6,7 @@
     scenario.py --dry-run             print the rows, write nothing
 
 Minutes after the start (all UTC):
-    +0   patch: purchase X.(Y+1).0 with a regression (pricing once per cart item, ~3% errors) and game-server X.(Y+1).0 (rolling update)
+    +0   patch: purchase X.(Y+1).0 with a regression (pricing once per cart item, ~15% errors) and game-server X.(Y+1).0 (rolling update)
     +3   billing's external payment gateway gets slow (downstream-latency)
     +6   game server gs-kr-07 crashes (server-crash): one ERROR, then silence
     +10  gs-kr-07 restarts

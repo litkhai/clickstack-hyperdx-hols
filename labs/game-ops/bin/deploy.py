@@ -2,7 +2,7 @@
 """Record a deploy: one row in game_ops.deploy_events.
 
     deploy.py purchase 4.2.0                a good deploy of purchase: new version, new pod names
-    deploy.py purchase 4.2.0 --regression   a bad one: purchase calls pricing once per cart item (an HTTP N+1), ~3% errors
+    deploy.py purchase 4.2.0 --regression   a bad one: purchase calls pricing once per cart item (an HTTP N+1), ~15% errors
     deploy.py inventory 5.0.3
 
 The version of a request, per service, is the latest deploy <= its timestamp (default: topo_services.base_version). Like faults, a deploy
@@ -25,7 +25,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("service", choices=SERVICES)
     ap.add_argument("version")
-    ap.add_argument("--regression", action="store_true", help="only purchase has a regression: pricing called once per cart item, ~3%% errors")
+    ap.add_argument("--regression", action="store_true", help="only purchase has a regression: pricing called once per cart item, ~15%% errors")
     ap.add_argument("--at", help="UTC timestamp 'YYYY-MM-DD HH:MM:SS[.mmm]' (default: now)")
     args = ap.parse_args(argv)
     if args.regression and args.service != "purchase":
