@@ -1,0 +1,6 @@
+{
+  "name": "sentry-migration-clients",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@sentry/node": "11.17.0" }
+}

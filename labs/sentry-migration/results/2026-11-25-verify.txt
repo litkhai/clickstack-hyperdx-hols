@@ -1,0 +1,61 @@
+    ┌─client────────┬─release─────────────┬─kind──────────────┬─records─┐
+ 1. │ game-client   │ game-client@1.8.0   │ sentry.error      │      25 │
+ 2. │ game-client   │ game-client@1.8.0   │ sentry.session    │     150 │
+ 3. │ game-client   │ game-client@1.8.1   │ sentry.attachment │       6 │
+ 4. │ game-client   │ game-client@1.8.1   │ sentry.error      │      41 │
+ 5. │ game-client   │ game-client@1.8.1   │ sentry.session    │     150 │
+ 6. │ game-launcher │ game-launcher@3.2.0 │ sentry.error      │      20 │
+ 7. │ game-launcher │ game-launcher@3.2.0 │ sentry.session    │     119 │
+ 8. │ game-launcher │ game-launcher@3.2.1 │ sentry.error      │      18 │
+ 9. │ game-launcher │ game-launcher@3.2.1 │ sentry.session    │     117 │
+10. │ mobile-app    │ mobile-app@1.8.0    │ sentry.error      │      19 │
+11. │ mobile-app    │ mobile-app@1.8.0    │ sentry.session    │     100 │
+12. │ mobile-app    │ mobile-app@1.8.1    │ sentry.error      │      14 │
+13. │ mobile-app    │ mobile-app@1.8.1    │ sentry.session    │     100 │
+    └───────────────┴─────────────────────┴───────────────────┴─────────┘
+
+   ┌─release─────────────┬─sessions─┬─crashed─┬─crash_free_pct─┐
+1. │ game-client@1.8.0   │      150 │       2 │          98.67 │
+2. │ game-client@1.8.1   │      150 │      15 │             90 │
+3. │ game-launcher@3.2.0 │      100 │       1 │             99 │
+4. │ game-launcher@3.2.1 │      100 │       3 │             97 │
+5. │ mobile-app@1.8.0    │      100 │       2 │             98 │
+6. │ mobile-app@1.8.1    │      100 │       0 │            100 │
+   └─────────────────────┴──────────┴─────────┴────────────────┘
+
+   ┌─fingerprint──────┬─sample──────────────────────────────────────────────────────────────┬─handled─┬─events─┬─players─┬─releases────────────────────────────────────────────────────────────────────────┐
+1. │ b99131d5db472eab │ TimeoutError: matchmaking: no response in 5000 ms                   │ true    │     48 │      48 │ ['game-client@1.8.0','game-client@1.8.1','mobile-app@1.8.0','mobile-app@1.8.1'] │
+2. │ 0eb85a11365d648f │ Error: ECONNRESET while downloading patch chunk 3/12                │ true    │     29 │      29 │ ['game-launcher@3.2.0','game-launcher@3.2.1']                                   │
+3. │ b2837a3ee0da9dc6 │ KeyError: 'stage asset bundle missing: raid-07'                     │ true    │     26 │      26 │ ['game-client@1.8.0','game-client@1.8.1','mobile-app@1.8.0','mobile-app@1.8.1'] │
+4. │ 45ae64e1d7a493e8 │ TypeError: 'NoneType' object is not subscriptable                   │ false   │     19 │      19 │ ['game-client@1.8.0','game-client@1.8.1','mobile-app@1.8.0']                    │
+5. │ 9eecad9ec1ba3da4 │ Minidump: native crash (not symbolicated)                           │ false   │      6 │       1 │ ['game-client@1.8.1']                                                           │
+6. │ 3c4116e35b18f26a │ Error: integrity check failed: data/pak/core_02.pak sha256 mismatch │ true    │      5 │       5 │ ['game-launcher@3.2.0','game-launcher@3.2.1']                                   │
+7. │ 01937fba20c50ab4 │ TypeError: Cannot read properties of undefined (reading 'api')      │ false   │      4 │       4 │ ['game-launcher@3.2.0','game-launcher@3.2.1']                                   │
+   └──────────────────┴─────────────────────────────────────────────────────────────────────┴─────────┴────────┴─────────┴─────────────────────────────────────────────────────────────────────────────────┘
+
+   ┌─────────────────────Timestamp─┬─release───────────┬─file────────┬─bytes─┬─sha256───────┐
+1. │ 2026-11-25 10:36:56.864766211 │ game-client@1.8.1 │ crash-1.dmp │ 4104  │ 7628826d2e55 │
+2. │ 2026-11-25 10:37:41.927218177 │ game-client@1.8.1 │ crash-2.dmp │ 4104  │ a0ebff84e472 │
+3. │ 2026-11-25 10:38:26.966296920 │ game-client@1.8.1 │ crash-3.dmp │ 4104  │ 3cebcbce998f │
+4. │ 2026-11-25 10:39:12.043265052 │ game-client@1.8.1 │ crash-4.dmp │ 4104  │ 72d1dc43c76c │
+5. │ 2026-11-25 10:39:57.115629753 │ game-client@1.8.1 │ crash-5.dmp │ 4104  │ d339ae417fa7 │
+6. │ 2026-11-25 10:40:42.179253302 │ game-client@1.8.1 │ crash-6.dmp │ 4104  │ 712c81b5d656 │
+   └───────────────────────────────┴───────────────────┴─────────────┴───────┴──────────────┘
+
+Row 1:
+──────
+Timestamp:   2026-11-25 10:41:48.921123072
+ServiceName: game-client
+Body:        TypeError: 'NoneType' object is not subscriptable
+stacktrace:  TypeError: 'NoneType' object is not subscriptable
+  at submit (game_client.py:53)
+  at play_session (game_client.py:86)
+event_id:    1a67c2364c99429eb597a25f8aa1b691
+os:          Windows
+device:      LAPTOP-RTX4060
+
+bridge   {"upstream_ok": 393, "envelopes": 387, "item.session": 736, "otlp_records_sent": 879, "item.event": 131, "minidumps": 6}
+upstream {"requests": 335, "session": 650, "event": 111, "minidump": 6, "webhook": 1}
+clickhouse	sentry.attachment	6
+clickhouse	sentry.error	137
+clickhouse	sentry.session	736
