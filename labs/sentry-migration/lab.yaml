@@ -1,0 +1,14 @@
+# Runner keys (tools/lab.schema.md). Not run by hol: needs the lab's own docker compose stack and a HyperDX sign-up.
+target: oss
+tier: T1
+services: [clickstack, sentry-sdk]
+verified_on: "local Docker (macOS), clickstack-all-in-one 2.39.1 (ClickHouse 26.8.7.19), sentry-sdk 3.0.0, @sentry/node 11.17.0, 2026-11-25"
+
+# Publishing keys (tools/lab.schema.md) — not published: the owner decides
+web: false
+title_ko: "Sentry SDK 크래시·오류 보고를 ClickStack으로"
+summary_ko: "클라이언트 코드는 그대로 두고 DSN만 바꿔, 게임 런처·클라이언트·모바일 앱의 Sentry 오류·세션·미니덤프를 ClickStack 로그로 받고 기존 Sentry와 병행 비교합니다."
+title_en: "Sentry SDK crash and error reports into ClickStack"
+summary_en: "Keep the client code, change only the DSN: errors, release-health sessions and minidumps from a game launcher, client and mobile app land in ClickStack as logs, side by side with the existing Sentry."
+category: clickstack
+tags: [clickstack, observability, migration]

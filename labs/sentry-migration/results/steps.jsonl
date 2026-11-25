@@ -1,0 +1,7 @@
+{"utc":"2026-11-25T10:27:30.497Z","step":1,"action":"Open HyperDX on a fresh volume: sign-up form","message":"Let's create your user account.","image":"images/01-register.webp"}
+{"utc":"2026-11-25T10:44:51.489Z","step":2,"action":"Dashboard \"Game client crashes (from Sentry SDK)\", 10:30-10:44 UTC","message":"tiles from LogAttributes written by the bridge","image":"images/02-dashboard.webp"}
+{"utc":"2026-11-25T10:44:55.153Z","step":3,"action":"Same dashboard, scrolled: error groups by fingerprint and errors by platform","message":"table tiles","image":"images/03-dashboard-groups.webp"}
+{"utc":"2026-11-25T10:45:02.072Z","step":4,"action":"Saved search \"Sentry · crashes (unhandled)\"","message":"unhandled crashes from all three clients","image":"images/04-search-crashes.webp"}
+{"utc":"2026-11-25T10:45:06.421Z","step":5,"action":"One crash opened: body, exception.stacktrace and sentry.* attributes","message":"side panel","image":"images/05-crash-detail.webp"}
+{"utc":"2026-11-25T10:45:13.247Z","step":6,"action":"Saved search \"Sentry · native minidumps\"","message":"six Crashpad-style uploads, receipt per file","image":"images/06-search-minidumps.webp"}
+{"utc":"2026-11-25T10:45:18.758Z","step":7,"action":"Alerts page: \"Crash spike\" on the crashes saved search, > 5 per 5 m","message":"alert state and history","image":"images/07-alerts.webp"}

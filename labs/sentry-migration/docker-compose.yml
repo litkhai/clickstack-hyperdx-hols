@@ -1,0 +1,51 @@
+# labs/sentry-migration: Sentry SDK -> bridge -> ClickStack (local OSS).
+#
+#   cd labs/sentry-migration && cp .env.example .env && docker compose up -d
+#
+# Host ports are shifted (+10000) so this stack runs next to other local
+# stacks; the container ports are ClickStack's own.
+#
+#   18080  HyperDX UI          14318  OTLP HTTP in
+#   18123  ClickHouse HTTP     9800   the bridge (the DSN host)
+#   9900   upstream mock (stand-in for the existing Sentry)
+
+name: sentry-migration
+
+services:
+  clickstack:
+    image: clickhouse/clickstack-all-in-one:2.39.1
+    ports:
+      - "18080:8080"
+      - "18000:8000"
+      - "14318:4318"
+      - "18123:8123"
+    volumes:
+      - clickstack-data:/data
+
+  bridge:
+    image: python:3.12.8-slim
+    command: ["python", "-u", "/app/bridge.py"]
+    ports:
+      - "9800:9800"
+    environment:
+      OTLP_LOGS_URL: http://clickstack:4318/v1/logs
+      OTLP_HEADERS: "authorization=${INGESTION_KEY:-}"
+      PROJECTS: ${PROJECTS}
+      UPSTREAM_URL: ${UPSTREAM_URL:-http://upstream:9900}
+      ATTACHMENT_DIR: /data/attachments
+    volumes:
+      - ./bridge/bridge.py:/app/bridge.py:ro
+      - bridge-data:/data
+    depends_on: [clickstack, upstream]
+
+  upstream:
+    image: python:3.12.8-slim
+    command: ["python", "-u", "/app/upstream_mock.py"]
+    ports:
+      - "9900:9900"
+    volumes:
+      - ./bridge/upstream_mock.py:/app/upstream_mock.py:ro
+
+volumes:
+  clickstack-data:
+  bridge-data:
